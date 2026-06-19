@@ -1,29 +1,380 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
+import heroImg from "@/assets/hero-cnc.jpg";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Your App" },
-      { name: "description", content: "Replace this with a one-sentence description of your app." },
-      { property: "og:title", content: "Your App" },
-      { property: "og:description", content: "Replace this with a one-sentence description of your app." },
+      { title: "DXFix — إصلاح وفحص ملفات DXF لورش CNC | مجاني" },
+      { name: "description", content: "أصلح أخطاء ملفات DXF، احصل على تقييم جاهزية القص، وصدّر ملفاً نظيفاً خلال ثوانٍ. مجاني خلال فترة الإطلاق لورش الليزر والبلازما والـ CNC." },
+      { property: "og:title", content: "DXFix — DXF Repair & Validator for CNC Workshops" },
+      { property: "og:description", content: "Repair, score and validate DXF files instantly. Free during launch." },
+      { property: "og:url", content: "/" },
     ],
+    links: [{ rel: "canonical", href: "/" }],
   }),
   component: Index,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
+type Lang = "ar" | "en";
+
+const T = {
+  ar: {
+    dir: "rtl" as const,
+    nav: { features: "المزايا", how: "كيف يعمل", pricing: "الأسعار", faq: "أسئلة", cta: "جرّبه مجاناً" },
+    badge: "مجاني خلال فترة الإطلاق",
+    h1a: "ملفات DXF",
+    h1b: "جاهزة للقص",
+    h1c: "من أول محاولة.",
+    sub: "أداة عربية لورش الليزر والبلازما والـ CNC: ترفع ملف DXF، نصلح الأخطاء تلقائياً، نعطيك تقييم جاهزية، وتحمّل ملفاً نظيفاً خلال ثوانٍ.",
+    primaryCta: "ابدأ — ارفع ملف DXF",
+    secondaryCta: "شاهد كيف يعمل",
+    stat1: "ثوانٍ للإصلاح",
+    stat2: "خطأ شائع نكشفه",
+    stat3: "اشتراك أو بطاقة",
+    statV1: "< 5",
+    statV2: "20+",
+    statV3: "بدون",
+    sectionPain: "المشكلة",
+    painTitle: "كل دقيقة توقّف = خسارة من الورشة.",
+    painDesc: "ملف DXF فيه خط مكرر أو شكل مفتوح يوقف ماكينة القص، يحرق المادة، ويضيع وقت المشغّل. الحلول الحالية مكلفة، إنجليزية فقط، وتتطلب خبير AutoCAD.",
+    sectionFeatures: "ماذا تحصل",
+    f1t: "إصلاح تلقائي",
+    f1d: "نكشف الخطوط المكررة، الفجوات، الأشكال المفتوحة، الطبقات الفوضوية، ونصلحها بضغطة.",
+    f2t: "تقييم جاهزية CNC",
+    f2d: "نتيجة من 100 توضح هل الملف جاهز للقص، مع تقرير مفصّل بكل خطأ ومكانه.",
+    f3t: "تصدير فوري",
+    f3d: "ملف DXF نظيف متوافق مع برامج القص الشهيرة (LaserCAD, RDWorks, Mach3, FastCAM).",
+    f4t: "بدون تثبيت",
+    f4d: "كل شيء في المتصفح — يعمل على الموبايل واللابتوب، حتى وأنت بجانب الماكينة.",
+    f5t: "واجهة بالعربي",
+    f5d: "أول أداة من نوعها مصممة للورش العربية، بلغة يفهمها المشغّل لا المهندس.",
+    f6t: "خصوصية كاملة",
+    f6d: "ملفاتك تُعالج وتُحذف فوراً. لا نخزن تصاميمك ولا نشاركها.",
+    sectionHow: "ثلاث خطوات",
+    s1t: "ارفع الملف",
+    s1d: "اسحب وأفلت أي ملف DXF — أو اختر من الجهاز.",
+    s2t: "افحص وأصلح",
+    s2d: "نحلل الملف خلال ثوانٍ ونعرض كل المشاكل مع اقتراحات الإصلاح.",
+    s3t: "حمّل النظيف",
+    s3d: "نزّل ملف DXF جاهز للقص مباشرةً على ماكينتك.",
+    sectionPricing: "السعر",
+    pricingBadge: "عرض الإطلاق",
+    pricingTitle: "مجاني بالكامل — الآن.",
+    pricingDesc: "خلال فترة الإطلاق، كل المزايا متاحة بدون اشتراك وبدون بطاقة. ساعدنا بتجربتك ورأيك.",
+    pricingItems: ["ملفات غير محدودة", "كل أدوات الإصلاح", "تصدير DXF نظيف", "دعم واتساب مباشر", "بدون علامة مائية"],
+    pricingCta: "ابدأ مجاناً",
+    pricingNote: "* لاحقاً سنطلق خطة Pro بمزايا متقدمة. المستخدمون الحاليون يحصلون على خصم مدى الحياة.",
+    sectionFaq: "أسئلة شائعة",
+    faqs: [
+      { q: "هل فعلاً مجاني؟", a: "نعم، 100% مجاني خلال فترة الإطلاق. لا بطاقة، لا اشتراك، لا حد للملفات." },
+      { q: "هل ملفاتي بأمان؟", a: "نعالج الملف ونحذفه فوراً بعد التحميل. لا نخزّن تصاميمك أبداً." },
+      { q: "أي برامج القص يدعم الملف الناتج؟", a: "ملف DXF القياسي (R12/R2013) يعمل مع LaserCAD, RDWorks, Mach3, FastCAM، وأغلب البرامج التجارية." },
+      { q: "هل أحتاج خبرة AutoCAD؟", a: "لا. الواجهة مصممة للمشغّل، ليس للمهندس. اضغط زر واحد." },
+    ],
+    ctaTitle: "جاهز توفّر ساعات من إعادة العمل؟",
+    ctaSub: "جرّب DXFix الآن — مجاناً.",
+    ctaBtn: "افتح الأداة",
+    ctaWhats: "تواصل واتساب",
+    footer: "© 2026 DXFix. صُنع لورش التصنيع العربية.",
+    langSwitch: "EN",
+  },
+  en: {
+    dir: "ltr" as const,
+    nav: { features: "Features", how: "How it works", pricing: "Pricing", faq: "FAQ", cta: "Try free" },
+    badge: "Free during launch",
+    h1a: "DXF files",
+    h1b: "ready to cut",
+    h1c: "on the first try.",
+    sub: "Built for laser, plasma and CNC shops: upload a DXF, we auto-repair the errors, score its cut-readiness, and hand you back a clean file in seconds.",
+    primaryCta: "Start — upload a DXF",
+    secondaryCta: "See how it works",
+    stat1: "Repair time",
+    stat2: "Errors detected",
+    stat3: "Card or signup",
+    statV1: "< 5s",
+    statV2: "20+",
+    statV3: "None",
+    sectionPain: "The problem",
+    painTitle: "Every minute the machine sits idle costs you money.",
+    painDesc: "A duplicate line or open polyline stalls the cutter, scorches material, and wastes operator time. Existing fixes are expensive, English-only, and require an AutoCAD expert.",
+    sectionFeatures: "What you get",
+    f1t: "Auto repair",
+    f1d: "We detect duplicate lines, gaps, open shapes, messy layers — and fix them in one click.",
+    f2t: "CNC readiness score",
+    f2d: "A 0–100 score that tells you if the file is ready, with a full report of every issue.",
+    f3t: "Instant export",
+    f3d: "Clean DXF compatible with LaserCAD, RDWorks, Mach3, FastCAM and most cutters.",
+    f4t: "No install",
+    f4d: "Runs in the browser — works on mobile and laptop, even next to the machine.",
+    f5t: "Arabic-first UI",
+    f5d: "The first tool of its kind designed for Arab workshops, in the operator's language.",
+    f6t: "Private by default",
+    f6d: "Files are processed and deleted instantly. We never store or share your designs.",
+    sectionHow: "Three steps",
+    s1t: "Upload",
+    s1d: "Drag & drop any DXF file — or pick from your device.",
+    s2t: "Analyze & fix",
+    s2d: "We scan in seconds and show every issue with suggested fixes.",
+    s3t: "Download clean",
+    s3d: "Get a DXF that's ready to cut on your machine.",
+    sectionPricing: "Pricing",
+    pricingBadge: "Launch offer",
+    pricingTitle: "Completely free — for now.",
+    pricingDesc: "During launch, every feature is unlocked. No card, no signup. Just give us your feedback.",
+    pricingItems: ["Unlimited files", "All repair tools", "Clean DXF export", "Direct WhatsApp support", "No watermark"],
+    pricingCta: "Start free",
+    pricingNote: "* A Pro plan with advanced features ships later. Early users get a lifetime discount.",
+    sectionFaq: "FAQ",
+    faqs: [
+      { q: "Is it really free?", a: "Yes — 100% free during launch. No card, no signup, no file limit." },
+      { q: "Are my files safe?", a: "We process and delete each file immediately. We never store your designs." },
+      { q: "Which cutters does the output work with?", a: "Standard DXF (R12/R2013) — works with LaserCAD, RDWorks, Mach3, FastCAM and most commercial software." },
+      { q: "Do I need AutoCAD experience?", a: "No. The UI is built for operators, not engineers. One button does it." },
+    ],
+    ctaTitle: "Ready to save hours of rework?",
+    ctaSub: "Try DXFix now — free.",
+    ctaBtn: "Open the tool",
+    ctaWhats: "WhatsApp us",
+    footer: "© 2026 DXFix. Built for Arab manufacturing.",
+    langSwitch: "العربية",
+  },
+};
+
+const APP_URL = "https://autocad-46nc.onrender.com";
+const WHATSAPP_URL = "https://wa.me/9627XXXXXXXX";
+
 function Index() {
+  const [lang, setLang] = useState<Lang>("ar");
+  const t = T[lang];
+  const isRTL = t.dir === "rtl";
+
   return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
+    <div dir={t.dir} className="min-h-screen bg-background text-foreground overflow-x-hidden">
+      {/* NAV */}
+      <header className="sticky top-0 z-40 backdrop-blur-xl bg-background/70 border-b border-border/60">
+        <div className="max-w-7xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
+          <a href="#top" className="flex items-center gap-2 font-display font-bold text-lg">
+            <span className="inline-block w-2.5 h-2.5 rounded-sm bg-accent animate-spark" />
+            <span>DX<span className="text-gradient-blueprint">fix</span></span>
+          </a>
+          <nav className="hidden md:flex items-center gap-7 text-sm text-muted-foreground">
+            <a href="#features" className="hover:text-foreground transition">{t.nav.features}</a>
+            <a href="#how" className="hover:text-foreground transition">{t.nav.how}</a>
+            <a href="#pricing" className="hover:text-foreground transition">{t.nav.pricing}</a>
+            <a href="#faq" className="hover:text-foreground transition">{t.nav.faq}</a>
+          </nav>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setLang(lang === "ar" ? "en" : "ar")}
+              className="font-mono text-xs px-3 py-1.5 rounded-md border border-border hover:border-primary/60 hover:text-primary transition"
+            >
+              {t.langSwitch}
+            </button>
+            <a
+              href={APP_URL} target="_blank" rel="noopener"
+              className="hidden sm:inline-flex px-4 py-2 rounded-md bg-accent text-accent-foreground font-semibold text-sm hover:opacity-90 transition shadow-[var(--shadow-spark)]"
+            >
+              {t.nav.cta}
+            </a>
+          </div>
+        </div>
+      </header>
+
+      {/* HERO */}
+      <section id="top" className="relative">
+        <div className="absolute inset-0 blueprint-grid opacity-50 [mask-image:radial-gradient(ellipse_at_top,black,transparent_70%)]" />
+        <div className="relative max-w-7xl mx-auto px-5 sm:px-8 pt-16 pb-24 lg:pt-24 lg:pb-32 grid lg:grid-cols-12 gap-12 items-center">
+          <div className="lg:col-span-7 relative z-10">
+            <span className="inline-flex items-center gap-2 font-mono text-xs px-3 py-1.5 rounded-full border border-accent/40 text-accent bg-accent/5">
+              <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+              {t.badge}
+            </span>
+            <h1 className="font-display mt-6 text-5xl sm:text-6xl lg:text-7xl font-bold leading-[1.05] tracking-tight">
+              {t.h1a}<br />
+              <span className="text-gradient-spark">{t.h1b}</span><br />
+              {t.h1c}
+            </h1>
+            <p className="mt-6 text-lg text-muted-foreground max-w-xl leading-relaxed">{t.sub}</p>
+
+            <div className={`mt-9 flex flex-wrap gap-3 ${isRTL ? "flex-row-reverse justify-end" : ""}`}>
+              <a href={APP_URL} target="_blank" rel="noopener"
+                className="inline-flex items-center gap-2 px-6 py-3.5 rounded-md bg-accent text-accent-foreground font-semibold hover:opacity-90 transition shadow-[var(--shadow-spark)]">
+                {t.primaryCta}
+                <span aria-hidden>{isRTL ? "←" : "→"}</span>
+              </a>
+              <a href="#how"
+                className="inline-flex items-center px-6 py-3.5 rounded-md border border-border hover:border-primary/60 hover:text-primary transition font-semibold">
+                {t.secondaryCta}
+              </a>
+            </div>
+
+            <dl className="mt-12 grid grid-cols-3 gap-6 max-w-lg">
+              {[[t.statV1, t.stat1], [t.statV2, t.stat2], [t.statV3, t.stat3]].map(([v, l]) => (
+                <div key={l} className="border-t border-border/60 pt-3">
+                  <dt className="font-display text-2xl font-bold text-gradient-blueprint">{v}</dt>
+                  <dd className="text-xs text-muted-foreground mt-1 font-mono uppercase tracking-wider">{l}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+
+          <div className="lg:col-span-5 relative">
+            <div className="relative rounded-xl overflow-hidden border border-border shadow-[var(--shadow-elegant)] scan-line">
+              <img src={heroImg} alt="CNC plasma cutting steel" width={1600} height={1024} className="w-full h-auto" />
+              <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent" />
+              <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between">
+                <div className="font-mono text-xs text-primary/90">DXFIX/SCAN_OK_98.json</div>
+                <div className="font-mono text-xs px-2 py-1 rounded bg-accent/20 text-accent border border-accent/40">SCORE 98/100</div>
+              </div>
+            </div>
+            <div className="absolute -bottom-6 -start-6 hidden lg:block bg-card border border-border rounded-lg p-4 shadow-[var(--shadow-elegant)] font-mono text-xs">
+              <div className="text-muted-foreground">$ dxfix analyze part_007.dxf</div>
+              <div className="text-primary mt-1">✓ 12 duplicate lines merged</div>
+              <div className="text-primary">✓ 3 open polylines closed</div>
+              <div className="text-accent">→ ready to cut</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* PAIN */}
+      <section className="border-y border-border/60 bg-card/40">
+        <div className="max-w-5xl mx-auto px-5 sm:px-8 py-20 text-center">
+          <p className="font-mono text-xs text-accent uppercase tracking-[0.25em]">{t.sectionPain}</p>
+          <h2 className="font-display mt-4 text-3xl sm:text-4xl lg:text-5xl font-bold">{t.painTitle}</h2>
+          <p className="mt-5 text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">{t.painDesc}</p>
+        </div>
+      </section>
+
+      {/* FEATURES */}
+      <section id="features" className="max-w-7xl mx-auto px-5 sm:px-8 py-24">
+        <div className="flex items-end justify-between flex-wrap gap-6 mb-14">
+          <div>
+            <p className="font-mono text-xs text-primary uppercase tracking-[0.25em]">{t.sectionFeatures}</p>
+            <h2 className="font-display mt-3 text-4xl lg:text-5xl font-bold max-w-2xl">{lang === "ar" ? "كل ما تحتاجه قبل الضغط على زر START" : "Everything you need before hitting START"}</h2>
+          </div>
+        </div>
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-px bg-border rounded-xl overflow-hidden border border-border">
+          {[
+            [t.f1t, t.f1d, "01"], [t.f2t, t.f2d, "02"], [t.f3t, t.f3d, "03"],
+            [t.f4t, t.f4d, "04"], [t.f5t, t.f5d, "05"], [t.f6t, t.f6d, "06"],
+          ].map(([title, desc, num]) => (
+            <div key={num} className="bg-card p-8 group hover:bg-secondary/60 transition relative">
+              <div className="font-mono text-xs text-primary/70">/{num}</div>
+              <h3 className="font-display mt-4 text-xl font-semibold">{title}</h3>
+              <p className="mt-3 text-sm text-muted-foreground leading-relaxed">{desc}</p>
+              <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-primary to-transparent opacity-0 group-hover:opacity-100 transition" />
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* HOW IT WORKS */}
+      <section id="how" className="relative border-y border-border/60 bg-card/30">
+        <div className="absolute inset-0 blueprint-grid opacity-30" />
+        <div className="relative max-w-7xl mx-auto px-5 sm:px-8 py-24">
+          <p className="font-mono text-xs text-accent uppercase tracking-[0.25em] text-center">{t.sectionHow}</p>
+          <h2 className="font-display mt-3 text-4xl lg:text-5xl font-bold text-center">{lang === "ar" ? "من ملف معطوب إلى ملف نظيف." : "From broken to clean."}</h2>
+
+          <div className="mt-16 grid md:grid-cols-3 gap-6">
+            {[[t.s1t, t.s1d], [t.s2t, t.s2d], [t.s3t, t.s3d]].map(([title, desc], i) => (
+              <div key={i} className="relative bg-background border border-border rounded-xl p-8">
+                <div className="absolute -top-5 start-8 w-10 h-10 rounded-full bg-accent text-accent-foreground font-display font-bold flex items-center justify-center shadow-[var(--shadow-spark)]">
+                  {i + 1}
+                </div>
+                <h3 className="font-display mt-4 text-xl font-semibold">{title}</h3>
+                <p className="mt-3 text-sm text-muted-foreground leading-relaxed">{desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* PRICING */}
+      <section id="pricing" className="max-w-5xl mx-auto px-5 sm:px-8 py-24">
+        <div className="text-center">
+          <p className="font-mono text-xs text-primary uppercase tracking-[0.25em]">{t.sectionPricing}</p>
+          <h2 className="font-display mt-3 text-4xl lg:text-5xl font-bold">{t.pricingTitle}</h2>
+        </div>
+
+        <div className="mt-12 relative rounded-2xl border border-accent/40 bg-gradient-to-br from-card to-background p-8 sm:p-12 shadow-[var(--shadow-spark)] overflow-hidden">
+          <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-accent to-transparent" />
+          <div className="flex flex-wrap items-start justify-between gap-8">
+            <div className="max-w-md">
+              <span className="font-mono text-xs px-3 py-1 rounded-full bg-accent/15 text-accent border border-accent/40 uppercase tracking-wider">{t.pricingBadge}</span>
+              <div className="mt-5 flex items-baseline gap-3">
+                <span className="font-display text-6xl font-bold text-gradient-spark">$0</span>
+                <span className="text-muted-foreground font-mono text-sm">/ {lang === "ar" ? "للأبد خلال الإطلاق" : "during launch"}</span>
+              </div>
+              <p className="mt-4 text-muted-foreground">{t.pricingDesc}</p>
+              <a href={APP_URL} target="_blank" rel="noopener"
+                className="mt-7 inline-flex items-center gap-2 px-6 py-3.5 rounded-md bg-accent text-accent-foreground font-semibold hover:opacity-90 transition">
+                {t.pricingCta} <span aria-hidden>{isRTL ? "←" : "→"}</span>
+              </a>
+            </div>
+            <ul className="space-y-3 min-w-[240px]">
+              {t.pricingItems.map((item) => (
+                <li key={item} className="flex items-center gap-3 text-sm">
+                  <span className="w-5 h-5 rounded-full bg-primary/15 text-primary flex items-center justify-center text-xs">✓</span>
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+        <p className="mt-6 text-center text-xs text-muted-foreground font-mono">{t.pricingNote}</p>
+      </section>
+
+      {/* FAQ */}
+      <section id="faq" className="border-t border-border/60 bg-card/30">
+        <div className="max-w-3xl mx-auto px-5 sm:px-8 py-24">
+          <p className="font-mono text-xs text-accent uppercase tracking-[0.25em] text-center">{t.sectionFaq}</p>
+          <h2 className="font-display mt-3 text-4xl font-bold text-center">{lang === "ar" ? "أسئلة يسألها المشغّلون" : "Questions operators ask"}</h2>
+          <div className="mt-12 space-y-3">
+            {t.faqs.map((f, i) => (
+              <details key={i} className="group bg-background border border-border rounded-lg p-5 open:border-primary/40 transition">
+                <summary className="cursor-pointer flex items-center justify-between gap-4 font-semibold list-none">
+                  <span>{f.q}</span>
+                  <span className="text-primary transition group-open:rotate-45 font-mono text-xl">+</span>
+                </summary>
+                <p className="mt-3 text-sm text-muted-foreground leading-relaxed">{f.a}</p>
+              </details>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* CTA */}
+      <section className="relative overflow-hidden">
+        <div className="absolute inset-0 blueprint-grid opacity-40" />
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent to-background" />
+        <div className="relative max-w-4xl mx-auto px-5 sm:px-8 py-24 text-center">
+          <h2 className="font-display text-4xl lg:text-6xl font-bold">{t.ctaTitle}</h2>
+          <p className="mt-5 text-lg text-muted-foreground">{t.ctaSub}</p>
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
+            <a href={APP_URL} target="_blank" rel="noopener"
+              className="px-7 py-4 rounded-md bg-accent text-accent-foreground font-semibold hover:opacity-90 transition shadow-[var(--shadow-spark)]">
+              {t.ctaBtn}
+            </a>
+            <a href={WHATSAPP_URL} target="_blank" rel="noopener"
+              className="px-7 py-4 rounded-md border border-border hover:border-primary/60 hover:text-primary transition font-semibold">
+              {t.ctaWhats}
+            </a>
+          </div>
+        </div>
+      </section>
+
+      {/* FOOTER */}
+      <footer className="border-t border-border/60">
+        <div className="max-w-7xl mx-auto px-5 sm:px-8 py-10 flex flex-wrap items-center justify-between gap-4 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2 font-display font-bold text-foreground">
+            <span className="inline-block w-2 h-2 rounded-sm bg-accent" />
+            DXfix
+          </div>
+          <div className="font-mono text-xs">{t.footer}</div>
+        </div>
+      </footer>
     </div>
   );
 }
