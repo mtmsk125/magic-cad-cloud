@@ -63,30 +63,45 @@
 
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.129 0.042 264.695);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.129 0.042 264.695);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.129 0.042 264.695);
-  --primary: oklch(0.208 0.042 265.755);
-  --primary-foreground: oklch(0.984 0.003 247.858);
-  --secondary: oklch(0.968 0.007 247.896);
-  --secondary-foreground: oklch(0.208 0.042 265.755);
-  --muted: oklch(0.968 0.007 247.896);
-  --muted-foreground: oklch(0.554 0.046 257.417);
-  --accent: oklch(0.968 0.007 247.896);
-  --accent-foreground: oklch(0.208 0.042 265.755);
+  /* Industrial blueprint theme — deep steel + cyan blueprint + amber spark */
+  --background: oklch(0.16 0.02 240);
+  --foreground: oklch(0.96 0.01 220);
+  --card: oklch(0.20 0.025 240);
+  --card-foreground: oklch(0.96 0.01 220);
+  --popover: oklch(0.20 0.025 240);
+  --popover-foreground: oklch(0.96 0.01 220);
+  --primary: oklch(0.82 0.16 200);            /* blueprint cyan */
+  --primary-foreground: oklch(0.16 0.02 240);
+  --secondary: oklch(0.26 0.03 240);
+  --secondary-foreground: oklch(0.96 0.01 220);
+  --muted: oklch(0.24 0.025 240);
+  --muted-foreground: oklch(0.70 0.02 230);
+  --accent: oklch(0.78 0.18 60);               /* spark amber */
+  --accent-foreground: oklch(0.16 0.02 240);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(0.929 0.013 255.508);
-  --input: oklch(0.929 0.013 255.508);
-  --ring: oklch(0.704 0.04 256.788);
+  --border: oklch(0.30 0.03 240);
+  --input: oklch(0.26 0.03 240);
+  --ring: oklch(0.82 0.16 200);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
+
+  /* Custom tokens */
+  --primary-glow: oklch(0.88 0.18 200);
+  --accent-glow: oklch(0.85 0.20 60);
+  --gradient-hero: linear-gradient(135deg, oklch(0.16 0.02 240) 0%, oklch(0.22 0.04 230) 60%, oklch(0.18 0.05 220) 100%);
+  --gradient-spark: linear-gradient(135deg, var(--accent) 0%, var(--accent-glow) 100%);
+  --gradient-blueprint: linear-gradient(135deg, var(--primary) 0%, var(--primary-glow) 100%);
+  --shadow-elegant: 0 20px 60px -20px color-mix(in oklab, var(--primary) 40%, transparent);
+  --shadow-spark: 0 18px 50px -18px color-mix(in oklab, var(--accent) 55%, transparent);
+  --grid-line: color-mix(in oklab, var(--primary) 14%, transparent);
+
+  --font-display: "Space Grotesk", "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --font-body: "Space Grotesk", "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
   --sidebar: oklch(0.984 0.003 247.858);
   --sidebar-foreground: oklch(0.129 0.042 264.695);
   --sidebar-primary: oklch(0.208 0.042 265.755);
@@ -140,5 +155,50 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  [dir="rtl"] body { font-family: "IBM Plex Sans Arabic", var(--font-body); }
+
+  .font-display { font-family: var(--font-display); letter-spacing: -0.02em; }
+  .font-mono    { font-family: var(--font-mono); }
+
+  .blueprint-grid {
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+
+  .text-gradient-spark {
+    background: var(--gradient-spark);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .text-gradient-blueprint {
+    background: var(--gradient-blueprint);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  @keyframes spark-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 50%, transparent); }
+    50%      { box-shadow: 0 0 0 14px color-mix(in oklab, var(--accent) 0%, transparent); }
+  }
+  .animate-spark { animation: spark-pulse 2.4s ease-out infinite; }
+
+  @keyframes scan {
+    0%   { transform: translateY(-100%); opacity: 0; }
+    50%  { opacity: 1; }
+    100% { transform: translateY(100%); opacity: 0; }
+  }
+  .scan-line::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(180deg, transparent, color-mix(in oklab, var(--primary) 35%, transparent), transparent);
+    animation: scan 3s linear infinite;
+    pointer-events: none;
   }
 }
