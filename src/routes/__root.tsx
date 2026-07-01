@@ -11,6 +11,7 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { initPaddle } from "../lib/paddle";
 
 function NotFoundComponent() {
   return (
@@ -116,6 +117,10 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  useEffect(() => {
+    initPaddle();
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>

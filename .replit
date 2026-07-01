@@ -38,3 +38,8 @@ externalPort = 80
 deploymentTarget = "autoscale"
 run = ["bun", "run", "preview"]
 build = ["bun", "run", "build"]
+
+[userenv]
+
+[userenv.shared]
+VITE_PADDLE_CLIENT_TOKEN = "live_130ae2f79f39d81802e25940530"
