@@ -35,6 +35,8 @@ export function openCheckout(priceId: string, email?: string) {
       displayMode: "overlay",
       theme: "dark",
       locale: "ar",
+      frameTarget: "self",
+      frameStyle: "width: 100%; min-width: 312px; background-color: transparent; border: none;",
     },
   });
 }
