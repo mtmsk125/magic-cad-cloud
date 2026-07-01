@@ -277,8 +277,28 @@ function Index() {
   const [referralLink, setReferralLink] = useState("");
   const [email, setEmail] = useState("");
   const [emailSent, setEmailSent] = useState(false);
+  const [showExitPopup, setShowExitPopup] = useState(false);
+  const [exitEmail, setExitEmail] = useState("");
+  const [exitSent, setExitSent] = useState(false);
+  const [proofIndex, setProofIndex] = useState(0);
+  const [showProof, setShowProof] = useState(false);
   const t = T[lang];
   const isRTL = t.dir === "rtl";
+
+  const socialProofAr = [
+    "🔧 ورشة من الرياض سجّلت للتو",
+    "⚡ مشغّل من جدة جرّب DXFix منذ دقيقتين",
+    "✅ 3 ورش سجّلت اليوم",
+    "🏭 مصنع من الكويت يراجع خطة ورشة",
+    "🎉 محمد من الدمام انضم للقائمة",
+  ];
+  const socialProofEn = [
+    "🔧 A workshop from Riyadh just signed up",
+    "⚡ An operator from Jeddah tried DXFix 2 min ago",
+    "✅ 3 workshops registered today",
+    "🏭 A factory from Kuwait is reviewing the Workshop plan",
+    "🎉 Mohammed from Dammam joined the waitlist",
+  ];
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -299,6 +319,33 @@ function Index() {
     setReferralLink(`${window.location.origin}/?ref=${code}`);
   }, []);
 
+  useEffect(() => {
+    const timer = setTimeout(() => setShowProof(true), 4000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!showProof) return;
+    const interval = setInterval(() => {
+      setShowProof(false);
+      setTimeout(() => {
+        setProofIndex(i => (i + 1) % socialProofAr.length);
+        setShowProof(true);
+      }, 600);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [showProof]);
+
+  useEffect(() => {
+    const handleMouseLeave = (e: MouseEvent) => {
+      if (e.clientY <= 0 && !showExitPopup && !emailSent) {
+        setShowExitPopup(true);
+      }
+    };
+    document.addEventListener("mouseleave", handleMouseLeave);
+    return () => document.removeEventListener("mouseleave", handleMouseLeave);
+  }, [showExitPopup, emailSent]);
+
   function copyReferral() {
     navigator.clipboard.writeText(referralLink).then(() => {
       setCopied(true);
@@ -313,8 +360,80 @@ function Index() {
     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
   }
 
+  const proofMessages = lang === "ar" ? socialProofAr : socialProofEn;
+
   return (
     <div dir={t.dir} className="min-h-screen bg-background text-foreground overflow-x-hidden">
+
+      {/* SOCIAL PROOF TOAST */}
+      <div
+        className={`fixed bottom-6 start-6 z-50 max-w-xs transition-all duration-500 ${
+          showProof ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"
+        }`}
+      >
+        <div className="bg-card border border-border rounded-xl px-4 py-3 shadow-[var(--shadow-elegant)] flex items-center gap-3">
+          <div className="w-2 h-2 rounded-full bg-accent animate-pulse flex-shrink-0" />
+          <p className="text-sm font-medium">{proofMessages[proofIndex]}</p>
+        </div>
+      </div>
+
+      {/* EXIT INTENT POPUP */}
+      {showExitPopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+          <div className="relative bg-card border border-accent/40 rounded-2xl p-8 max-w-md w-full shadow-[var(--shadow-spark)] text-center">
+            <button
+              onClick={() => setShowExitPopup(false)}
+              className="absolute top-4 end-4 text-muted-foreground hover:text-foreground transition font-mono text-lg"
+            >✕</button>
+            <div className="text-4xl mb-4">⏳</div>
+            <h3 className="font-display text-2xl font-bold">
+              {lang === "ar" ? "لحظة قبل ما تروح!" : "Wait before you go!"}
+            </h3>
+            <p className="mt-3 text-muted-foreground">
+              {lang === "ar"
+                ? "سجّل بريدك وكن أول من يجرب DXFix عند الإطلاق الرسمي — مجاناً."
+                : "Leave your email and be first to try DXFix at launch — for free."}
+            </p>
+            {exitSent ? (
+              <div className="mt-6 p-4 rounded-xl bg-accent/10 border border-accent/30 text-accent font-semibold">
+                {lang === "ar" ? "✓ تم التسجيل! سنتواصل معك قريباً." : "✓ Registered! We'll be in touch soon."}
+              </div>
+            ) : (
+              <form
+                className="mt-6 flex flex-col gap-3"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (exitEmail) {
+                    localStorage.setItem("dxfix_waitlist_email", exitEmail);
+                    setExitSent(true);
+                    setTimeout(() => setShowExitPopup(false), 2000);
+                  }
+                }}
+              >
+                <input
+                  type="email"
+                  required
+                  value={exitEmail}
+                  onChange={(e) => setExitEmail(e.target.value)}
+                  placeholder={lang === "ar" ? "بريدك الإلكتروني" : "Your email"}
+                  dir="ltr"
+                  className="w-full px-4 py-3 rounded-lg bg-background border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition"
+                />
+                <button
+                  type="submit"
+                  className="w-full py-3 rounded-lg bg-accent text-accent-foreground font-semibold hover:opacity-90 transition shadow-[var(--shadow-spark)]"
+                >
+                  {lang === "ar" ? "سجّل مجاناً ←" : "Sign up free →"}
+                </button>
+              </form>
+            )}
+            <p className="mt-3 font-mono text-xs text-muted-foreground/50">
+              {lang === "ar" ? "بدون بطاقة. بدون التزام." : "No card. No commitment."}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* NAV */}
       <header className="sticky top-0 z-40 backdrop-blur-xl bg-background/70 border-b border-border/60">
         <div className="max-w-7xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
@@ -614,8 +733,35 @@ function Index() {
           <h2 className="font-display text-4xl lg:text-6xl font-bold">{t.ctaTitle}</h2>
           <p className="mt-5 text-lg text-muted-foreground">{t.ctaSub}</p>
           {emailSent ? (
-            <div className="mt-10 inline-flex items-center gap-3 px-8 py-4 rounded-xl bg-accent/10 border border-accent/40 text-accent font-semibold text-lg">
-              {t.ctaEmailSent}
+            <div className="mt-10 flex flex-col items-center gap-6">
+              <div className="inline-flex items-center gap-3 px-8 py-4 rounded-xl bg-accent/10 border border-accent/40 text-accent font-semibold text-lg">
+                {t.ctaEmailSent}
+              </div>
+              <p className="text-muted-foreground font-medium">
+                {lang === "ar" ? "🎁 شارك DXFix واحصل على شهر Pro مجاناً عند الإطلاق:" : "🎁 Share DXFix and get a free Pro month at launch:"}
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                <button
+                  onClick={copyReferral}
+                  className="px-5 py-2.5 rounded-lg border border-border hover:border-primary/60 font-semibold text-sm transition"
+                >
+                  {copied ? (lang === "ar" ? "تم النسخ ✓" : "Copied ✓") : (lang === "ar" ? "🔗 انسخ رابطك" : "🔗 Copy your link")}
+                </button>
+                <button
+                  onClick={shareWhatsApp}
+                  className="px-5 py-2.5 rounded-lg bg-green-600 text-white font-semibold text-sm hover:bg-green-500 transition"
+                >
+                  📲 {lang === "ar" ? "شارك على واتساب" : "Share on WhatsApp"}
+                </button>
+                <a
+                  href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(lang === "ar" ? `جرّبت DXFix — أداة عربية لإصلاح ملفات DXF لورش CNC 🔧 ${referralLink}` : `Just signed up for DXFix — Arabic DXF repair for CNC workshops 🔧 ${referralLink}`)}`}
+                  target="_blank" rel="noopener"
+                  className="px-5 py-2.5 rounded-lg bg-[#1da1f2] text-white font-semibold text-sm hover:opacity-90 transition"
+                >
+                  𝕏 {lang === "ar" ? "شارك على X" : "Share on X"}
+                </a>
+              </div>
+              <p className="font-mono text-xs text-muted-foreground/50">{referralLink}</p>
             </div>
           ) : (
             <form
