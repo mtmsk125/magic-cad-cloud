@@ -28,15 +28,16 @@ export function openCheckout(priceId: string, email?: string) {
     alert("جاري تحميل نظام الدفع... حاول مرة أخرى بعد ثانية.");
     return;
   }
+
+  const refCode = new URLSearchParams(window.location.search).get("ref") || "";
+
   window.Paddle.Checkout.open({
     items: [{ priceId, quantity: 1 }],
     ...(email ? { customer: { email } } : {}),
+    ...(refCode ? { customData: { ref: refCode } } : {}),
     settings: {
       displayMode: "overlay",
       theme: "dark",
-      locale: "ar",
-      frameTarget: "self",
-      frameStyle: "width: 100%; min-width: 312px; background-color: transparent; border: none;",
     },
   });
 }

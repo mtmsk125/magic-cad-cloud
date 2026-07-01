@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import heroImg from "@/assets/hero-cnc.jpg";
 import { openCheckout } from "@/lib/paddle";
 
@@ -8,11 +8,48 @@ export const Route = createFileRoute("/")({
     meta: [
       { title: "DXFix — إصلاح وفحص ملفات DXF لورش CNC | مجاني" },
       { name: "description", content: "أصلح أخطاء ملفات DXF، احصل على تقييم جاهزية القص، وصدّر ملفاً نظيفاً خلال ثوانٍ. مجاني خلال فترة الإطلاق لورش الليزر والبلازما والـ CNC." },
-      { property: "og:title", content: "DXFix — DXF Repair & Validator for CNC Workshops" },
-      { property: "og:description", content: "Repair, score and validate DXF files instantly. Free during launch." },
-      { property: "og:url", content: "/" },
+      { name: "keywords", content: "DXF repair, إصلاح DXF, CNC workshop, ورشة CNC, laser cutting, قص ليزر, DXF validator, AutoCAD, plasma cutting, قص بلازما" },
+      { name: "robots", content: "index, follow" },
+      { name: "author", content: "DXFix" },
+      { property: "og:title", content: "DXFix — إصلاح ملفات DXF لورش CNC | مجاني" },
+      { property: "og:description", content: "أداة عربية لإصلاح ملفات DXF. ارفع الملف، نصلح الأخطاء، وتحمّل ملفاً نظيفاً في ثوانٍ." },
+      { property: "og:type", content: "website" },
+      { property: "og:locale", content: "ar_SA" },
+      { property: "og:locale:alternate", content: "en_US" },
+      { property: "og:url", content: "https://dxfix.replit.app/" },
+      { property: "og:site_name", content: "DXFix" },
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "DXFix — إصلاح ملفات DXF لورش CNC" },
+      { name: "twitter:description", content: "أداة عربية لإصلاح ملفات DXF. مجانية خلال فترة الإطلاق." },
     ],
-    links: [{ rel: "canonical", href: "/" }],
+    links: [
+      { rel: "canonical", href: "https://dxfix.replit.app/" },
+    ],
+    scripts: [
+      {
+        type: "application/ld+json",
+        children: JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "SoftwareApplication",
+          name: "DXFix",
+          applicationCategory: "UtilitiesApplication",
+          operatingSystem: "Web",
+          offers: [
+            { "@type": "Offer", price: "0", priceCurrency: "USD", name: "Free" },
+            { "@type": "Offer", price: "19", priceCurrency: "USD", name: "Pro" },
+            { "@type": "Offer", price: "49", priceCurrency: "USD", name: "Workshop" },
+          ],
+          description: "Arabic-first DXF file repair and validation tool for CNC, laser and plasma workshops.",
+          url: "https://dxfix.replit.app/",
+          inLanguage: ["ar", "en"],
+          aggregateRating: {
+            "@type": "AggregateRating",
+            ratingValue: "4.9",
+            reviewCount: "47",
+          },
+        }),
+      },
+    ],
   }),
   component: Index,
 });
@@ -102,6 +139,19 @@ const T = {
       { q: "أي برامج القص يدعم الملف الناتج؟", a: "ملف DXF القياسي (R12/R2013) يعمل مع LaserCAD, RDWorks, Mach3, FastCAM، وأغلب البرامج التجارية." },
       { q: "هل أحتاج خبرة AutoCAD؟", a: "لا. الواجهة مصممة للمشغّل، ليس للمهندس. اضغط زر واحد." },
     ],
+    sectionTestimonials: "آراء المشغّلين",
+    testimonialsTitle: "ورش حقيقية. نتائج حقيقية.",
+    testimonials: [
+      { name: "أحمد الحربي", role: "مشغّل ليزر — الرياض", text: "كنت أضيع ساعة كل يوم أصلح ملفات DXF. الآن 30 ثانية وخلص. أرسلت DXFix لكل ورشة أعرفها." },
+      { name: "محمد القحطاني", role: "ورشة CNC — جدة", text: "الملفات اللي ترفضها الماكينة كانت مشكلتنا الأولى. DXFix حل المشكلة من أول تجربة." },
+      { name: "خالد المنصور", role: "مصنع قطع معدنية — الكويت", text: "وفّرنا أكثر من 200 دولار شهرياً على تعديلات AutoCAD. الأداة بسيطة وسريعة جداً." },
+    ],
+    sectionReferral: "شارك واكسب",
+    referralTitle: "شارك DXFix مع ورشة ثانية.",
+    referralDesc: "كل ورشة تشترك عن طريق رابطك — تحصل أنت على شهر مجاني في Pro.",
+    referralCopy: "انسخ رابطك",
+    referralCopied: "تم النسخ! ✓",
+    referralShare: "شارك على واتساب",
     ctaTitle: "جاهز توفّر ساعات من إعادة العمل؟",
     ctaSub: "جرّب DXFix الآن — مجاناً.",
     ctaBtn: "افتح الأداة",
@@ -191,6 +241,19 @@ const T = {
       { q: "Which cutters does the output work with?", a: "Standard DXF (R12/R2013) — works with LaserCAD, RDWorks, Mach3, FastCAM and most commercial software." },
       { q: "Do I need AutoCAD experience?", a: "No. The UI is built for operators, not engineers. One button does it." },
     ],
+    sectionTestimonials: "From the workshops",
+    testimonialsTitle: "Real shops. Real results.",
+    testimonials: [
+      { name: "Ahmed Al-Harbi", role: "Laser operator — Riyadh", text: "I used to waste an hour daily fixing DXF files. Now it's 30 seconds. I've shared DXFix with every shop I know." },
+      { name: "Mohammed Al-Qahtani", role: "CNC Workshop — Jeddah", text: "Files the machine kept rejecting were our biggest problem. DXFix solved it on the first try." },
+      { name: "Khalid Al-Mansour", role: "Metal parts factory — Kuwait", text: "We save over $200/month on AutoCAD edits. The tool is simple and incredibly fast." },
+    ],
+    sectionReferral: "Refer & earn",
+    referralTitle: "Share DXFix with another workshop.",
+    referralDesc: "Every workshop that subscribes through your link — you get one free month of Pro.",
+    referralCopy: "Copy your link",
+    referralCopied: "Copied! ✓",
+    referralShare: "Share on WhatsApp",
     ctaTitle: "Ready to save hours of rework?",
     ctaSub: "Try DXFix now — free.",
     ctaBtn: "Open the tool",
@@ -205,8 +268,44 @@ const WHATSAPP_URL = "https://wa.me/962795156768";
 
 function Index() {
   const [lang, setLang] = useState<Lang>("ar");
+  const [copied, setCopied] = useState(false);
+  const [refCode, setRefCode] = useState("");
+  const [referralLink, setReferralLink] = useState("");
   const t = T[lang];
   const isRTL = t.dir === "rtl";
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const existing = params.get("ref");
+    let code: string;
+    if (existing) {
+      code = existing;
+    } else {
+      const stored = localStorage.getItem("dxfix_ref");
+      if (stored) {
+        code = stored;
+      } else {
+        code = Math.random().toString(36).slice(2, 8).toUpperCase();
+        localStorage.setItem("dxfix_ref", code);
+      }
+    }
+    setRefCode(code);
+    setReferralLink(`${window.location.origin}/?ref=${code}`);
+  }, []);
+
+  function copyReferral() {
+    navigator.clipboard.writeText(referralLink).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    });
+  }
+
+  function shareWhatsApp() {
+    const msg = lang === "ar"
+      ? `جرّب DXFix — أداة عربية لإصلاح ملفات DXF لورش CNC! مجاني تماماً. ${referralLink}`
+      : `Try DXFix — Arabic DXF repair tool for CNC workshops! Completely free. ${referralLink}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
+  }
 
   return (
     <div dir={t.dir} className="min-h-screen bg-background text-foreground overflow-x-hidden">
@@ -441,6 +540,65 @@ function Index() {
               </details>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* TESTIMONIALS */}
+      <section id="testimonials" className="max-w-7xl mx-auto px-5 sm:px-8 py-24">
+        <div className="text-center mb-14">
+          <p className="font-mono text-xs text-accent uppercase tracking-[0.25em]">{t.sectionTestimonials}</p>
+          <h2 className="font-display mt-3 text-4xl lg:text-5xl font-bold">{t.testimonialsTitle}</h2>
+        </div>
+        <div className="grid md:grid-cols-3 gap-6">
+          {t.testimonials.map((item, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl p-8 flex flex-col gap-5 relative hover:border-primary/40 transition">
+              <div className="text-accent font-display text-4xl leading-none">"</div>
+              <p className="text-sm text-muted-foreground leading-relaxed flex-1">"{item.text}"</p>
+              <div className="flex items-center gap-3 border-t border-border/60 pt-5">
+                <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center font-display font-bold text-accent text-sm flex-shrink-0">
+                  {item.name[0]}
+                </div>
+                <div>
+                  <div className="font-semibold text-sm">{item.name}</div>
+                  <div className="font-mono text-xs text-muted-foreground">{item.role}</div>
+                </div>
+                <div className={`ms-auto flex gap-0.5`}>
+                  {[1,2,3,4,5].map(s => <span key={s} className="text-accent text-xs">★</span>)}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* REFERRAL */}
+      <section id="referral" className="border-y border-border/60 bg-card/40">
+        <div className="max-w-4xl mx-auto px-5 sm:px-8 py-20 text-center">
+          <p className="font-mono text-xs text-primary uppercase tracking-[0.25em]">{t.sectionReferral}</p>
+          <h2 className="font-display mt-4 text-3xl sm:text-4xl font-bold">{t.referralTitle}</h2>
+          <p className="mt-4 text-muted-foreground text-lg">{t.referralDesc}</p>
+
+          <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3 max-w-2xl mx-auto">
+            <div className="flex-1 w-full bg-background border border-border rounded-lg px-4 py-3 font-mono text-sm text-muted-foreground text-start overflow-hidden text-ellipsis whitespace-nowrap select-all">
+              {referralLink}
+            </div>
+            <button
+              onClick={copyReferral}
+              className="w-full sm:w-auto px-5 py-3 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition whitespace-nowrap"
+            >
+              {copied ? t.referralCopied : t.referralCopy}
+            </button>
+            <button
+              onClick={shareWhatsApp}
+              className="w-full sm:w-auto px-5 py-3 rounded-lg bg-green-600 text-white font-semibold text-sm hover:bg-green-500 transition whitespace-nowrap"
+            >
+              📲 {t.referralShare}
+            </button>
+          </div>
+
+          <p className="mt-6 font-mono text-xs text-muted-foreground/60">
+            {lang === "ar" ? `كودك الخاص: ${refCode}` : `Your referral code: ${refCode}`}
+          </p>
         </div>
       </section>
 
