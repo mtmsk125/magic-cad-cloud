@@ -472,6 +472,13 @@ function Index() {
             DXfix
           </div>
           <div className="font-mono text-xs">{t.footer}</div>
+          <a
+            href="/admin"
+            className="font-mono text-xs text-muted-foreground/30 hover:text-muted-foreground transition"
+            title="Admin"
+          >
+            ⚙
+          </a>
         </div>
       </footer>
     </div>
