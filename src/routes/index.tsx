@@ -115,7 +115,7 @@ const T = {
         price: "$19",
         period: "/ شهر",
         desc: "للمشغّل اليومي الذي يرفع ملفات باستمرار.",
-        items: ["ملفات غير محدودة", "كل أدوات الإصلاح", "تقرير PDF قابل للطباعة", "دعم واتساب مباشر", "بدون علامة مائية"],
+        items: ["ملفات غير محدودة", "كل أدوات الإصلاح", "تقرير PDF قابل للطباعة", "دعم بالبريد خلال 24 ساعة", "بدون علامة مائية"],
         cta: "اشترك في Pro",
         highlight: true,
         priceId: import.meta.env.VITE_PADDLE_PRO_PRICE_ID,
@@ -125,7 +125,7 @@ const T = {
         price: "$49",
         period: "/ شهر",
         desc: "للمصانع والورش الكبيرة التي تحتاج API.",
-        items: ["كل مزايا Pro", "API للدمج مع برامجك", "حتى 5 مستخدمين", "تقرير مخصص بشعارك", "أولوية في الدعم"],
+        items: ["كل مزايا Pro", "API للدمج مع برامجك", "حتى 5 مستخدمين", "تقرير مخصص بشعارك", "ردود أسبوعية بالبريد"],
         cta: "اشترك في ورشة",
         highlight: false,
         priceId: import.meta.env.VITE_PADDLE_WORKSHOP_PRICE_ID,
@@ -153,9 +153,11 @@ const T = {
     referralCopied: "تم النسخ! ✓",
     referralShare: "شارك على واتساب",
     ctaTitle: "جاهز توفّر ساعات من إعادة العمل؟",
-    ctaSub: "جرّب DXFix الآن — مجاناً.",
-    ctaBtn: "افتح الأداة",
-    ctaWhats: "تواصل واتساب",
+    ctaSub: "سجّل بريدك وكن أول من يستخدم الأداة عند الإطلاق.",
+    ctaBtn: "سجّل مجاناً",
+    ctaEmailPlaceholder: "بريدك الإلكتروني",
+    ctaEmailSend: "سجّل الآن",
+    ctaEmailSent: "تم التسجيل! ✓ سنتواصل معك قريباً.",
     footer: "© 2026 DXFix. صُنع لورش التصنيع العربية.",
     langSwitch: "EN",
   },
@@ -217,7 +219,7 @@ const T = {
         price: "$19",
         period: "/ month",
         desc: "For the daily operator who uploads files constantly.",
-        items: ["Unlimited files", "All repair tools", "Printable PDF report", "Direct WhatsApp support", "No watermark"],
+        items: ["Unlimited files", "All repair tools", "Printable PDF report", "Email support within 24h", "No watermark"],
         cta: "Subscribe to Pro",
         highlight: true,
         priceId: import.meta.env.VITE_PADDLE_PRO_PRICE_ID,
@@ -227,7 +229,7 @@ const T = {
         price: "$49",
         period: "/ month",
         desc: "For factories and large shops that need API access.",
-        items: ["Everything in Pro", "API for integration", "Up to 5 users", "Branded PDF report", "Priority support"],
+        items: ["Everything in Pro", "API for integration", "Up to 5 users", "Branded PDF report", "Weekly email reports"],
         cta: "Subscribe to Workshop",
         highlight: false,
         priceId: import.meta.env.VITE_PADDLE_WORKSHOP_PRICE_ID,
@@ -255,9 +257,11 @@ const T = {
     referralCopied: "Copied! ✓",
     referralShare: "Share on WhatsApp",
     ctaTitle: "Ready to save hours of rework?",
-    ctaSub: "Try DXFix now — free.",
-    ctaBtn: "Open the tool",
-    ctaWhats: "WhatsApp us",
+    ctaSub: "Sign up free and be first to access the tool at launch.",
+    ctaBtn: "Sign up free",
+    ctaEmailPlaceholder: "Your email address",
+    ctaEmailSend: "Join now",
+    ctaEmailSent: "You're in! ✓ We'll be in touch soon.",
     footer: "© 2026 DXFix. Built for Arab manufacturing.",
     langSwitch: "العربية",
   },
@@ -271,6 +275,8 @@ function Index() {
   const [copied, setCopied] = useState(false);
   const [refCode, setRefCode] = useState("");
   const [referralLink, setReferralLink] = useState("");
+  const [email, setEmail] = useState("");
+  const [emailSent, setEmailSent] = useState(false);
   const t = T[lang];
   const isRTL = t.dir === "rtl";
 
@@ -330,7 +336,7 @@ function Index() {
               {t.langSwitch}
             </button>
             <a
-              href={APP_URL} target="_blank" rel="noopener"
+              href="#cta-email"
               className="hidden sm:inline-flex px-4 py-2 rounded-md bg-accent text-accent-foreground font-semibold text-sm hover:opacity-90 transition shadow-[var(--shadow-spark)]"
             >
               {t.nav.cta}
@@ -356,7 +362,7 @@ function Index() {
             <p className="mt-6 text-lg text-muted-foreground max-w-xl leading-relaxed">{t.sub}</p>
 
             <div className={`mt-9 flex flex-wrap gap-3 ${isRTL ? "flex-row-reverse justify-end" : ""}`}>
-              <a href={APP_URL} target="_blank" rel="noopener"
+              <a href="#pricing"
                 className="inline-flex items-center gap-2 px-6 py-3.5 rounded-md bg-accent text-accent-foreground font-semibold hover:opacity-90 transition shadow-[var(--shadow-spark)]">
                 {t.primaryCta}
                 <span aria-hidden>{isRTL ? "←" : "→"}</span>
@@ -508,9 +514,7 @@ function Index() {
                   </button>
                 ) : (
                   <a
-                    href={APP_URL}
-                    target="_blank"
-                    rel="noopener"
+                    href="#cta-email"
                     className="block w-full py-3.5 rounded-md font-semibold border border-border hover:border-primary/60 hover:text-primary transition text-center"
                   >
                     {plan.cta} {isRTL ? "←" : "→"}
@@ -603,22 +607,47 @@ function Index() {
       </section>
 
       {/* CTA */}
-      <section className="relative overflow-hidden">
+      <section id="cta-email" className="relative overflow-hidden">
         <div className="absolute inset-0 blueprint-grid opacity-40" />
         <div className="absolute inset-0 bg-gradient-to-b from-transparent to-background" />
         <div className="relative max-w-4xl mx-auto px-5 sm:px-8 py-24 text-center">
           <h2 className="font-display text-4xl lg:text-6xl font-bold">{t.ctaTitle}</h2>
           <p className="mt-5 text-lg text-muted-foreground">{t.ctaSub}</p>
-          <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
-            <a href={APP_URL} target="_blank" rel="noopener"
-              className="px-7 py-4 rounded-md bg-accent text-accent-foreground font-semibold hover:opacity-90 transition shadow-[var(--shadow-spark)]">
-              {t.ctaBtn}
-            </a>
-            <a href={WHATSAPP_URL} target="_blank" rel="noopener"
-              className="px-7 py-4 rounded-md border border-border hover:border-primary/60 hover:text-primary transition font-semibold">
-              {t.ctaWhats}
-            </a>
-          </div>
+          {emailSent ? (
+            <div className="mt-10 inline-flex items-center gap-3 px-8 py-4 rounded-xl bg-accent/10 border border-accent/40 text-accent font-semibold text-lg">
+              {t.ctaEmailSent}
+            </div>
+          ) : (
+            <form
+              className="mt-10 flex flex-col sm:flex-row gap-3 max-w-md mx-auto"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (email) {
+                  localStorage.setItem("dxfix_waitlist_email", email);
+                  setEmailSent(true);
+                }
+              }}
+            >
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder={t.ctaEmailPlaceholder}
+                dir="ltr"
+                className="flex-1 px-5 py-3.5 rounded-md bg-card border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition"
+              />
+              <button
+                type="submit"
+                className="px-7 py-3.5 rounded-md bg-accent text-accent-foreground font-semibold hover:opacity-90 transition shadow-[var(--shadow-spark)] whitespace-nowrap"
+              >
+                {t.ctaEmailSend}
+              </button>
+            </form>
+          )}
+          <p className="mt-4 font-mono text-xs text-muted-foreground/50">
+            {lang === "ar" ? "لا بطاقة، لا التزام. فقط إشعار عند الإطلاق." : "No card. No commitment. Just a launch notification."}
+          </p>
         </div>
       </section>
 
