@@ -25,11 +25,16 @@ export function initPaddle() {
 
 export function openCheckout(priceId: string, email?: string) {
   if (!window.Paddle) {
-    console.error("Paddle not loaded");
+    alert("جاري تحميل نظام الدفع... حاول مرة أخرى بعد ثانية.");
     return;
   }
   window.Paddle.Checkout.open({
     items: [{ priceId, quantity: 1 }],
     ...(email ? { customer: { email } } : {}),
+    settings: {
+      displayMode: "overlay",
+      theme: "dark",
+      locale: "ar",
+    },
   });
 }
