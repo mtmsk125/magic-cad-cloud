@@ -455,7 +455,7 @@ function Index() {
               {t.langSwitch}
             </button>
             <a
-              href="#cta-email"
+              href="/tool"
               className="hidden sm:inline-flex px-4 py-2 rounded-md bg-accent text-accent-foreground font-semibold text-sm hover:opacity-90 transition shadow-[var(--shadow-spark)]"
             >
               {t.nav.cta}
@@ -481,7 +481,7 @@ function Index() {
             <p className="mt-6 text-lg text-muted-foreground max-w-xl leading-relaxed">{t.sub}</p>
 
             <div className={`mt-9 flex flex-wrap gap-3 ${isRTL ? "flex-row-reverse justify-end" : ""}`}>
-              <a href="#pricing"
+              <a href="/tool"
                 className="inline-flex items-center gap-2 px-6 py-3.5 rounded-md bg-accent text-accent-foreground font-semibold hover:opacity-90 transition shadow-[var(--shadow-spark)]">
                 {t.primaryCta}
                 <span aria-hidden>{isRTL ? "←" : "→"}</span>
@@ -633,7 +633,7 @@ function Index() {
                   </button>
                 ) : (
                   <a
-                    href="#cta-email"
+                    href="/tool"
                     className="block w-full py-3.5 rounded-md font-semibold border border-border hover:border-primary/60 hover:text-primary transition text-center"
                   >
                     {plan.cta} {isRTL ? "←" : "→"}
