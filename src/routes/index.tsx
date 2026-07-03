@@ -267,7 +267,7 @@ const T = {
   },
 };
 
-const APP_URL = "https://autocad-46nc.onrender.com";
+const APP_URL = "/tool";
 const WHATSAPP_URL = "https://wa.me/962795156768";
 
 function Index() {
