@@ -363,3 +363,87 @@ export function scoreLabel(score: number, lang: "ar" | "en"): string {
   if (score >= 50) return "Needs repair";
   return "Not ready";
 }
+
+export interface DxfBounds {
+  minX: number; minY: number; maxX: number; maxY: number;
+  width: number; height: number;
+}
+
+export function getDxfBounds(entities: DxfEntity[]): DxfBounds | null {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let found = false;
+
+  function expand(x: number, y: number) {
+    found = true;
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  }
+
+  for (const e of entities) {
+    if (e.type === "LINE") {
+      expand(e.x1 ?? 0, e.y1 ?? 0);
+      expand(e.x2 ?? 0, e.y2 ?? 0);
+    } else if (e.type === "CIRCLE" || e.type === "ARC") {
+      const cx = e.cx ?? 0, cy = e.cy ?? 0, r = e.radius ?? 0;
+      expand(cx - r, cy - r);
+      expand(cx + r, cy + r);
+    } else if (e.type === "LWPOLYLINE" && e.vertices) {
+      for (const v of e.vertices) expand(v.x, v.y);
+    }
+  }
+
+  if (!found) return null;
+  return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
+}
+
+export interface SvgPath {
+  d: string;
+  entityIndex: number;
+  type: string;
+  layer: string;
+}
+
+export function buildSvgPaths(entities: DxfEntity[], bounds: DxfBounds): SvgPath[] {
+  const paths: SvgPath[] = [];
+  const { maxY } = bounds;
+
+  function flipY(y: number) { return maxY - y + bounds.minY; }
+
+  function arcPath(cx: number, cy: number, r: number, startDeg: number, endDeg: number): string {
+    const s = (startDeg * Math.PI) / 180;
+    const e = (endDeg * Math.PI) / 180;
+    const x1 = cx + r * Math.cos(s);
+    const y1 = flipY(cy + r * Math.sin(s));
+    const x2 = cx + r * Math.cos(e);
+    const y2 = flipY(cy + r * Math.sin(e));
+    let sweep = endDeg - startDeg;
+    if (sweep < 0) sweep += 360;
+    const large = sweep > 180 ? 1 : 0;
+    return `M ${x1} ${y1} A ${r} ${r} 0 ${large} 0 ${x2} ${y2}`;
+  }
+
+  for (let i = 0; i < entities.length; i++) {
+    const e = entities[i];
+    let d = "";
+
+    if (e.type === "LINE") {
+      const x1 = e.x1 ?? 0, y1 = flipY(e.y1 ?? 0);
+      const x2 = e.x2 ?? 0, y2 = flipY(e.y2 ?? 0);
+      d = `M ${x1} ${y1} L ${x2} ${y2}`;
+    } else if (e.type === "CIRCLE") {
+      const cx = e.cx ?? 0, cy = flipY(e.cy ?? 0), r = e.radius ?? 0;
+      d = `M ${cx - r} ${cy} A ${r} ${r} 0 1 0 ${cx + r} ${cy} A ${r} ${r} 0 1 0 ${cx - r} ${cy}`;
+    } else if (e.type === "ARC") {
+      d = arcPath(e.cx ?? 0, e.cy ?? 0, e.radius ?? 0, e.startAngle ?? 0, e.endAngle ?? 0);
+    } else if (e.type === "LWPOLYLINE" && e.vertices && e.vertices.length > 1) {
+      const pts = e.vertices.map(v => `${v.x},${flipY(v.y)}`);
+      d = `M ${pts[0]} L ${pts.slice(1).join(" L ")}`;
+      if (e.closed) d += " Z";
+    }
+
+    if (d) paths.push({ d, entityIndex: i, type: e.type, layer: e.layer });
+  }
+  return paths;
+}

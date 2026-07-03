@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useRef, useCallback, useEffect } from "react";
-import { analyzeDxf, repairDxf, scoreColor, scoreBg, scoreLabel } from "@/lib/dxf";
+import { analyzeDxf, repairDxf, scoreColor, scoreBg, scoreLabel, getDxfBounds, buildSvgPaths } from "@/lib/dxf";
 import type { DxfAnalysis, DxfIssue } from "@/lib/dxf";
 
 interface HistoryEntry {
@@ -12,6 +12,98 @@ interface HistoryEntry {
   totalEntities: number;
   layers: number;
   wasRepaired: boolean;
+}
+
+function DxfPreview({ analysis, issueIndices, lang }: {
+  analysis: DxfAnalysis;
+  issueIndices: Set<number>;
+  lang: "ar" | "en";
+}) {
+  const [zoom, setZoom] = useState(1);
+  const bounds = getDxfBounds(analysis.entities);
+  if (!bounds || bounds.width === 0 || bounds.height === 0) {
+    return (
+      <p className="text-center font-mono text-xs text-muted-foreground py-8">
+        {lang === "ar" ? "لا يمكن رسم معاينة — الملف لا يحتوي على إحداثيات" : "Cannot render preview — no geometry found"}
+      </p>
+    );
+  }
+
+  const PAD = Math.max(bounds.width, bounds.height) * 0.05;
+  const vx = bounds.minX - PAD;
+  const vy = bounds.minY - PAD;
+  const vw = bounds.width + PAD * 2;
+  const vh = bounds.height + PAD * 2;
+  const paths = buildSvgPaths(analysis.entities, bounds);
+
+  const LAYER_COLORS = ["#00d4ff", "#ffd700", "#a855f7", "#34d399", "#f97316", "#ec4899", "#60a5fa"];
+  const layerList = analysis.stats.layers;
+  function layerColor(layer: string) {
+    const idx = layerList.indexOf(layer);
+    return LAYER_COLORS[idx % LAYER_COLORS.length] ?? "#00d4ff";
+  }
+
+  const strokeW = Math.max(bounds.width, bounds.height) * 0.004;
+
+  return (
+    <div className="rounded-2xl border border-border bg-card overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-3 border-b border-border">
+        <span className="font-display font-semibold text-sm">
+          {lang === "ar" ? "🖼 معاينة الرسم" : "🖼 Drawing Preview"}
+        </span>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setZoom(z => Math.max(0.5, z - 0.25))} className="w-7 h-7 rounded-lg bg-muted text-sm font-bold hover:bg-muted/80 transition">−</button>
+          <span className="font-mono text-xs text-muted-foreground w-10 text-center">{Math.round(zoom * 100)}%</span>
+          <button onClick={() => setZoom(z => Math.min(4, z + 0.25))} className="w-7 h-7 rounded-lg bg-muted text-sm font-bold hover:bg-muted/80 transition">+</button>
+          <button onClick={() => setZoom(1)} className="font-mono text-xs text-muted-foreground/60 hover:text-foreground transition px-2">
+            {lang === "ar" ? "ملاءمة" : "Fit"}
+          </button>
+        </div>
+      </div>
+      <div className="overflow-auto" style={{ maxHeight: "440px" }}>
+        <svg
+          viewBox={`${vx} ${vy} ${vw} ${vh}`}
+          width={Math.round(560 * zoom)}
+          height={Math.round(560 * zoom * (vh / vw))}
+          style={{ display: "block", margin: "0 auto", background: "#0d1117" }}
+        >
+          {paths.map((p, i) => {
+            const isIssue = issueIndices.has(p.entityIndex);
+            const color = isIssue ? "#ef4444" : layerColor(p.layer);
+            const opacity = isIssue ? 1 : 0.85;
+            return (
+              <path
+                key={i}
+                d={p.d}
+                stroke={color}
+                strokeWidth={strokeW}
+                fill="none"
+                opacity={opacity}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            );
+          })}
+        </svg>
+      </div>
+      {layerList.length > 1 && (
+        <div className="flex flex-wrap gap-3 px-5 py-3 border-t border-border">
+          {layerList.map((layer, i) => (
+            <span key={layer} className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
+              <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: LAYER_COLORS[i % LAYER_COLORS.length] }} />
+              {layer}
+            </span>
+          ))}
+          {issueIndices.size > 0 && (
+            <span className="flex items-center gap-1.5 font-mono text-xs text-red-400">
+              <span className="w-2.5 h-2.5 rounded-full inline-block bg-red-500" />
+              {lang === "ar" ? "مشاكل مكتشفة" : "Issues detected"}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export const Route = createFileRoute("/tool")({
@@ -416,6 +508,12 @@ function ToolPage() {
                 </button>
               )}
             </div>
+
+            {/* SVG Preview */}
+            {(() => {
+              const issueIndices = new Set(analysis.issues.flatMap(i => i.entityIndices));
+              return <DxfPreview analysis={analysis} issueIndices={issueIndices} lang={lang} />;
+            })()}
 
             {/* Stats */}
             <div className="rounded-2xl border border-border bg-card p-6">
