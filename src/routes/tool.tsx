@@ -14,12 +14,17 @@ interface HistoryEntry {
   wasRepaired: boolean;
 }
 
+const LAYER_COLORS = ["#00d4ff", "#ffd700", "#a855f7", "#34d399", "#f97316", "#ec4899", "#60a5fa"];
+
 function DxfPreview({ analysis, issueIndices, lang }: {
   analysis: DxfAnalysis;
   issueIndices: Set<number>;
   lang: "ar" | "en";
 }) {
   const [zoom, setZoom] = useState(1);
+  const [hiddenLayers, setHiddenLayers] = useState<Set<string>>(new Set());
+  const [issuesOnly, setIssuesOnly] = useState(false);
+
   const bounds = getDxfBounds(analysis.entities);
   if (!bounds || bounds.width === 0 || bounds.height === 0) {
     return (
@@ -34,24 +39,51 @@ function DxfPreview({ analysis, issueIndices, lang }: {
   const vy = bounds.minY - PAD;
   const vw = bounds.width + PAD * 2;
   const vh = bounds.height + PAD * 2;
-  const paths = buildSvgPaths(analysis.entities, bounds);
-
-  const LAYER_COLORS = ["#00d4ff", "#ffd700", "#a855f7", "#34d399", "#f97316", "#ec4899", "#60a5fa"];
+  const allPaths = buildSvgPaths(analysis.entities, bounds);
   const layerList = analysis.stats.layers;
+
   function layerColor(layer: string) {
     const idx = layerList.indexOf(layer);
     return LAYER_COLORS[idx % LAYER_COLORS.length] ?? "#00d4ff";
   }
 
+  function toggleLayer(layer: string) {
+    setHiddenLayers(prev => {
+      const next = new Set(prev);
+      if (next.has(layer)) next.delete(layer); else next.add(layer);
+      return next;
+    });
+  }
+
+  const visiblePaths = allPaths.filter(p => {
+    if (hiddenLayers.has(p.layer)) return false;
+    if (issuesOnly && !issueIndices.has(p.entityIndex)) return false;
+    return true;
+  });
+
   const strokeW = Math.max(bounds.width, bounds.height) * 0.004;
+  const hasIssues = issueIndices.size > 0;
 
   return (
     <div className="rounded-2xl border border-border bg-card overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-3 border-b border-border">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between px-5 py-3 border-b border-border gap-3 flex-wrap">
         <span className="font-display font-semibold text-sm">
           {lang === "ar" ? "🖼 معاينة الرسم" : "🖼 Drawing Preview"}
         </span>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {hasIssues && (
+            <button
+              onClick={() => setIssuesOnly(v => !v)}
+              className={`font-mono text-xs px-3 py-1 rounded-lg border transition ${
+                issuesOnly
+                  ? "border-red-500 bg-red-500/20 text-red-400"
+                  : "border-border text-muted-foreground hover:border-red-500/50 hover:text-red-400"
+              }`}
+            >
+              {lang === "ar" ? "المشاكل فقط" : "Issues only"}
+            </button>
+          )}
           <button onClick={() => setZoom(z => Math.max(0.5, z - 0.25))} className="w-7 h-7 rounded-lg bg-muted text-sm font-bold hover:bg-muted/80 transition">−</button>
           <span className="font-mono text-xs text-muted-foreground w-10 text-center">{Math.round(zoom * 100)}%</span>
           <button onClick={() => setZoom(z => Math.min(4, z + 0.25))} className="w-7 h-7 rounded-lg bg-muted text-sm font-bold hover:bg-muted/80 transition">+</button>
@@ -60,6 +92,8 @@ function DxfPreview({ analysis, issueIndices, lang }: {
           </button>
         </div>
       </div>
+
+      {/* SVG canvas */}
       <div className="overflow-auto" style={{ maxHeight: "440px" }}>
         <svg
           viewBox={`${vx} ${vy} ${vw} ${vh}`}
@@ -67,10 +101,9 @@ function DxfPreview({ analysis, issueIndices, lang }: {
           height={Math.round(560 * zoom * (vh / vw))}
           style={{ display: "block", margin: "0 auto", background: "#0d1117" }}
         >
-          {paths.map((p, i) => {
+          {visiblePaths.map((p, i) => {
             const isIssue = issueIndices.has(p.entityIndex);
             const color = isIssue ? "#ef4444" : layerColor(p.layer);
-            const opacity = isIssue ? 1 : 0.85;
             return (
               <path
                 key={i}
@@ -78,7 +111,7 @@ function DxfPreview({ analysis, issueIndices, lang }: {
                 stroke={color}
                 strokeWidth={strokeW}
                 fill="none"
-                opacity={opacity}
+                opacity={isIssue ? 1 : 0.85}
                 strokeLinecap="round"
                 strokeLinejoin="round"
               />
@@ -86,22 +119,48 @@ function DxfPreview({ analysis, issueIndices, lang }: {
           })}
         </svg>
       </div>
-      {layerList.length > 1 && (
-        <div className="flex flex-wrap gap-3 px-5 py-3 border-t border-border">
-          {layerList.map((layer, i) => (
-            <span key={layer} className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
-              <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: LAYER_COLORS[i % LAYER_COLORS.length] }} />
+
+      {/* Layer toggles */}
+      <div className="flex flex-wrap gap-2 px-5 py-3 border-t border-border">
+        {layerList.map((layer, i) => {
+          const color = LAYER_COLORS[i % LAYER_COLORS.length];
+          const hidden = hiddenLayers.has(layer);
+          return (
+            <button
+              key={layer}
+              onClick={() => toggleLayer(layer)}
+              title={hidden
+                ? (lang === "ar" ? "اضغط لإظهار الطبقة" : "Click to show layer")
+                : (lang === "ar" ? "اضغط لإخفاء الطبقة" : "Click to hide layer")}
+              className={`flex items-center gap-1.5 font-mono text-xs px-2.5 py-1 rounded-lg border transition select-none ${
+                hidden
+                  ? "border-border/40 text-muted-foreground/30 line-through"
+                  : "border-border/60 text-muted-foreground hover:border-white/30 hover:text-foreground"
+              }`}
+            >
+              <span
+                className="w-2.5 h-2.5 rounded-full inline-block shrink-0 transition"
+                style={{ background: hidden ? "#444" : color }}
+              />
               {layer}
-            </span>
-          ))}
-          {issueIndices.size > 0 && (
-            <span className="flex items-center gap-1.5 font-mono text-xs text-red-400">
-              <span className="w-2.5 h-2.5 rounded-full inline-block bg-red-500" />
-              {lang === "ar" ? "مشاكل مكتشفة" : "Issues detected"}
-            </span>
-          )}
-        </div>
-      )}
+            </button>
+          );
+        })}
+        {hasIssues && (
+          <span className="flex items-center gap-1.5 font-mono text-xs px-2.5 py-1 text-red-400">
+            <span className="w-2.5 h-2.5 rounded-full inline-block bg-red-500" />
+            {lang === "ar" ? "مشاكل" : "Issues"}
+          </span>
+        )}
+        {layerList.length > 1 && hiddenLayers.size > 0 && (
+          <button
+            onClick={() => setHiddenLayers(new Set())}
+            className="font-mono text-xs text-muted-foreground/50 hover:text-foreground transition px-1"
+          >
+            {lang === "ar" ? "إظهار الكل" : "Show all"}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
