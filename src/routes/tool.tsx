@@ -1,7 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { analyzeDxf, repairDxf, scoreColor, scoreBg, scoreLabel } from "@/lib/dxf";
 import type { DxfAnalysis, DxfIssue } from "@/lib/dxf";
+
+interface HistoryEntry {
+  id: string;
+  fileName: string;
+  score: number;
+  date: string;
+  issueCount: number;
+  totalEntities: number;
+  layers: number;
+  wasRepaired: boolean;
+}
 
 export const Route = createFileRoute("/tool")({
   head: () => ({
@@ -27,8 +38,39 @@ function ToolPage() {
   const [repairedContent, setRepairedContent] = useState("");
   const [repairedIssues, setRepairedIssues] = useState<DxfIssue[]>([]);
   const [progress, setProgress] = useState(0);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const isRTL = lang === "ar";
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("dxfix_history");
+      if (saved) setHistory(JSON.parse(saved));
+    } catch {}
+  }, []);
+
+  function saveToHistory(name: string, result: DxfAnalysis, repaired = false) {
+    const entry: HistoryEntry = {
+      id: Date.now().toString(),
+      fileName: name,
+      score: repaired ? 100 : result.score,
+      date: new Date().toLocaleString("ar-SA"),
+      issueCount: result.issues.length,
+      totalEntities: result.stats.totalEntities,
+      layers: result.stats.layers.length,
+      wasRepaired: repaired,
+    };
+    setHistory(prev => {
+      const next = [entry, ...prev].slice(0, 5);
+      localStorage.setItem("dxfix_history", JSON.stringify(next));
+      return next;
+    });
+  }
+
+  function clearHistory() {
+    localStorage.removeItem("dxfix_history");
+    setHistory([]);
+  }
 
   const T = {
     ar: {
@@ -60,6 +102,13 @@ function ToolPage() {
       severityError: "خطأ",
       severityWarn: "تحذير",
       fixedLabel: "تم الإصلاح ✓",
+      historyTitle: "آخر الملفات المحللة",
+      historyClear: "مسح السجل",
+      historyEmpty: "لا يوجد سجل بعد — ارفع أول ملف DXF",
+      historyIssues: "مشاكل",
+      historyEntities: "عنصر",
+      historyLayers: "طبقة",
+      historyRepaired: "مُصلَح",
     },
     en: {
       nav: "Back to site",
@@ -90,6 +139,13 @@ function ToolPage() {
       severityError: "Error",
       severityWarn: "Warning",
       fixedLabel: "Fixed ✓",
+      historyTitle: "Recent Files",
+      historyClear: "Clear history",
+      historyEmpty: "No history yet — upload your first DXF file",
+      historyIssues: "issues",
+      historyEntities: "entities",
+      historyLayers: "layers",
+      historyRepaired: "Repaired",
     },
   };
 
@@ -120,6 +176,7 @@ function ToolPage() {
         const result = analyzeDxf(content);
         clearInterval(interval);
         setProgress(100);
+        saveToHistory(file.name, result, false);
         setTimeout(() => {
           setAnalysis(result);
           setStage("result");
@@ -146,6 +203,7 @@ function ToolPage() {
     const { fixed, repaired } = repairDxf(fileContent, analysis);
     setRepairedContent(fixed);
     setRepairedIssues(repaired);
+    saveToHistory(fileName, analysis, true);
     setStage("repaired");
   };
 
@@ -250,6 +308,66 @@ function ToolPage() {
               className="hidden"
               onChange={onFileChange}
             />
+          </div>
+        )}
+
+        {/* FILE HISTORY */}
+        {stage === "upload" && (
+          <div className="mt-8">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-display font-semibold text-sm text-muted-foreground uppercase tracking-wider">
+                📋 {t.historyTitle}
+              </h3>
+              {history.length > 0 && (
+                <button
+                  onClick={clearHistory}
+                  className="font-mono text-xs text-muted-foreground/60 hover:text-destructive transition"
+                >
+                  {t.historyClear}
+                </button>
+              )}
+            </div>
+
+            {history.length === 0 ? (
+              <p className="font-mono text-xs text-muted-foreground/50 text-center py-6 border border-dashed border-border rounded-xl">
+                {t.historyEmpty}
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {history.map((entry) => {
+                  const color =
+                    entry.score >= 80 ? "text-green-400" :
+                    entry.score >= 50 ? "text-yellow-400" : "text-red-400";
+                  const bg =
+                    entry.score >= 80 ? "border-green-400/20 bg-green-400/5" :
+                    entry.score >= 50 ? "border-yellow-400/20 bg-yellow-400/5" :
+                                        "border-red-400/20 bg-red-400/5";
+                  return (
+                    <div
+                      key={entry.id}
+                      className={`flex items-center gap-4 rounded-xl border px-4 py-3 ${bg}`}
+                    >
+                      <div className={`font-display font-bold text-2xl min-w-[3rem] text-center ${color}`}>
+                        {entry.score}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-mono text-sm font-semibold truncate">{entry.fileName}</p>
+                        <p className="font-mono text-xs text-muted-foreground mt-0.5">
+                          {entry.totalEntities} {t.historyEntities} · {entry.layers} {t.historyLayers}
+                          {entry.issueCount > 0 && ` · ${entry.issueCount} ${t.historyIssues}`}
+                          {entry.wasRepaired && (
+                            <span className="ml-2 text-green-400">✓ {t.historyRepaired}</span>
+                          )}
+                        </p>
+                      </div>
+                      <div className="font-mono text-xs text-muted-foreground/50 shrink-0 text-end">
+                        {entry.date}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
