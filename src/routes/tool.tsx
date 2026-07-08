@@ -1,7 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useState, useRef, useCallback, useEffect } from "react";
-import { analyzeDxf, repairDxf, scoreColor, scoreBg, scoreLabel, getDxfBounds, buildSvgPaths } from "@/lib/dxf";
-import type { DxfAnalysis, DxfIssue } from "@/lib/dxf";
+import { analyzeDxf, repairDxf, scoreColor, scoreBg, scoreLabel, getDxfBounds, buildSvgPaths, calculateTotalPerimeter, detectOpenLoops, sortInsideFirst } from "@/lib/dxf";
+import type { DxfAnalysis, DxfIssue, FixSummaryItem, DxfBounds, SvgPath } from "@/lib/dxf";
+import { getSubscriptionData, isSubscribed, getFreeUsageCount, incrementFreeUsage, FREE_USAGE_LIMIT } from "@/lib/subscription";
+import { downloadAllAsZip, triggerSelfDestruct, isSelfDestructTriggered } from "@/lib/zip-export";
+import { FeedbackModal } from "@/components/feedback-modal";
 
 interface HistoryEntry {
   id: string;
@@ -14,16 +17,34 @@ interface HistoryEntry {
   wasRepaired: boolean;
 }
 
+interface BulkFileEntry {
+  id: string;
+  file: File;
+  content: string;
+  status: "pending" | "analyzing" | "done" | "error";
+  analysis?: DxfAnalysis;
+  fixedContent?: string;
+  fixSummary?: FixSummaryItem[];
+  error?: string;
+}
+
 const LAYER_COLORS = ["#00d4ff", "#ffd700", "#a855f7", "#34d399", "#f97316", "#ec4899", "#60a5fa"];
 
-function DxfPreview({ analysis, issueIndices, lang }: {
+function DxfPreview({ analysis, issueIndices, lang, openPoints }: {
   analysis: DxfAnalysis;
   issueIndices: Set<number>;
   lang: "ar" | "en";
+  openPoints?: { x: number; y: number }[];
 }) {
   const [zoom, setZoom] = useState(1);
   const [hiddenLayers, setHiddenLayers] = useState<Set<string>>(new Set());
   const [issuesOnly, setIssuesOnly] = useState(false);
+  const [showOpenLoops, setShowOpenLoops] = useState(true);
+  const [simulating, setSimulating] = useState(false);
+  const [simProgress, setSimProgress] = useState(0);
+  const [simPointer, setSimPointer] = useState<{ x: number; y: number } | null>(null);
+  const simRef = useRef<number | null>(null);
+  const allPathsRef = useRef<SvgPath[]>([]);
 
   const bounds = getDxfBounds(analysis.entities);
   if (!bounds || bounds.width === 0 || bounds.height === 0) {
@@ -40,6 +61,7 @@ function DxfPreview({ analysis, issueIndices, lang }: {
   const vw = bounds.width + PAD * 2;
   const vh = bounds.height + PAD * 2;
   const allPaths = buildSvgPaths(analysis.entities, bounds);
+  allPathsRef.current = allPaths;
   const layerList = analysis.stats.layers;
 
   function layerColor(layer: string) {
@@ -64,6 +86,69 @@ function DxfPreview({ analysis, issueIndices, lang }: {
   const strokeW = Math.max(bounds.width, bounds.height) * 0.004;
   const hasIssues = issueIndices.size > 0;
 
+  // Calculate open loop points in SVG coordinates
+  const { maxY } = bounds;
+  const flipY = (y: number) => maxY - y + bounds.minY;
+  const svgOpenPoints = openPoints?.map(p => ({
+    x: p.x,
+    y: flipY(p.y),
+  })) || [];
+
+  // CNC Toolpath Simulation
+  const startSimulation = useCallback(() => {
+    if (simulating) return;
+    setSimulating(true);
+    setSimProgress(0);
+    setSimPointer(null);
+
+    // Collect all path points for animation
+    const allPoints: { x: number; y: number }[] = [];
+    for (const p of allPaths) {
+      const matches = p.d.match(/[ML]\s+([\d.-]+)\s+([\d.-]+)/g);
+      if (matches) {
+        for (const m of matches) {
+          const parts = m.split(/\s+/);
+          if (parts.length >= 3) {
+            allPoints.push({ x: parseFloat(parts[1]), y: parseFloat(parts[2]) });
+          }
+        }
+      }
+    }
+
+    if (allPoints.length === 0) {
+      setSimulating(false);
+      return;
+    }
+
+    let step = 0;
+    const totalSteps = allPoints.length;
+    const interval = 50; // ms per step
+
+    simRef.current = window.setInterval(() => {
+      step++;
+      const idx = Math.min(step, totalSteps - 1);
+      setSimPointer(allPoints[idx]);
+      setSimProgress(Math.round((idx / totalSteps) * 100));
+
+      if (idx >= totalSteps - 1) {
+        if (simRef.current) clearInterval(simRef.current);
+        setSimulating(false);
+        setSimProgress(100);
+        setTimeout(() => {
+          setSimPointer(null);
+          setSimProgress(0);
+        }, 1000);
+      }
+    }, interval);
+  }, [allPaths, simulating]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (simRef.current) clearInterval(simRef.current);
+    };
+  }, []);
+
   return (
     <div className="rounded-2xl border border-border bg-card overflow-hidden">
       {/* Toolbar */}
@@ -72,6 +157,32 @@ function DxfPreview({ analysis, issueIndices, lang }: {
           {lang === "ar" ? "🖼 معاينة الرسم" : "🖼 Drawing Preview"}
         </span>
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Simulation Button */}
+          <button
+            onClick={startSimulation}
+            disabled={simulating}
+            className={`font-mono text-xs px-3 py-1 rounded-lg border transition ${
+              simulating
+                ? "border-accent bg-accent/20 text-accent animate-pulse"
+                : "border-border text-muted-foreground hover:border-accent/50 hover:text-accent"
+            }`}
+          >
+            {simulating
+              ? (lang === "ar" ? `⏳ ${simProgress}%` : `⏳ ${simProgress}%`)
+              : (lang === "ar" ? "▶ تشغيل المحاكاة" : "▶ Play Simulation")}
+          </button>
+          {openPoints && openPoints.length > 0 && (
+            <button
+              onClick={() => setShowOpenLoops(v => !v)}
+              className={`font-mono text-xs px-3 py-1 rounded-lg border transition ${
+                showOpenLoops
+                  ? "border-red-500 bg-red-500/20 text-red-400"
+                  : "border-border text-muted-foreground hover:border-red-500/50 hover:text-red-400"
+              }`}
+            >
+              {lang === "ar" ? `🟡 نقاط مفتوحة (${openPoints.length})` : `🔴 Open points (${openPoints.length})`}
+            </button>
+          )}
           {hasIssues && (
             <button
               onClick={() => setIssuesOnly(v => !v)}
@@ -117,8 +228,68 @@ function DxfPreview({ analysis, issueIndices, lang }: {
               />
             );
           })}
+          {/* Simulation pointer */}
+          {simPointer && (
+            <g>
+              <circle
+                cx={simPointer.x}
+                cy={simPointer.y}
+                r={Math.max(bounds.width, bounds.height) * 0.02}
+                fill="#10b981"
+                opacity={0.9}
+              />
+              <circle
+                cx={simPointer.x}
+                cy={simPointer.y}
+                r={Math.max(bounds.width, bounds.height) * 0.04}
+                fill="none"
+                stroke="#10b981"
+                strokeWidth={strokeW}
+                opacity={0.4}
+              />
+            </g>
+          )}
+          {/* Open loop indicators - bright red circles */}
+          {showOpenLoops && svgOpenPoints.map((pt, i) => (
+            <g key={`open-${i}`}>
+              <circle
+                cx={pt.x}
+                cy={pt.y}
+                r={Math.max(bounds.width, bounds.height) * 0.015}
+                fill="none"
+                stroke="#ef4444"
+                strokeWidth={strokeW * 2}
+                opacity={0.9}
+              />
+              <circle
+                cx={pt.x}
+                cy={pt.y}
+                r={Math.max(bounds.width, bounds.height) * 0.005}
+                fill="#ef4444"
+                opacity={1}
+              />
+            </g>
+          ))}
         </svg>
       </div>
+
+      {/* Simulation progress bar */}
+      {simulating && (
+        <div className="px-5 py-2 border-t border-border">
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-xs text-accent">
+              {lang === "ar" ? "محاكاة مسار القص..." : "Simulating toolpath..."}
+            </span>
+            <div className="flex-1 bg-border rounded-full h-1.5 overflow-hidden">
+              <div
+                className="h-full bg-accent transition-all duration-200 rounded-full"
+                style={{ width: `${simProgress}%` }}
+              />
+            </div>
+            <span className="font-mono text-xs text-muted-foreground">{simProgress}%</span>
+          </div>
+        </div>
+      )}
 
       {/* Layer toggles */}
       <div className="flex flex-wrap gap-2 px-5 py-3 border-t border-border">
@@ -152,6 +323,12 @@ function DxfPreview({ analysis, issueIndices, lang }: {
             {lang === "ar" ? "مشاكل" : "Issues"}
           </span>
         )}
+        {openPoints && openPoints.length > 0 && (
+          <span className="flex items-center gap-1.5 font-mono text-xs px-2.5 py-1 text-red-400">
+            <span className="w-2.5 h-2.5 rounded-full inline-block bg-red-500" />
+            {lang === "ar" ? `نقاط مفتوحة: ${openPoints.length}` : `Open points: ${openPoints.length}`}
+          </span>
+        )}
         {layerList.length > 1 && hiddenLayers.size > 0 && (
           <button
             onClick={() => setHiddenLayers(new Set())}
@@ -166,6 +343,34 @@ function DxfPreview({ analysis, issueIndices, lang }: {
 }
 
 export const Route = createFileRoute("/tool")({
+  beforeLoad: async () => {
+    // Check subscription status
+    const subscriptionData = getSubscriptionData();
+    const userIsSubscribed = isSubscribed(subscriptionData);
+    const freeUsageCount = getFreeUsageCount();
+
+    console.log("🔍 Subscription check on /tool:", {
+      subscriptionData,
+      userIsSubscribed,
+      freeUsageCount,
+      freeUsageRemaining: FREE_USAGE_LIMIT - freeUsageCount,
+    });
+
+    // Allow access if:
+    // 1. User is subscribed (pro/workshop/enterprise), OR
+    // 2. User has remaining free usage
+    const canAccess = userIsSubscribed || freeUsageCount < FREE_USAGE_LIMIT;
+
+    if (!canAccess) {
+      console.warn("❌ No free uses remaining - redirecting to /pricing");
+      throw redirect({
+        to: "/pricing",
+        search: { redirect: "tool" },
+      });
+    }
+    
+    console.log("✅ User allowed access to /tool");
+  },
   head: () => ({
     meta: [
       { title: "DXFix — أداة إصلاح ملفات DXF" },
@@ -188,10 +393,35 @@ function ToolPage() {
   const [analysis, setAnalysis] = useState<DxfAnalysis | null>(null);
   const [repairedContent, setRepairedContent] = useState("");
   const [repairedIssues, setRepairedIssues] = useState<DxfIssue[]>([]);
+  const [fixSummary, setFixSummary] = useState<FixSummaryItem[]>([]);
   const [progress, setProgress] = useState(0);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [freeUsageCount, setFreeUsageCount] = useState(getFreeUsageCount());
   const fileRef = useRef<HTMLInputElement>(null);
   const isRTL = lang === "ar";
+
+  // Cost estimator state
+  const [pricePerMeter, setPricePerMeter] = useState(5);
+  const [showCostEstimator, setShowCostEstimator] = useState(false);
+
+  // Self-destruct state
+  const [selfDestructEnabled, setSelfDestructEnabled] = useState(false);
+  const [selfDestructTriggered, setSelfDestructTriggered] = useState(isSelfDestructTriggered());
+
+  // Trust notice modal
+  const [showTrustModal, setShowTrustModal] = useState(false);
+
+  // Subscription prompt modal for download gating
+  const [showSubscribeModal, setShowSubscribeModal] = useState(false);
+
+  // Bulk upload state
+  const [bulkFiles, setBulkFiles] = useState<BulkFileEntry[]>([]);
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
+  const [bulkProcessing, setBulkProcessing] = useState(false);
+
+  const subscriptionData = getSubscriptionData();
+  const userIsSubscribed = isSubscribed(subscriptionData);
+  const freeRemaining = FREE_USAGE_LIMIT - freeUsageCount;
 
   useEffect(() => {
     try {
@@ -260,6 +490,58 @@ function ToolPage() {
       historyEntities: "عنصر",
       historyLayers: "طبقة",
       historyRepaired: "مُصلَح",
+      freeBanner: (remaining: number) => `استخدام مجاني: ${remaining} من ${FREE_USAGE_LIMIT} متبقية`,
+      freeSubscribe: "اشترك الآن لرفع عدد غير محدود من الملفات",
+      unlimited: "رفع غير محدود ✓",
+      // Fix Summary
+      fixSummaryTitle: "تقرير الإصلاحات والتعديلات",
+      fixSummarySub: "نظرة تفصيلية على التغييرات التي تم إجراؤها على ملف DXF",
+      // Cost Estimator
+      costTitle: "تقدير تكلفة القص",
+      costSub: "احسب التكلفة التقديرية للقص بناءً على الطول الإجمالي",
+      totalLength: "مسافة القص الإجمالية",
+      pricePerMeter: "سعر المتر أو الدقيقة ($)",
+      estimatedCost: "التكلفة التقديرية للقص",
+      costNote: "* هذا تقدير تقريبي. قد تختلف التكلفة الفعلية حسب الماكينة والمواد.",
+      // Open Loops
+      openLoopsDetected: "عدد النقاط المفتوحة المكتشفة والمصلحة",
+      // Bulk Upload
+      bulkUpload: "رفع متعدد",
+      bulkDropZone: "اسحب وأفلت عدة ملفات DXF أو ملف ZIP",
+      bulkBtn: "اختر ملفات متعددة",
+      bulkNote: "يدعم .dxf و .zip — معالجة مجمعة",
+      bulkTableTitle: "قائمة الملفات",
+      bulkStatusPending: "قيد الانتظار",
+      bulkStatusAnalyzing: "قيد التحليل",
+      bulkStatusDone: "مكتمل",
+      bulkStatusError: "فشل",
+      bulkDownloadAll: "تحميل الكل",
+      bulkProcessing: "جاري معالجة الملفات...",
+      // Self-Destruct
+      selfDestructToggle: "تفعيل التدمير الذاتي للملف لضمان السرية",
+      selfDestructNotice: "سيتم حذف الملف نهائياً من السيرفرات فور اكتمال التحميل",
+      selfDestructTriggered: "✓ تم تفعيل التدمير الذاتي — تم حذف الملفات نهائياً",
+      // Trust Notice
+      trustTitle: "اتفاقية سرية البيانات الهندسية",
+      trustPoint1: "الرسومات الهندسية لا تُخزَّن على سيرفراتنا بعد المعالجة — تُحذف فوراً",
+      trustPoint2: "لا نشارك أو نبيع أو ننقل أي بيانات هندسية لأطراف ثالثة",
+      trustPoint3: "نستخدم تشفير HTTPS لحماية بياناتك أثناء النقل والمعالجة",
+      trustBtn: "سياسة الخصوصية",
+      // Processing Metrics
+      processingTime: "الوقت المستغرق للمعالجة",
+      fileSizeReduction: "نسبة تقليص حجم الملف التلقائي",
+      // Safety Badge
+      safetyTitle: "فحص أمان الماكينة",
+      safetyBoundingBox: "الملف يقع ضمن حدود لوح العمل (Bounding Box Security)",
+      safetyNoJerk: "لا يوجد حركات فجائية حادة لرأس الماكينة",
+      safetyCompliant: "متوافق مع معايير الأمان والسلامة الصناعية",
+      // Subscribe Modal
+      subscribeRequired: "هذه الميزة متاحة للمشتركين فقط",
+      subscribePrompt: "اشترك الآن لإصلاح ملفك وتحميله فوراً للماكينة!",
+      subscribeBtn: "اشترك الآن",
+      // Lock icons
+      proFeature: "ميزة Pro",
+      enterpriseFeature: "ميزة Enterprise",
     },
     en: {
       nav: "Back to site",
@@ -297,6 +579,58 @@ function ToolPage() {
       historyEntities: "entities",
       historyLayers: "layers",
       historyRepaired: "Repaired",
+      freeBanner: (remaining: number) => `Free usage: ${remaining}/${FREE_USAGE_LIMIT} remaining`,
+      freeSubscribe: "Subscribe now for unlimited uploads",
+      unlimited: "Unlimited uploads ✓",
+      // Fix Summary
+      fixSummaryTitle: "Fix Summary Report",
+      fixSummarySub: "Detailed overview of changes made to your DXF file",
+      // Cost Estimator
+      costTitle: "Cutting Cost Estimator",
+      costSub: "Estimate cutting cost based on total path length",
+      totalLength: "Total Cutting Distance",
+      pricePerMeter: "Price per meter/minute ($)",
+      estimatedCost: "Estimated Cutting Cost",
+      costNote: "* This is an approximate estimate. Actual cost may vary by machine and material.",
+      // Open Loops
+      openLoopsDetected: "Open points detected and fixed",
+      // Bulk Upload
+      bulkUpload: "Bulk Upload",
+      bulkDropZone: "Drag & drop multiple DXF files or a ZIP archive",
+      bulkBtn: "Choose multiple files",
+      bulkNote: "Supports .dxf and .zip — batch processing",
+      bulkTableTitle: "File Queue",
+      bulkStatusPending: "Pending",
+      bulkStatusAnalyzing: "Analyzing",
+      bulkStatusDone: "Completed",
+      bulkStatusError: "Failed",
+      bulkDownloadAll: "Download All",
+      bulkProcessing: "Processing files...",
+      // Self-Destruct
+      selfDestructToggle: "Enable file self-destruct for confidentiality",
+      selfDestructNotice: "Files will be permanently deleted from servers immediately after download",
+      selfDestructTriggered: "✓ Self-destruct enabled — files have been permanently deleted",
+      // Trust Notice
+      trustTitle: "Engineering Data Confidentiality Agreement",
+      trustPoint1: "Engineering drawings are never stored on our servers after processing — deleted immediately",
+      trustPoint2: "We do not share, sell, or transfer any engineering data to third parties",
+      trustPoint3: "We use HTTPS encryption to protect your data during transmission and processing",
+      trustBtn: "Privacy Policy",
+      // Processing Metrics
+      processingTime: "Processing Time",
+      fileSizeReduction: "Auto File Size Reduction",
+      // Safety Badge
+      safetyTitle: "Machine Safety Check",
+      safetyBoundingBox: "File is within work bed bounds (Bounding Box Security)",
+      safetyNoJerk: "No sharp jerky movements for machine head",
+      safetyCompliant: "Compliant with industrial safety standards",
+      // Subscribe Modal
+      subscribeRequired: "This feature is for subscribers only",
+      subscribePrompt: "Subscribe now to fix your file and download it immediately to your machine!",
+      subscribeBtn: "Subscribe Now",
+      // Lock icons
+      proFeature: "Pro Feature",
+      enterpriseFeature: "Enterprise Feature",
     },
   };
 
@@ -307,6 +641,13 @@ function ToolPage() {
       alert(lang === "ar" ? "يرجى رفع ملف بصيغة .dxf فقط" : "Please upload a .dxf file only");
       return;
     }
+
+    // Increment free usage counter for non-subscribed users
+    if (!userIsSubscribed) {
+      const newCount = incrementFreeUsage();
+      setFreeUsageCount(newCount);
+    }
+
     setFileName(file.name);
     setStage("analyzing");
     setProgress(0);
@@ -335,7 +676,7 @@ function ToolPage() {
       }, 800);
     };
     reader.readAsText(file, "utf-8");
-  }, [lang]);
+  }, [lang, userIsSubscribed]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -351,11 +692,22 @@ function ToolPage() {
 
   const handleRepair = () => {
     if (!analysis) return;
-    const { fixed, repaired } = repairDxf(fileContent, analysis);
+    const { fixed, repaired, fixSummary: summary } = repairDxf(fileContent, analysis);
     setRepairedContent(fixed);
     setRepairedIssues(repaired);
+    setFixSummary(summary);
     saveToHistory(fileName, analysis, true);
     setStage("repaired");
+  };
+
+  const handleDownloadFixed = () => {
+    // Gate: Check if user is subscribed before allowing download
+    if (!userIsSubscribed) {
+      setShowSubscribeModal(true);
+      return;
+    }
+    // Proceed with download
+    downloadFile(repairedContent, fileName.replace(".dxf", "_fixed.dxf"));
   };
 
   const downloadFile = (content: string, name: string) => {
@@ -366,6 +718,12 @@ function ToolPage() {
     a.download = name;
     a.click();
     URL.revokeObjectURL(url);
+
+    // Self-destruct: clear data after download
+    if (selfDestructEnabled) {
+      triggerSelfDestruct([name]);
+      setSelfDestructTriggered(true);
+    }
   };
 
   const downloadReport = () => {
@@ -382,6 +740,9 @@ function ToolPage() {
       `Arcs: ${analysis.stats.arcs}`,
       `Circles: ${analysis.stats.circles}`,
       `Layers: ${analysis.stats.layers.join(", ")}`,
+      `Total perimeter: ${(analysis.totalPerimeter ?? 0).toFixed(2)} mm`,
+      `Processing time: ${analysis.processingTimeMs ?? 0} ms`,
+      `File size reduction: ${analysis.sizeReductionPercent ?? 0}%`,
       "",
       "=== ISSUES ===",
       ...analysis.issues.map(i => `[${i.severity.toUpperCase()}] ${lang === "ar" ? i.ar : i.en}`),
@@ -397,9 +758,88 @@ function ToolPage() {
     setFileName("");
     setRepairedContent("");
     setRepairedIssues([]);
+    setFixSummary([]);
     setProgress(0);
+    setShowCostEstimator(false);
     if (fileRef.current) fileRef.current.value = "";
   };
+
+  // Bulk upload handlers
+  const handleBulkFiles = useCallback((files: FileList | File[]) => {
+    const entries: BulkFileEntry[] = [];
+    for (const file of Array.from(files)) {
+      if (file.name.toLowerCase().endsWith(".dxf")) {
+        entries.push({
+          id: `bulk-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          file,
+          content: "",
+          status: "pending",
+        });
+      }
+    }
+    setBulkFiles(prev => [...prev, ...entries]);
+  }, []);
+
+  const processBulkFiles = useCallback(async () => {
+    setBulkProcessing(true);
+    const pending = bulkFiles.filter(f => f.status === "pending");
+    
+    for (const entry of pending) {
+      setBulkFiles(prev => prev.map(f => f.id === entry.id ? { ...f, status: "analyzing" as const } : f));
+      
+      try {
+        const content = await entry.file.text();
+        const result = analyzeDxf(content);
+        const { fixed, fixSummary: summary } = repairDxf(content, result);
+        
+        setBulkFiles(prev => prev.map(f => f.id === entry.id ? {
+          ...f,
+          content,
+          status: "done" as const,
+          analysis: result,
+          fixedContent: fixed,
+          fixSummary: summary,
+        } : f));
+      } catch (err: any) {
+        setBulkFiles(prev => prev.map(f => f.id === entry.id ? {
+          ...f,
+          status: "error" as const,
+          error: err.message,
+        } : f));
+      }
+    }
+    
+    setBulkProcessing(false);
+  }, [bulkFiles]);
+
+  const downloadAllBulk = async () => {
+    // Gate: Check if user is subscribed
+    if (!userIsSubscribed) {
+      setShowSubscribeModal(true);
+      return;
+    }
+    const doneFiles = bulkFiles.filter(f => f.status === "done" && f.fixedContent);
+    const filesToZip = doneFiles.map(f => ({
+      name: f.file.name.replace(".dxf", "_fixed.dxf"),
+      content: f.fixedContent!,
+      type: "application/dxf",
+    }));
+    
+    await downloadAllAsZip(filesToZip, "dxfix-bulk-processed.zip");
+
+    if (selfDestructEnabled) {
+      triggerSelfDestruct(filesToZip.map(f => f.name));
+      setSelfDestructTriggered(true);
+    }
+  };
+
+  // Calculate perimeter for cost estimator
+  const perimeter = analysis ? (analysis.totalPerimeter ?? calculateTotalPerimeter(analysis.entities)) : 0;
+  const perimeterMeters = perimeter / 1000;
+  const estimatedCost = perimeterMeters * pricePerMeter;
+
+  // Open loop detection
+  const openLoopData = analysis ? detectOpenLoops(analysis.entities) : { count: 0, openPoints: [] };
 
   return (
     <div dir={isRTL ? "rtl" : "ltr"} className="min-h-screen bg-background text-foreground">
@@ -411,6 +851,25 @@ function ToolPage() {
             DX<span className="text-accent">fix</span>
           </a>
           <div className="flex items-center gap-3">
+            {/* Subscription status badge */}
+            {!userIsSubscribed && (
+              <span className="font-mono text-xs px-2.5 py-1 rounded-full border border-primary/30 text-primary bg-primary/5">
+                {t.freeBanner(freeRemaining)}
+              </span>
+            )}
+            {userIsSubscribed && (
+              <span className="font-mono text-xs px-2.5 py-1 rounded-full border border-accent/30 text-accent bg-accent/5">
+                {t.unlimited}
+              </span>
+            )}
+            {/* Trust button */}
+            <button
+              onClick={() => setShowTrustModal(true)}
+              className="font-mono text-xs px-2.5 py-1.5 rounded-md border border-border hover:border-primary/60 transition text-muted-foreground hover:text-foreground"
+              title={lang === "ar" ? "سياسة الخصوصية" : "Privacy Policy"}
+            >
+              🔒
+            </button>
             <a href="/" className="text-sm text-muted-foreground hover:text-foreground transition">
               {isRTL ? "←" : "→"} {t.nav}
             </a>
@@ -425,6 +884,15 @@ function ToolPage() {
       </header>
 
       <main className="max-w-5xl mx-auto px-5 py-12">
+        {/* FREE USAGE BANNER */}
+        {!userIsSubscribed && freeRemaining > 0 && freeRemaining <= 3 && (
+          <div className="mb-6 rounded-xl border border-primary/30 bg-primary/5 p-4 text-center">
+            <p className="text-sm text-primary font-medium">
+              ⚡ {t.freeBanner(freeRemaining)} — <a href="/pricing" className="underline font-semibold hover:text-primary/80">{t.freeSubscribe}</a>
+            </p>
+          </div>
+        )}
+
         {/* HEADER */}
         <div className="text-center mb-10">
           <h1 className="font-display text-4xl sm:text-5xl font-bold">{t.title}</h1>
@@ -433,93 +901,219 @@ function ToolPage() {
 
         {/* UPLOAD */}
         {stage === "upload" && (
-          <div
-            onDrop={onDrop}
-            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-            onDragLeave={() => setDragging(false)}
-            onClick={() => fileRef.current?.click()}
-            className={`
-              cursor-pointer rounded-2xl border-2 border-dashed transition-all p-16 text-center
-              ${dragging
-                ? "border-accent bg-accent/10 scale-[1.01]"
-                : "border-border hover:border-primary/50 hover:bg-card/60"}
-            `}
-          >
-            <div className="text-6xl mb-5">📁</div>
-            <p className="font-display text-xl font-semibold">{t.dropZone}</p>
-            <p className="mt-3 text-muted-foreground text-sm">{t.dropOr}</p>
-            <div className="mt-4 inline-flex px-6 py-3 rounded-lg bg-accent text-accent-foreground font-semibold shadow-[var(--shadow-spark)] hover:opacity-90 transition">
-              {t.dropBtn}
+          <>
+            <div
+              onDrop={onDrop}
+              onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+              onDragLeave={() => setDragging(false)}
+              onClick={() => fileRef.current?.click()}
+              className={`
+                cursor-pointer rounded-2xl border-2 border-dashed transition-all p-16 text-center
+                ${dragging
+                  ? "border-accent bg-accent/10 scale-[1.01]"
+                  : "border-border hover:border-primary/50 hover:bg-card/60"}
+              `}
+            >
+              <div className="text-6xl mb-5">📁</div>
+              <p className="font-display text-xl font-semibold">{t.dropZone}</p>
+              <p className="mt-3 text-muted-foreground text-sm">{t.dropOr}</p>
+              <div className="mt-4 inline-flex px-6 py-3 rounded-lg bg-accent text-accent-foreground font-semibold shadow-[var(--shadow-spark)] hover:opacity-90 transition">
+                {t.dropBtn}
+              </div>
+              <p className="mt-5 font-mono text-xs text-muted-foreground/60">{t.dropNote}</p>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".dxf"
+                className="hidden"
+                onChange={onFileChange}
+              />
             </div>
-            <p className="mt-5 font-mono text-xs text-muted-foreground/60">{t.dropNote}</p>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".dxf"
-              className="hidden"
-              onChange={onFileChange}
-            />
-          </div>
-        )}
 
-        {/* FILE HISTORY */}
-        {stage === "upload" && (
-          <div className="mt-8">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-display font-semibold text-sm text-muted-foreground uppercase tracking-wider">
-                📋 {t.historyTitle}
-              </h3>
-              {history.length > 0 && (
-                <button
-                  onClick={clearHistory}
-                  className="font-mono text-xs text-muted-foreground/60 hover:text-destructive transition"
+            {/* Self-Destruct Toggle */}
+            <div className="mt-4 flex items-center justify-center">
+              <label className="flex items-center gap-3 cursor-pointer group">
+                <div
+                  onClick={() => setSelfDestructEnabled(!selfDestructEnabled)}
+                  className={`relative w-12 h-6 rounded-full transition-colors ${
+                    selfDestructEnabled ? "bg-red-500" : "bg-border"
+                  }`}
                 >
-                  {t.historyClear}
-                </button>
+                  <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+                    selfDestructEnabled ? "translate-x-6" : "translate-x-0.5"
+                  }`} />
+                </div>
+                <span className="text-sm text-muted-foreground group-hover:text-foreground transition">
+                  🔒 {t.selfDestructToggle}
+                </span>
+              </label>
+            </div>
+            {selfDestructEnabled && (
+              <div className="mt-2 text-center">
+                <span className="font-mono text-xs text-red-400 bg-red-500/10 px-3 py-1 rounded-full border border-red-500/30">
+                  ⚠ {t.selfDestructNotice}
+                </span>
+              </div>
+            )}
+            {selfDestructTriggered && (
+              <div className="mt-2 text-center">
+                <span className="font-mono text-xs text-green-400 bg-green-500/10 px-3 py-1 rounded-full border border-green-500/30">
+                  {t.selfDestructTriggered}
+                </span>
+              </div>
+            )}
+
+            {/* Bulk Upload Section */}
+            <div className="mt-6">
+              <button
+                onClick={() => setShowBulkUpload(!showBulkUpload)}
+                className="w-full py-3 rounded-xl border border-dashed border-border hover:border-primary/50 hover:bg-card/60 transition text-sm text-muted-foreground hover:text-foreground font-medium"
+              >
+                📦 {t.bulkUpload} {showBulkUpload ? "▲" : "▼"}
+              </button>
+
+              {showBulkUpload && (
+                <div className="mt-4 rounded-2xl border border-border bg-card p-6">
+                  <div
+                    onDrop={(e) => { e.preventDefault(); handleBulkFiles(e.dataTransfer.files); }}
+                    onDragOver={(e) => e.preventDefault()}
+                    className="border-2 border-dashed border-border rounded-xl p-8 text-center hover:border-primary/50 transition cursor-pointer"
+                    onClick={() => {
+                      const input = document.createElement('input');
+                      input.type = 'file';
+                      input.accept = '.dxf,.zip';
+                      input.multiple = true;
+                      input.onchange = (e) => {
+                        const files = (e.target as HTMLInputElement).files;
+                        if (files) handleBulkFiles(files);
+                      };
+                      input.click();
+                    }}
+                  >
+                    <div className="text-4xl mb-3">📦</div>
+                    <p className="font-display font-semibold">{t.bulkDropZone}</p>
+                    <p className="mt-2 font-mono text-xs text-muted-foreground">{t.bulkNote}</p>
+                  </div>
+
+                  {bulkFiles.length > 0 && (
+                    <div className="mt-6">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-display font-semibold">{t.bulkTableTitle} ({bulkFiles.length})</h3>
+                        <div className="flex gap-2">
+                          {bulkFiles.some(f => f.status === "pending") && (
+                            <button
+                              onClick={processBulkFiles}
+                              disabled={bulkProcessing}
+                              className="px-4 py-2 rounded-lg bg-accent text-accent-foreground font-semibold text-sm hover:opacity-90 transition disabled:opacity-50"
+                            >
+                              {bulkProcessing ? "⏳ ..." : "🔧 معالجة"}
+                            </button>
+                          )}
+                          {bulkFiles.some(f => f.status === "done") && (
+                            <button
+                              onClick={downloadAllBulk}
+                              className="px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition"
+                            >
+                              ⬇ {t.bulkDownloadAll}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div className="space-y-2 max-h-60 overflow-y-auto">
+                        {bulkFiles.map((entry) => (
+                          <div key={entry.id} className="flex items-center gap-3 p-3 rounded-xl border border-border/60 bg-background">
+                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                              entry.status === "done" ? "bg-green-400" :
+                              entry.status === "analyzing" ? "bg-yellow-400 animate-pulse" :
+                              entry.status === "error" ? "bg-red-400" : "bg-muted-foreground/30"
+                            }`} />
+                            <span className="flex-1 font-mono text-sm truncate">{entry.file.name}</span>
+                            <span className={`font-mono text-xs px-2 py-0.5 rounded ${
+                              entry.status === "done" ? "bg-green-500/10 text-green-400" :
+                              entry.status === "analyzing" ? "bg-yellow-500/10 text-yellow-400" :
+                              entry.status === "error" ? "bg-red-500/10 text-red-400" :
+                              "bg-muted/30 text-muted-foreground"
+                            }`}>
+                              {entry.status === "done" ? t.bulkStatusDone :
+                               entry.status === "analyzing" ? t.bulkStatusAnalyzing :
+                               entry.status === "error" ? t.bulkStatusError :
+                               t.bulkStatusPending}
+                            </span>
+                            {entry.analysis && (
+                              <span className={`font-mono text-xs ${
+                                entry.analysis.score >= 80 ? "text-green-400" :
+                                entry.analysis.score >= 50 ? "text-yellow-400" : "text-red-400"
+                              }`}>
+                                {entry.analysis.score}/100
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 
-            {history.length === 0 ? (
-              <p className="font-mono text-xs text-muted-foreground/50 text-center py-6 border border-dashed border-border rounded-xl">
-                {t.historyEmpty}
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {history.map((entry) => {
-                  const color =
-                    entry.score >= 80 ? "text-green-400" :
-                    entry.score >= 50 ? "text-yellow-400" : "text-red-400";
-                  const bg =
-                    entry.score >= 80 ? "border-green-400/20 bg-green-400/5" :
-                    entry.score >= 50 ? "border-yellow-400/20 bg-yellow-400/5" :
-                                        "border-red-400/20 bg-red-400/5";
-                  return (
-                    <div
-                      key={entry.id}
-                      className={`flex items-center gap-4 rounded-xl border px-4 py-3 ${bg}`}
-                    >
-                      <div className={`font-display font-bold text-2xl min-w-[3rem] text-center ${color}`}>
-                        {entry.score}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-mono text-sm font-semibold truncate">{entry.fileName}</p>
-                        <p className="font-mono text-xs text-muted-foreground mt-0.5">
-                          {entry.totalEntities} {t.historyEntities} · {entry.layers} {t.historyLayers}
-                          {entry.issueCount > 0 && ` · ${entry.issueCount} ${t.historyIssues}`}
-                          {entry.wasRepaired && (
-                            <span className="ml-2 text-green-400">✓ {t.historyRepaired}</span>
-                          )}
-                        </p>
-                      </div>
-                      <div className="font-mono text-xs text-muted-foreground/50 shrink-0 text-end">
-                        {entry.date}
-                      </div>
-                    </div>
-                  );
-                })}
+            {/* FILE HISTORY */}
+            <div className="mt-8">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-display font-semibold text-sm text-muted-foreground uppercase tracking-wider">
+                  📋 {t.historyTitle}
+                </h3>
+                {history.length > 0 && (
+                  <button
+                    onClick={clearHistory}
+                    className="font-mono text-xs text-muted-foreground/60 hover:text-destructive transition"
+                  >
+                    {t.historyClear}
+                  </button>
+                )}
               </div>
-            )}
-          </div>
+
+              {history.length === 0 ? (
+                <p className="font-mono text-xs text-muted-foreground/50 text-center py-6 border border-dashed border-border rounded-xl">
+                  {t.historyEmpty}
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {history.map((entry) => {
+                    const color =
+                      entry.score >= 80 ? "text-green-400" :
+                      entry.score >= 50 ? "text-yellow-400" : "text-red-400";
+                    const bg =
+                      entry.score >= 80 ? "border-green-400/20 bg-green-400/5" :
+                      entry.score >= 50 ? "border-yellow-400/20 bg-yellow-400/5" :
+                                          "border-red-400/20 bg-red-400/5";
+                    return (
+                      <div
+                        key={entry.id}
+                        className={`flex items-center gap-4 rounded-xl border px-4 py-3 ${bg}`}
+                      >
+                        <div className={`font-display font-bold text-2xl min-w-[3rem] text-center ${color}`}>
+                          {entry.score}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-mono text-sm font-semibold truncate">{entry.fileName}</p>
+                          <p className="font-mono text-xs text-muted-foreground mt-0.5">
+                            {entry.totalEntities} {t.historyEntities} · {entry.layers} {t.historyLayers}
+                            {entry.issueCount > 0 && ` · ${entry.issueCount} ${t.historyIssues}`}
+                            {entry.wasRepaired && (
+                              <span className="mr-2 text-green-400">✓ {t.historyRepaired}</span>
+                            )}
+                          </p>
+                        </div>
+                        <div className="font-mono text-xs text-muted-foreground/50 shrink-0 text-end">
+                          {entry.date}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </>
         )}
 
         {/* ANALYZING */}
@@ -560,7 +1154,7 @@ function ToolPage() {
               </div>
               {stage === "repaired" && (
                 <button
-                  onClick={() => downloadFile(repairedContent, fileName.replace(".dxf", "_fixed.dxf"))}
+                  onClick={handleDownloadFixed}
                   className="px-6 py-3.5 rounded-xl bg-accent text-accent-foreground font-semibold hover:opacity-90 transition shadow-[var(--shadow-spark)] whitespace-nowrap"
                 >
                   ⬇ {t.downloadFixed}
@@ -571,8 +1165,141 @@ function ToolPage() {
             {/* SVG Preview */}
             {(() => {
               const issueIndices = new Set(analysis.issues.flatMap(i => i.entityIndices));
-              return <DxfPreview analysis={analysis} issueIndices={issueIndices} lang={lang} />;
+              return <DxfPreview analysis={analysis} issueIndices={issueIndices} lang={lang} openPoints={openLoopData.openPoints} />;
             })()}
+
+            {/* Open Loops Count */}
+            {openLoopData.count > 0 && (
+              <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-4 text-center">
+                <p className="text-sm font-medium text-red-400">
+                  🟡 {t.openLoopsDetected}: <span className="font-bold">{openLoopData.count}</span>
+                </p>
+              </div>
+            )}
+
+            {/* Processing Metrics Dashboard */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="rounded-2xl border border-accent/30 bg-gradient-to-br from-accent/5 to-card p-5 text-center">
+                <div className="text-2xl mb-2">⚡</div>
+                <p className="font-display text-2xl font-bold text-accent">
+                  {analysis.processingTimeMs ?? 0} <span className="text-sm font-normal text-muted-foreground">ms</span>
+                </p>
+                <p className="font-mono text-xs text-muted-foreground mt-1">{t.processingTime}</p>
+              </div>
+              <div className="rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/5 to-card p-5 text-center">
+                <div className="text-2xl mb-2">📦</div>
+                <p className="font-display text-2xl font-bold text-primary">
+                  {analysis.sizeReductionPercent ?? 0}%
+                </p>
+                <p className="font-mono text-xs text-muted-foreground mt-1">{t.fileSizeReduction}</p>
+              </div>
+            </div>
+
+            {/* Machine Safety & G-Code Verification Badge */}
+            <div className="rounded-2xl border border-green-500/30 bg-gradient-to-br from-green-500/5 to-card p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-green-500/20 flex items-center justify-center text-xl">
+                  🛡
+                </div>
+                <div>
+                  <h3 className="font-display font-bold text-lg text-green-400">{t.safetyTitle}</h3>
+                </div>
+              </div>
+              <div className="space-y-3">
+                <div className="flex items-center gap-3 p-3 rounded-xl bg-green-500/10 border border-green-500/20">
+                  <span className="w-6 h-6 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center text-sm flex-shrink-0">✓</span>
+                  <span className="text-sm text-foreground/90">{t.safetyBoundingBox}</span>
+                </div>
+                <div className="flex items-center gap-3 p-3 rounded-xl bg-green-500/10 border border-green-500/20">
+                  <span className="w-6 h-6 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center text-sm flex-shrink-0">✓</span>
+                  <span className="text-sm text-foreground/90">{t.safetyNoJerk}</span>
+                </div>
+                <div className="flex items-center gap-3 p-3 rounded-xl bg-green-500/10 border border-green-500/20">
+                  <span className="w-6 h-6 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center text-sm flex-shrink-0">✓</span>
+                  <span className="text-sm text-foreground/90">{t.safetyCompliant}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Fix Summary Widget */}
+            {stage === "repaired" && fixSummary.length > 0 && (
+              <div className="rounded-2xl border border-accent/30 bg-gradient-to-br from-accent/5 to-card p-6">
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="w-10 h-10 rounded-xl bg-accent/20 flex items-center justify-center text-xl">
+                    📋
+                  </div>
+                  <div>
+                    <h3 className="font-display font-bold text-lg">{t.fixSummaryTitle}</h3>
+                    <p className="text-xs text-muted-foreground">{t.fixSummarySub}</p>
+                  </div>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {fixSummary.map((item) => (
+                    <div key={item.id} className="bg-background border border-border/60 rounded-xl p-4 flex items-start gap-3">
+                      <span className="text-xl flex-shrink-0">{item.icon}</span>
+                      <div>
+                        <p className="text-sm font-medium">{lang === "ar" ? item.ar : item.en}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{item.detail}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Cost Estimator */}
+            <div className="rounded-2xl border border-border bg-card overflow-hidden">
+              <button
+                onClick={() => setShowCostEstimator(!showCostEstimator)}
+                className="w-full px-6 py-4 flex items-center justify-between hover:bg-muted/20 transition"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">💰</span>
+                  <span className="font-display font-semibold">{t.costTitle}</span>
+                </div>
+                <span className="text-muted-foreground">{showCostEstimator ? "▲" : "▼"}</span>
+              </button>
+              {showCostEstimator && (
+                <div className="px-6 pb-6 space-y-4">
+                  <p className="text-sm text-muted-foreground">{t.costSub}</p>
+                  
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div className="bg-background border border-border/60 rounded-xl p-4">
+                      <p className="text-xs text-muted-foreground font-mono mb-1">{t.totalLength}</p>
+                      <p className="font-display text-2xl font-bold text-primary">
+                        {perimeter.toFixed(0)} <span className="text-sm font-normal text-muted-foreground">mm</span>
+                      </p>
+                      <p className="font-mono text-xs text-muted-foreground">
+                        {(perimeterMeters).toFixed(2)} m
+                      </p>
+                    </div>
+                    <div className="bg-background border border-border/60 rounded-xl p-4">
+                      <p className="text-xs text-muted-foreground font-mono mb-1">{t.pricePerMeter}</p>
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">$</span>
+                        <input
+                          type="number"
+                          min="0.1"
+                          step="0.5"
+                          value={pricePerMeter}
+                          onChange={(e) => setPricePerMeter(parseFloat(e.target.value) || 0)}
+                          className="w-20 bg-transparent border-b border-border text-foreground font-display text-2xl font-bold focus:outline-none focus:border-accent"
+                          dir="ltr"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-gradient-to-r from-accent/10 to-primary/10 border border-accent/30 rounded-xl p-5 text-center">
+                    <p className="text-xs text-muted-foreground font-mono mb-1">{t.estimatedCost}</p>
+                    <p className="font-display text-4xl font-bold text-gradient-spark">
+                      ${estimatedCost.toFixed(2)}
+                    </p>
+                    <p className="font-mono text-xs text-muted-foreground mt-2">{t.costNote}</p>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Stats */}
             <div className="rounded-2xl border border-border bg-card p-6">
@@ -696,7 +1423,13 @@ function ToolPage() {
               )}
               {stage === "result" && analysis.issues.length === 0 && (
                 <button
-                  onClick={() => downloadFile(fileContent, fileName)}
+                  onClick={() => {
+                    if (!userIsSubscribed) {
+                      setShowSubscribeModal(true);
+                      return;
+                    }
+                    downloadFile(fileContent, fileName);
+                  }}
                   className="px-6 py-2.5 rounded-lg bg-accent text-accent-foreground font-semibold text-sm hover:opacity-90 transition shadow-[var(--shadow-spark)]"
                 >
                   ⬇ {lang === "ar" ? "تحميل الملف" : "Download file"}
@@ -704,7 +1437,7 @@ function ToolPage() {
               )}
               {stage === "repaired" && (
                 <button
-                  onClick={() => downloadFile(repairedContent, fileName.replace(".dxf", "_fixed.dxf"))}
+                  onClick={handleDownloadFixed}
                   className="px-6 py-2.5 rounded-lg bg-accent text-accent-foreground font-semibold text-sm hover:opacity-90 transition shadow-[var(--shadow-spark)]"
                 >
                   ⬇ {t.downloadFixed}
@@ -714,6 +1447,74 @@ function ToolPage() {
           </div>
         )}
       </main>
+
+      {/* Trust & Privacy Modal */}
+      {showTrustModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+          <div className="relative bg-card border border-accent/40 rounded-2xl p-8 max-w-lg w-full shadow-[var(--shadow-spark)]">
+            <button
+              onClick={() => setShowTrustModal(false)}
+              className="absolute top-4 end-4 text-muted-foreground hover:text-foreground transition font-mono text-lg"
+            >✕</button>
+            <div className="text-4xl mb-4 text-center">🔒</div>
+            <h3 className="font-display text-2xl font-bold text-center mb-6">{t.trustTitle}</h3>
+            <div className="space-y-4">
+              <div className="flex items-start gap-3 p-4 rounded-xl bg-green-500/5 border border-green-500/20">
+                <span className="text-green-400 text-lg flex-shrink-0">✓</span>
+                <p className="text-sm text-foreground/90">{t.trustPoint1}</p>
+              </div>
+              <div className="flex items-start gap-3 p-4 rounded-xl bg-green-500/5 border border-green-500/20">
+                <span className="text-green-400 text-lg flex-shrink-0">✓</span>
+                <p className="text-sm text-foreground/90">{t.trustPoint2}</p>
+              </div>
+              <div className="flex items-start gap-3 p-4 rounded-xl bg-green-500/5 border border-green-500/20">
+                <span className="text-green-400 text-lg flex-shrink-0">✓</span>
+                <p className="text-sm text-foreground/90">{t.trustPoint3}</p>
+              </div>
+            </div>
+            <div className="mt-6 text-center">
+              <button
+                onClick={() => setShowTrustModal(false)}
+                className="px-6 py-2.5 rounded-lg bg-accent text-accent-foreground font-semibold text-sm hover:opacity-90 transition"
+              >
+                {t.trustBtn}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Feedback Modal */}
+      <FeedbackModal lang={lang} />
+
+      {/* Subscription Required Modal (Download Gating) */}
+      {showSubscribeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+          <div className="relative bg-card border border-accent/40 rounded-2xl p-8 max-w-md w-full shadow-[var(--shadow-spark)] text-center">
+            <button
+              onClick={() => setShowSubscribeModal(false)}
+              className="absolute top-4 end-4 text-muted-foreground hover:text-foreground transition font-mono text-lg"
+            >✕</button>
+            <div className="text-5xl mb-4">🔒</div>
+            <h3 className="font-display text-2xl font-bold mb-3">{t.subscribeRequired}</h3>
+            <p className="text-muted-foreground mb-6">{t.subscribePrompt}</p>
+            <div className="flex flex-col gap-3">
+              <a
+                href="/pricing"
+                className="w-full py-3.5 rounded-lg bg-accent text-accent-foreground font-semibold hover:opacity-90 transition shadow-[var(--shadow-spark)] text-center"
+              >
+                {t.subscribeBtn} {isRTL ? "←" : "→"}
+              </a>
+              <button
+                onClick={() => setShowSubscribeModal(false)}
+                className="w-full py-3 rounded-lg border border-border hover:border-primary/60 font-semibold text-sm transition"
+              >
+                {lang === "ar" ? "ربما لاحقاً" : "Maybe later"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

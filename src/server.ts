@@ -41,8 +41,21 @@ export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
       const handler = await getServerEntry();
-      const response = await handler.fetch(request, env, ctx);
-      return await normalizeCatastrophicSsrResponse(response);
+      let response = await handler.fetch(request, env, ctx);
+      response = await normalizeCatastrophicSsrResponse(response);
+      
+      const headers = new Headers(response.headers);
+      
+      // Disable CSP completely for development - Paddle needs full access
+      headers.delete("content-security-policy");
+      headers.delete("content-security-policy-report-only");
+      headers.delete("x-content-security-policy");
+      
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      });
     } catch (error) {
       console.error(error);
       return new Response(renderErrorPage(), {

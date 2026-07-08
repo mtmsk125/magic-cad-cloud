@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import heroImg from "@/assets/hero-cnc.jpg";
 import { openCheckout } from "@/lib/paddle";
+import { ReviewsCarousel } from "@/components/reviews-carousel";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -105,7 +106,7 @@ const T = {
         price: "$0",
         period: "للأبد",
         desc: "مثالي للتجربة والاستخدام الخفيف.",
-        items: ["5 ملفات / شهر", "فحص الأخطاء الأساسية", "تصدير DXF نظيف", "واجهة عربية كاملة"],
+        items: ["معاينة بصرية للملف", "تقرير بالمشاكل المكتشفة (دون إصلاح)", "إحصائيات العناصر الأساسية"],
         cta: "ابدأ مجاناً",
         highlight: false,
         priceId: null,
@@ -115,20 +116,20 @@ const T = {
         price: "$19",
         period: "/ شهر",
         desc: "للمشغّل اليومي الذي يرفع ملفات باستمرار.",
-        items: ["ملفات غير محدودة", "كل أدوات الإصلاح", "تقرير PDF قابل للطباعة", "دعم بالبريد خلال 24 ساعة", "بدون علامة مائية"],
+        items: ["إصلاح وتحميل ملفات DXF مصلحة", "حاسبة تكلفة القص التقديرية", "محاكاة حركة رأس الماكينة 3D", "تصدير بصيغ SVG و PDF"],
         cta: "اشترك في Pro",
         highlight: true,
         priceId: import.meta.env.VITE_PADDLE_PRO_PRICE_ID,
       },
       {
-        name: "ورشة",
+        name: "Enterprise",
         price: "$49",
         period: "/ شهر",
-        desc: "للمصانع والورش الكبيرة التي تحتاج API.",
-        items: ["كل مزايا Pro", "API للدمج مع برامجك", "حتى 5 مستخدمين", "تقرير مخصص بشعارك", "ردود أسبوعية بالبريد"],
-        cta: "اشترك في ورشة",
+        desc: "للمصانع والورش الكبيرة التي تحتاج معالجة جماعية.",
+        items: ["معالجة جماعية للملفات (Bulk / Zip)", "ميزة الترتيب الذكي لتقليل الهدر (Nesting)", "التدمير الذاتي وحذف الملفات الفوري"],
+        cta: "تواصل معنا",
         highlight: false,
-        priceId: import.meta.env.VITE_PADDLE_WORKSHOP_PRICE_ID,
+        priceId: null,
       },
     ] as const,
     pricingNote: "* الدفع آمن عبر Paddle. يمكن الإلغاء في أي وقت. المبالغ بالدولار الأمريكي.",
@@ -209,7 +210,7 @@ const T = {
         price: "$0",
         period: "forever",
         desc: "Perfect for trying it out or occasional use.",
-        items: ["5 files / month", "Basic error checking", "Clean DXF export", "Full Arabic UI"],
+        items: ["Visual file preview", "Issue detection report (no repair)", "Basic entity statistics"],
         cta: "Start free",
         highlight: false,
         priceId: null,
@@ -219,20 +220,20 @@ const T = {
         price: "$19",
         period: "/ month",
         desc: "For the daily operator who uploads files constantly.",
-        items: ["Unlimited files", "All repair tools", "Printable PDF report", "Email support within 24h", "No watermark"],
+        items: ["Repair & download fixed DXF files", "Cutting cost estimator", "3D CNC toolpath simulation", "Export to SVG and PDF"],
         cta: "Subscribe to Pro",
         highlight: true,
         priceId: import.meta.env.VITE_PADDLE_PRO_PRICE_ID,
       },
       {
-        name: "Workshop",
+        name: "Enterprise",
         price: "$49",
         period: "/ month",
-        desc: "For factories and large shops that need API access.",
-        items: ["Everything in Pro", "API for integration", "Up to 5 users", "Branded PDF report", "Weekly email reports"],
-        cta: "Subscribe to Workshop",
+        desc: "For factories and large shops needing bulk processing.",
+        items: ["Bulk file processing (Bulk / Zip)", "Smart nesting optimization to reduce waste", "Self-destruct & instant file deletion"],
+        cta: "Contact Us",
         highlight: false,
-        priceId: import.meta.env.VITE_PADDLE_WORKSHOP_PRICE_ID,
+        priceId: null,
       },
     ] as const,
     pricingNote: "* Payments secured by Paddle. Cancel anytime. Prices in USD.",
@@ -387,7 +388,7 @@ function Index() {
             >✕</button>
             <div className="text-4xl mb-4">⏳</div>
             <h3 className="font-display text-2xl font-bold">
-              {lang === "ar" ? "لحظة قبل ما تروح!" : "Wait before you go!"}
+              {lang === "ar" ? "اشترك بنشرتنا البريدية لتصلك آخر التحديثات والأدوات" : "Subscribe to our newsletter for the latest updates and tools"}
             </h3>
             <p className="mt-3 text-muted-foreground">
               {lang === "ar"
@@ -604,15 +605,15 @@ function Index() {
               <div>
                 <p className="font-display font-bold text-lg">{plan.name}</p>
                 <div className="mt-3 flex items-baseline gap-2">
-                  <span className={`font-display text-5xl font-bold ${plan.highlight ? "text-gradient-spark" : ""}`}>{plan.price}</span>
-                  <span className="text-muted-foreground font-mono text-sm">{plan.period}</span>
+                  <span className={`font-display text-5xl font-bold ${plan.highlight ? "text-gradient-spark" : "text-foreground"}`}>{plan.price}</span>
+                  <span className="text-muted-foreground/80 font-mono text-sm">{plan.period}</span>
                 </div>
-                <p className="mt-3 text-sm text-muted-foreground">{plan.desc}</p>
+                <p className="mt-3 text-sm text-foreground/80">{plan.desc}</p>
               </div>
 
               <ul className="mt-7 space-y-3 flex-1">
                 {plan.items.map((item) => (
-                  <li key={item} className="flex items-center gap-3 text-sm">
+                  <li key={item} className="flex items-center gap-3 text-sm text-foreground/90">
                     <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs flex-shrink-0 ${plan.highlight ? "bg-accent/20 text-accent" : "bg-primary/10 text-primary"}`}>✓</span>
                     {item}
                   </li>
@@ -622,8 +623,19 @@ function Index() {
               <div className="mt-8">
                 {plan.priceId ? (
                   <button
-                    onClick={() => openCheckout(plan.priceId!)}
-                    className={`w-full py-3.5 rounded-md font-semibold transition ${
+                    onClick={() => {
+                      try {
+                        console.log("Clicked checkout button for plan:", plan.name, "with priceId:", plan.priceId);
+                        if (!plan.priceId) {
+                          throw new Error("Price ID is not defined for this plan");
+                        }
+                        openCheckout(plan.priceId);
+                      } catch (error) {
+                        console.error("Checkout error:", error);
+                        alert(lang === "ar" ? "عذراً، حدث خطأ. حاول مرة أخرى." : "Sorry, an error occurred. Please try again.");
+                      }
+                    }}
+                    className={`w-full py-3.5 rounded-md font-semibold transition cursor-pointer ${
                       plan.highlight
                         ? "bg-accent text-accent-foreground hover:opacity-90 shadow-[var(--shadow-spark)]"
                         : "border border-border hover:border-primary/60 hover:text-primary"
@@ -665,6 +677,9 @@ function Index() {
           </div>
         </div>
       </section>
+
+      {/* Reviews Carousel */}
+      <ReviewsCarousel lang={lang} />
 
       {/* TESTIMONIALS */}
       <section id="testimonials" className="max-w-7xl mx-auto px-5 sm:px-8 py-24">
