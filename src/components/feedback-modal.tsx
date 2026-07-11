@@ -5,9 +5,11 @@
 
 import { useState } from "react";
 import { submitFeedback } from "@/lib/feedback";
+import { setUserSubscribed } from "@/lib/viral-launch";
 
 interface FeedbackModalProps {
   lang?: "ar" | "en";
+  onRewardUnlocked?: () => void;
 }
 
 const MACHINE_TYPES = {
@@ -69,7 +71,7 @@ function StarRating({ value, onChange }: { value: number; onChange: (v: number) 
   );
 }
 
-export function FeedbackModal({ lang = "ar" }: FeedbackModalProps) {
+export function FeedbackModal({ lang = "ar", onRewardUnlocked }: FeedbackModalProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [name, setName] = useState("");
   const [machineType, setMachineType] = useState("");
@@ -101,6 +103,12 @@ export function FeedbackModal({ lang = "ar" }: FeedbackModalProps) {
         rating,
         message: message.trim(),
       });
+
+      // Reward Hack: If user submits a star rating, award 1 Free Credit
+      if (rating > 0) {
+        setUserSubscribed(true);
+        if (onRewardUnlocked) onRewardUnlocked();
+      }
 
       // Simulate slight delay for UX
       await new Promise(resolve => setTimeout(resolve, 600));

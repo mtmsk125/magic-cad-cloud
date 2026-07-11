@@ -22,15 +22,23 @@ const PLANS = {
     label: 'ورشة',
     price: '$49',
   },
+  enterprise: {
+    priceIds: ['pri_enterprise_monthly', 'pri_enterprise'],
+    label: 'Enterprise',
+    price: '$49',
+  },
 } as const;
 
 /**
  * Detect plan tier from a price ID
  */
-function detectTier(priceId: string): 'pro' | 'workshop' {
+function detectTier(priceId: string): 'pro' | 'workshop' | 'enterprise' {
   const lower = priceId.toLowerCase();
   if (PLANS.workshop.priceIds.some(id => lower.includes(id))) {
     return 'workshop';
+  }
+  if (PLANS.enterprise.priceIds.some(id => lower.includes(id))) {
+    return 'enterprise';
   }
   return 'pro';
 }
@@ -240,12 +248,53 @@ export function openCheckout(priceId: string, email?: string) {
   const tier = detectTier(priceId);
   console.log(`🌊 openCheckout called: tier=${tier}, priceId=${priceId}`);
 
-  // ALWAYS use mock checkout for safe development (showMockCheckout logic enforced)
-  console.log("🧪 Using mock checkout (safe development mode) for tier:", tier, "priceId:", priceId);
+  // Check if real Paddle token is available for actual payments
+  const token = getPaddleToken();
+  const hasRealPaddle = token !== null;
   
-  showMockCheckout(priceId, () => {
-    markAsSubscribed(tier, undefined, undefined, email);
-    console.log("✅ Mock checkout complete - redirecting to /tool");
-    window.location.href = '/tool';
-  });
+  if (hasRealPaddle) {
+    // Use real Paddle checkout
+    console.log("🌊 Using real Paddle checkout for tier:", tier, "priceId:", priceId);
+    
+    // Ensure Paddle is initialized
+    initPaddle();
+    
+    // Small delay to ensure Paddle SDK is loaded
+    setTimeout(() => {
+      if (window.Paddle && window.Paddle.Checkout) {
+        window.Paddle.Checkout.open({
+          items: [{ priceId: priceId, quantity: 1 }],
+          customer: email ? { email } : undefined,
+          settings: {
+            allowLogout: false,
+            displayMode: 'overlay',
+            theme: 'dark',
+          },
+          eventCallback: (event: any) => {
+            if (event.name === 'checkout-completed') {
+              console.log("✅ Paddle checkout completed for tier:", tier);
+              markAsSubscribed(tier, event.data?.customer?.id, event.data?.transaction?.id, email || event.data?.customer?.email);
+              window.location.href = '/tool';
+            }
+          },
+        });
+      } else {
+        console.warn("⚠️ Paddle SDK not loaded yet, falling back to mock checkout");
+        showMockCheckout(priceId, () => {
+          markAsSubscribed(tier, undefined, undefined, email);
+          console.log("✅ Mock checkout complete - redirecting to /tool");
+          window.location.href = '/tool';
+        });
+      }
+    }, 1000); // 1 second delay for Paddle SDK to initialize
+  } else {
+    // No real Paddle token - use mock checkout for development
+    console.log("🧪 Using mock checkout (no Paddle token configured) for tier:", tier, "priceId:", priceId);
+    
+    showMockCheckout(priceId, () => {
+      markAsSubscribed(tier, undefined, undefined, email);
+      console.log("✅ Mock checkout complete - redirecting to /tool");
+      window.location.href = '/tool';
+    });
+  }
 }

@@ -3,6 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { useState, useEffect } from "react";
 import { getFeedbackEntries, approveFeedback, deleteFeedback, getUnapprovedCount } from "@/lib/feedback";
 import type { FeedbackEntry } from "@/lib/feedback";
+import { getViralLaunchStats } from "@/lib/viral-launch";
 
 const ADMIN_PASSWORD = "dxfix2026";
 

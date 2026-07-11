@@ -427,6 +427,115 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.1): DxfAna
           bulge: i < bulgeGroups.length ? parseFloat(bulgeGroups[i].value) : 0,
         });
       }
+    } else if (type === "POLYLINE") {
+      // POLYLINE (old-style) — vertices follow as VERTEX entities, but we parse inline
+      const flagGroup = groups.find(g => g.code === 70);
+      const flags = parseInt(flagGroup?.value ?? "0", 10);
+      entity.closed = (flags & 1) === 1;
+      entity.vertices = [];
+      // Also store layer if not already set
+    } else if (type === "VERTEX") {
+      // VERTEX entity for POLYLINE — coordinates in codes 10,20,30; bulge in 42
+      const x = parseFloat(groups.find(g => g.code === 10)?.value ?? "NaN");
+      const y = parseFloat(groups.find(g => g.code === 20)?.value ?? "NaN");
+      const bulge = parseFloat(groups.find(g => g.code === 42)?.value ?? "0");
+      if (!isNaN(x) && !isNaN(y)) {
+        entity.vertices = entity.vertices || [];
+        entity.vertices.push({ x, y, bulge });
+      }
+    } else if (type === "SPLINE") {
+      // SPLINE — control points or fit points
+      const flagGroup = groups.find(g => g.code === 70);
+      entity.closed = (flagGroup && (parseInt(flagGroup.value, 10) & 1) === 1) ? true : false;
+      entity.vertices = [];
+      const xGroups = groups.filter(g => g.code === 10);
+      const yGroups = groups.filter(g => g.code === 20);
+      // Control points
+      const ctrlX = groups.filter(g => g.code === 11);
+      const ctrlY = groups.filter(g => g.code === 21);
+      const fitX = groups.filter(g => g.code === 12);
+      const fitY = groups.filter(g => g.code === 22);
+      // Prefer fit points, then control points, then raw 10/20 coords
+      let useX = fitX.length > 0 ? fitX : (ctrlX.length > 0 ? ctrlX : xGroups);
+      let useY = fitY.length > 0 ? fitY : (ctrlY.length > 0 ? ctrlY : yGroups);
+      for (let i = 0; i < useX.length; i++) {
+        entity.vertices.push({
+          x: parseFloat(useX[i].value),
+          y: parseFloat(useY[i % useY.length]?.value ?? "0"),
+        });
+      }
+    } else if (type === "ELLIPSE") {
+      // ELLIPSE — center (10,20), major axis endpoint (11,21), axis ratio (40), start/end param (41,42)
+      const cx = parseFloat(groups.find(g => g.code === 10)?.value ?? "0");
+      const cy = parseFloat(groups.find(g => g.code === 20)?.value ?? "0");
+      const mx = parseFloat(groups.find(g => g.code === 11)?.value ?? "0");
+      const my = parseFloat(groups.find(g => g.code === 21)?.value ?? "0");
+      const ratio = parseFloat(groups.find(g => g.code === 40)?.value ?? "1");
+      const startParam = parseFloat(groups.find(g => g.code === 41)?.value ?? "0");
+      const endParam = parseFloat(groups.find(g => g.code === 42)?.value ?? "2*PI");
+      // Store as approximation points for preview
+      entity.cx = cx;
+      entity.cy = cy;
+      entity.radius = Math.sqrt(mx * mx + my * my);
+      entity.startAngle = startParam * 180 / Math.PI;
+      entity.endAngle = endParam === (2 * Math.PI) ? 360 : (endParam * 180 / Math.PI);
+      // For bounds, use center +/- major axis
+      entity.x1 = cx - entity.radius;
+      entity.y1 = cy - entity.radius;
+      entity.x2 = cx + entity.radius;
+      entity.y2 = cy + entity.radius;
+    } else if (type === "INSERT") {
+      // BLOCK reference — we store the block name and insertion point for bounds
+      entity.cx = parseFloat(groups.find(g => g.code === 10)?.value ?? "0");
+      entity.cy = parseFloat(groups.find(g => g.code === 20)?.value ?? "0");
+    } else if (type === "POINT") {
+      // POINT entity — has 10/20 codes
+      entity.x1 = parseFloat(groups.find(g => g.code === 10)?.value ?? "0");
+      entity.y1 = parseFloat(groups.find(g => g.code === 20)?.value ?? "0");
+      entity.x2 = entity.x1;
+      entity.y2 = entity.y1;
+    } else if (type === "SOLID") {
+      // SOLID (3D or 2D filled area) — has 4 corners: 10/20, 11/21, 12/22, 13/23
+      const corners: { x: number; y: number }[] = [];
+      for (const code of [10, 11, 12, 13]) {
+        const x = parseFloat(groups.find(g => g.code === code)?.value ?? "NaN");
+        const y = parseFloat(groups.find(g => g.code === code + 10)?.value ?? "NaN");
+        if (!isNaN(x) && !isNaN(y)) corners.push({ x, y });
+      }
+      if (corners.length >= 2) {
+        entity.vertices = corners;
+        entity.x1 = corners[0].x;
+        entity.y1 = corners[0].y;
+        entity.x2 = corners[corners.length - 1].x;
+        entity.y2 = corners[corners.length - 1].y;
+      }
+    } else if (type === "3DFACE") {
+      // 3DFACE — has 4 corners: 10/20, 11/21, 12/22, 13/23
+      const corners: { x: number; y: number }[] = [];
+      for (const code of [10, 11, 12, 13]) {
+        const x = parseFloat(groups.find(g => g.code === code)?.value ?? "NaN");
+        const y = parseFloat(groups.find(g => g.code === code + 10)?.value ?? "NaN");
+        if (!isNaN(x) && !isNaN(y)) corners.push({ x, y });
+      }
+      if (corners.length >= 2) {
+        entity.vertices = corners;
+        entity.x1 = corners[0].x;
+        entity.y1 = corners[0].y;
+        entity.x2 = corners[corners.length - 1].x;
+        entity.y2 = corners[corners.length - 1].y;
+      }
+    } else if (type === "HATCH") {
+      // HATCH boundaries — store for possible preview
+      entity.cx = parseFloat(groups.find(g => g.code === 10)?.value ?? "0");
+      entity.cy = parseFloat(groups.find(g => g.code === 20)?.value ?? "0");
+    } else if (type === "DIMENSION") {
+      // DIMENSION — definition point at 10/20, text midpoint at 11/21, etc.
+      entity.x1 = parseFloat(groups.find(g => g.code === 10)?.value ?? "0");
+      entity.y1 = parseFloat(groups.find(g => g.code === 20)?.value ?? "0");
+      const dimX2Str = groups.find(g => g.code === 14)?.value;
+      entity.x2 = dimX2Str ? parseFloat(dimX2Str) : (entity.x1 ?? 0);
+      const dimY2Str = groups.find(g => g.code === 24)?.value;
+      entity.y2 = dimY2Str ? parseFloat(dimY2Str) : (entity.y1 ?? 0);
     }
     entities.push(entity);
   }
@@ -823,7 +932,7 @@ export function getDxfBounds(entities: DxfEntity[]): DxfBounds | null {
     if (y > maxY) maxY = y;
   }
 
-  for (const e of entities) {
+  function expandEntity(e: DxfEntity) {
     if (e.type === "LINE") {
       expand(e.x1 ?? 0, e.y1 ?? 0);
       expand(e.x2 ?? 0, e.y2 ?? 0);
@@ -833,8 +942,29 @@ export function getDxfBounds(entities: DxfEntity[]): DxfBounds | null {
       expand(cx + r, cy + r);
     } else if (e.type === "LWPOLYLINE" && e.vertices) {
       for (const v of e.vertices) expand(v.x, v.y);
+    } else if (e.type === "POLYLINE" && e.vertices) {
+      for (const v of e.vertices) expand(v.x, v.y);
+    } else if (e.type === "SPLINE" && e.vertices) {
+      for (const v of e.vertices) expand(v.x, v.y);
+    } else if (e.type === "ELLIPSE") {
+      const cx = e.cx ?? 0, cy = e.cy ?? 0, r = e.radius ?? 0;
+      expand(cx - r, cy - r);
+      expand(cx + r, cy + r);
+    } else if ((e.type === "SOLID" || e.type === "3DFACE") && e.vertices) {
+      for (const v of e.vertices) expand(v.x, v.y);
+    } else if (e.type === "POINT") {
+      expand(e.x1 ?? 0, e.y1 ?? 0);
+    } else if (e.type === "INSERT") {
+      expand(e.cx ?? 0, e.cy ?? 0);
+    } else if (e.type === "DIMENSION") {
+      expand(e.x1 ?? 0, e.y1 ?? 0);
+      expand(e.x2 ?? 0, e.y2 ?? 0);
+    } else if (e.type === "HATCH") {
+      expand(e.cx ?? 0, e.cy ?? 0);
     }
   }
+
+  for (const e of entities) expandEntity(e);
 
   if (!found) return null;
   return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
@@ -866,6 +996,14 @@ export function buildSvgPaths(entities: DxfEntity[], bounds: DxfBounds): SvgPath
     return `M ${x1} ${y1} A ${r} ${r} 0 ${large} 0 ${x2} ${y2}`;
   }
 
+  function polylinePath(verts: DxfVertex[], closed: boolean | undefined): string {
+    if (!verts || verts.length < 1) return "";
+    const pts = verts.map(v => `${v.x},${flipY(v.y)}`);
+    let d = `M ${pts[0]} L ${pts.slice(1).join(" L ")}`;
+    if (closed) d += " Z";
+    return d;
+  }
+
   for (let i = 0; i < entities.length; i++) {
     const e = entities[i];
     let d = "";
@@ -879,10 +1017,33 @@ export function buildSvgPaths(entities: DxfEntity[], bounds: DxfBounds): SvgPath
       d = `M ${cx - r} ${cy} A ${r} ${r} 0 1 0 ${cx + r} ${cy} A ${r} ${r} 0 1 0 ${cx - r} ${cy}`;
     } else if (e.type === "ARC") {
       d = arcPath(e.cx ?? 0, e.cy ?? 0, e.radius ?? 0, e.startAngle ?? 0, e.endAngle ?? 0);
-    } else if (e.type === "LWPOLYLINE" && e.vertices && e.vertices.length > 1) {
-      const pts = e.vertices.map(v => `${v.x},${flipY(v.y)}`);
-      d = `M ${pts[0]} L ${pts.slice(1).join(" L ")}`;
-      if (e.closed) d += " Z";
+    } else if (e.type === "LWPOLYLINE" && e.vertices && e.vertices.length > 0) {
+      d = polylinePath(e.vertices, e.closed);
+    } else if (e.type === "POLYLINE" && e.vertices && e.vertices.length > 0) {
+      d = polylinePath(e.vertices, e.closed);
+    } else if (e.type === "SPLINE" && e.vertices && e.vertices.length > 0) {
+      d = polylinePath(e.vertices, e.closed);
+    } else if (e.type === "ELLIPSE") {
+      const cx = e.cx ?? 0, cy = flipY(e.cy ?? 0);
+      const rx = e.radius ?? 1;
+      const ry = rx * 0.6; // approximate ratio
+      const startDeg = e.startAngle ?? 0;
+      const endDeg = e.endAngle ?? 360;
+      if (endDeg - startDeg >= 360) {
+        // Full ellipse = two arcs
+        d = `M ${cx - rx} ${cy} A ${rx} ${ry} 0 1 0 ${cx + rx} ${cy} A ${rx} ${ry} 0 1 0 ${cx - rx} ${cy}`;
+      } else {
+        d = arcPath(e.cx ?? 0, e.cy ?? 0, e.radius ?? 1, startDeg, endDeg);
+      }
+    } else if (e.type === "POINT") {
+      const x = e.x1 ?? 0, y = flipY(e.y1 ?? 0);
+      d = `M ${x - 2} ${y} L ${x + 2} ${y} M ${x} ${y - 2} L ${x} ${y + 2}`; // small crosshair
+    } else if ((e.type === "SOLID" || e.type === "3DFACE") && e.vertices && e.vertices.length >= 2) {
+      d = polylinePath(e.vertices, true);
+    } else if (e.type === "DIMENSION") {
+      const x1 = e.x1 ?? 0, y1 = flipY(e.y1 ?? 0);
+      const x2 = e.x2 ?? 0, y2 = flipY(e.y2 ?? 0);
+      d = `M ${x1} ${y1} L ${x2} ${y2}`;
     }
 
     if (d) paths.push({ d, entityIndex: i, type: e.type, layer: e.layer });

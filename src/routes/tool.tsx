@@ -5,6 +5,9 @@ import type { DxfAnalysis, DxfIssue, FixSummaryItem, DxfBounds, SvgPath } from "
 import { getSubscriptionData, isSubscribed, getFreeUsageCount, incrementFreeUsage, FREE_USAGE_LIMIT } from "@/lib/subscription";
 import { downloadAllAsZip, triggerSelfDestruct, isSelfDestructTriggered } from "@/lib/zip-export";
 import { FeedbackModal } from "@/components/feedback-modal";
+import { ViralUnlockModal } from "@/components/viral-unlock-modal";
+import { SafetyBadge } from "@/components/safety-badge";
+import { getUserSubscribed as isViralUnlocked, setUserSubscribed } from "@/lib/viral-launch";
 
 interface HistoryEntry {
   id: string;
@@ -362,9 +365,9 @@ export const Route = createFileRoute("/tool")({
     const canAccess = userIsSubscribed || freeUsageCount < FREE_USAGE_LIMIT;
 
     if (!canAccess) {
-      console.warn("❌ No free uses remaining - redirecting to /pricing");
+      console.warn("❌ No free uses remaining - redirecting to /?redirect=pricing");
       throw redirect({
-        to: "/pricing",
+        to: "/",
         search: { redirect: "tool" },
       });
     }
@@ -413,6 +416,10 @@ function ToolPage() {
 
   // Subscription prompt modal for download gating
   const [showSubscribeModal, setShowSubscribeModal] = useState(false);
+
+  // Viral Unlock Modal (Phase 1 - replaces old subscribe modal for free users)
+  const [showViralUnlockModal, setShowViralUnlockModal] = useState(false);
+  const [viralUnlocked, setViralUnlocked] = useState(false);
 
   // Bulk upload state
   const [bulkFiles, setBulkFiles] = useState<BulkFileEntry[]>([]);
@@ -703,7 +710,8 @@ function ToolPage() {
   const handleDownloadFixed = () => {
     // Gate: Check if user is subscribed before allowing download
     if (!userIsSubscribed) {
-      setShowSubscribeModal(true);
+      // Phase 1: Show viral unlock modal instead of old subscribe modal
+      setShowViralUnlockModal(true);
       return;
     }
     // Proceed with download
@@ -888,7 +896,7 @@ function ToolPage() {
         {!userIsSubscribed && freeRemaining > 0 && freeRemaining <= 3 && (
           <div className="mb-6 rounded-xl border border-primary/30 bg-primary/5 p-4 text-center">
             <p className="text-sm text-primary font-medium">
-              ⚡ {t.freeBanner(freeRemaining)} — <a href="/pricing" className="underline font-semibold hover:text-primary/80">{t.freeSubscribe}</a>
+              ⚡ {t.freeBanner(freeRemaining)} — <a href="/?redirect=pricing" className="underline font-semibold hover:text-primary/80">{t.freeSubscribe}</a>
             </p>
           </div>
         )}
@@ -1196,30 +1204,11 @@ function ToolPage() {
             </div>
 
             {/* Machine Safety & G-Code Verification Badge */}
-            <div className="rounded-2xl border border-green-500/30 bg-gradient-to-br from-green-500/5 to-card p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-xl bg-green-500/20 flex items-center justify-center text-xl">
-                  🛡
-                </div>
-                <div>
-                  <h3 className="font-display font-bold text-lg text-green-400">{t.safetyTitle}</h3>
-                </div>
-              </div>
-              <div className="space-y-3">
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-green-500/10 border border-green-500/20">
-                  <span className="w-6 h-6 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center text-sm flex-shrink-0">✓</span>
-                  <span className="text-sm text-foreground/90">{t.safetyBoundingBox}</span>
-                </div>
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-green-500/10 border border-green-500/20">
-                  <span className="w-6 h-6 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center text-sm flex-shrink-0">✓</span>
-                  <span className="text-sm text-foreground/90">{t.safetyNoJerk}</span>
-                </div>
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-green-500/10 border border-green-500/20">
-                  <span className="w-6 h-6 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center text-sm flex-shrink-0">✓</span>
-                  <span className="text-sm text-foreground/90">{t.safetyCompliant}</span>
-                </div>
-              </div>
-            </div>
+            <SafetyBadge
+              lang={lang}
+              totalEntities={analysis.stats.totalEntities}
+              score={stage === "repaired" ? 100 : analysis.score}
+            />
 
             {/* Fix Summary Widget */}
             {stage === "repaired" && fixSummary.length > 0 && (
@@ -1487,7 +1476,23 @@ function ToolPage() {
       {/* Feedback Modal */}
       <FeedbackModal lang={lang} />
 
-      {/* Subscription Required Modal (Download Gating) */}
+      {/* Viral Unlock Modal (Phase 1) */}
+      <ViralUnlockModal
+        lang={lang}
+        isOpen={showViralUnlockModal}
+        onClose={() => setShowViralUnlockModal(false)}
+        onUnlocked={() => {
+          setViralUnlocked(true);
+          setUserSubscribed(true);
+          setShowViralUnlockModal(false);
+          // Retry the download if possible
+          if (repairedContent) {
+            downloadFile(repairedContent, fileName.replace(".dxf", "_fixed.dxf"));
+          }
+        }}
+      />
+
+      {/* Subscription Required Modal (Download Gating - fallback) */}
       {showSubscribeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
           <div className="relative bg-card border border-accent/40 rounded-2xl p-8 max-w-md w-full shadow-[var(--shadow-spark)] text-center">
@@ -1500,7 +1505,7 @@ function ToolPage() {
             <p className="text-muted-foreground mb-6">{t.subscribePrompt}</p>
             <div className="flex flex-col gap-3">
               <a
-                href="/pricing"
+                href="/?redirect=pricing"
                 className="w-full py-3.5 rounded-lg bg-accent text-accent-foreground font-semibold hover:opacity-90 transition shadow-[var(--shadow-spark)] text-center"
               >
                 {t.subscribeBtn} {isRTL ? "←" : "→"}

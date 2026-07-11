@@ -70,8 +70,16 @@ export function saveSubscriptionData(data: SubscriptionData) {
 
 /**
  * Check if user is subscribed (not on free plan)
+ * Includes viral launch bypass - if user has unlocked via viral, they're subscribed
  */
 export function isSubscribed(data?: SubscriptionData): boolean {
+  // Viral Launch bypass: check if user has unlocked via viral method
+  try {
+    // Dynamic import to avoid circular dependency issues
+    const viralState = localStorage.getItem('dxfix_user_is_subscribed');
+    if (viralState === 'true') return true;
+  } catch {}
+  
   const subscription = data || getSubscriptionData();
   return subscription.status !== null && subscription.status !== 'free';
 }
@@ -87,7 +95,7 @@ export function markAsFree() {
  * Mark user as subscribed (pro or workshop)
  */
 export function markAsSubscribed(
-  status: 'pro' | 'workshop',
+  status: 'pro' | 'workshop' | 'enterprise',
   customerId?: string,
   subscriptionId?: string,
   email?: string,

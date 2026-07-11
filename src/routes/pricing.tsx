@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { openCheckout } from "@/lib/paddle";
+import { ViralUnlockModal } from "@/components/viral-unlock-modal";
+import { getUserSubscribed, setUserSubscribed } from "@/lib/viral-launch";
 
 export const Route = createFileRoute("/pricing")({
   head: () => ({
@@ -206,6 +208,7 @@ const T: { ar: LangContent; en: LangContent } = {
 function PricingPage() {
   const [lang, setLang] = useState<Lang>("ar");
   const [redirectParam, setRedirectParam] = useState(false);
+  const [showViralModal, setShowViralModal] = useState(false);
   const t = T[lang];
   const isRTL = lang === "ar";
 
@@ -447,6 +450,18 @@ function PricingPage() {
           </a>
         </div>
       </main>
+
+      {/* Viral Unlock Modal */}
+      <ViralUnlockModal
+        lang={lang}
+        isOpen={showViralModal}
+        onClose={() => setShowViralModal(false)}
+        onUnlocked={() => {
+          setUserSubscribed(true);
+          setShowViralModal(false);
+          window.location.href = '/tool';
+        }}
+      />
 
       {/* FOOTER */}
       <footer className="border-t border-border/60 mt-12">
