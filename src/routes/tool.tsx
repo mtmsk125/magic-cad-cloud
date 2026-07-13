@@ -475,6 +475,38 @@ function ToolPage() {
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [bulkProcessing, setBulkProcessing] = useState(false);
 
+  const [copiedReport, setCopiedReport] = useState(false);
+
+  const copyReportToClipboard = useCallback(() => {
+    if (!analysis) return;
+    const lines = [
+      `DXFix Report — ${fileName}`,
+      `Date: ${new Date().toLocaleString()}`,
+      `Score: ${analysis.score}/100 — ${scoreLabel(analysis.score, lang)}`,
+      "",
+      "=== STATISTICS ===",
+      `Total entities: ${analysis.stats.totalEntities}`,
+      `Lines: ${analysis.stats.lines}`,
+      `Polylines: ${analysis.stats.polylines}`,
+      `Arcs: ${analysis.stats.arcs}`,
+      `Circles: ${analysis.stats.circles}`,
+      `Layers: ${analysis.stats.layers.join(", ")}`,
+      `Total perimeter: ${(analysis.totalPerimeter ?? 0).toFixed(2)} mm`,
+      `Processing time: ${analysis.processingTimeMs ?? 0} ms`,
+      `File size reduction: ${analysis.sizeReductionPercent ?? 0}%`,
+      "",
+      "=== ISSUES ===",
+      ...analysis.issues.map(i => `[${i.severity.toUpperCase()}] ${lang === "ar" ? i.ar : i.en}`),
+      analysis.issues.length === 0 ? "No issues found." : "",
+    ];
+    navigator.clipboard.writeText(lines.join("\n")).then(() => {
+      setCopiedReport(true);
+      setTimeout(() => setCopiedReport(false), 2000);
+    }).catch((err) => {
+      console.warn("Clipboard write failed:", err);
+    });
+  }, [analysis, fileName, lang]);
+
   const subscriptionData = getSubscriptionData();
   const userIsSubscribed = isSubscribed(subscriptionData);
   const freeRemaining = FREE_USAGE_LIMIT - freeUsageCount;
@@ -1450,6 +1482,12 @@ function ToolPage() {
                 className="px-5 py-2.5 rounded-lg border border-border hover:border-primary/60 font-semibold text-sm transition"
               >
                 ↩ {t.reset}
+              </button>
+              <button
+                onClick={copyReportToClipboard}
+                className="px-5 py-2.5 rounded-lg border border-border hover:border-primary/60 font-semibold text-sm transition"
+              >
+                📋 {copiedReport ? (lang === "ar" ? "تم النسخ ✓" : "Copied ✓") : (lang === "ar" ? "نسخ التقرير" : "Copy Report")}
               </button>
               <button
                 onClick={downloadReport}
