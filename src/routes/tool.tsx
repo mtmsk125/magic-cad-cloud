@@ -9,6 +9,34 @@ import { ViralUnlockModal } from "@/components/viral-unlock-modal";
 import { SafetyBadge } from "@/components/safety-badge";
 import { getUserSubscribed as isViralUnlocked, setUserSubscribed } from "@/lib/viral-launch";
 
+/**
+ * Ad slot component — only renders for free/unsubscribed users.
+ * Hides completely for Pro/Workshop subscribers.
+ */
+function AdSlot({ lang, userIsSubscribed }: { lang: "ar" | "en"; userIsSubscribed: boolean }) {
+  if (userIsSubscribed) return null;
+
+  return (
+    <div className="my-6 rounded-xl border border-border/60 bg-card/30 p-4 text-center">
+      <div className="font-mono text-[10px] text-muted-foreground/40 uppercase tracking-widest mb-2">
+        {lang === "ar" ? "إعلان" : "Advertisement"}
+      </div>
+      <div className="flex items-center justify-center gap-4 flex-wrap">
+        <div className="w-full max-w-[300px] h-[100px] bg-gradient-to-br from-primary/5 to-accent/5 border border-border/40 rounded-lg flex items-center justify-center">
+          <span className="text-xs text-muted-foreground/50 font-mono">
+            {lang === "ar" ? "مساحة إعلانية" : "Ad Space"}
+          </span>
+        </div>
+      </div>
+      <p className="font-mono text-[10px] text-muted-foreground/30 mt-2">
+        {lang === "ar"
+          ? "اشترك في Pro أو Workshop لإزالة الإعلانات والحصول على تجربة خالية من المشتتات"
+          : "Subscribe to Pro or Workshop to remove ads and enjoy a distraction-free experience"}
+      </p>
+    </div>
+  );
+}
+
 interface HistoryEntry {
   id: string;
   fileName: string;
@@ -1064,6 +1092,9 @@ function ToolPage() {
               )}
             </div>
 
+            {/* Ad Slot — Upload stage (only for free users) */}
+            <AdSlot lang={lang} userIsSubscribed={userIsSubscribed} />
+
             {/* FILE HISTORY */}
             <div className="mt-8">
               <div className="flex items-center justify-between mb-3">
@@ -1318,6 +1349,9 @@ function ToolPage() {
                 </div>
               )}
             </div>
+
+            {/* Ad Slot — Result stage (only for free users) */}
+            <AdSlot lang={lang} userIsSubscribed={userIsSubscribed} />
 
             {/* Issues */}
             <div className="rounded-2xl border border-border bg-card p-6">
