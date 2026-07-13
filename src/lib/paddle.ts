@@ -64,21 +64,26 @@ export function initPaddle() {
     return;
   }
 
+  // Detect environment from token prefix: test_ = sandbox, live_ = production
+  const isSandbox = token.startsWith('test_');
+  const environment = isSandbox ? 'sandbox' : 'production';
+  console.log(`🌊 Paddle environment detected: ${environment} (token prefix: ${token.slice(0, 5)}...)`);
+
   // Load Paddle SDK
   const script = document.createElement("script");
   script.src = "https://cdn.paddle.com/paddle/v2/paddle.js";
   script.async = true;
   script.onload = () => {
     if (window.Paddle) {
-      // Always set environment to production
-      window.Paddle.Environment.set('production');
+      // Set environment based on token type
+      window.Paddle.Environment.set(environment);
 
       // Initialize Paddle with the token
       window.Paddle.Initialize({
         token: token,
       });
 
-      console.log(`✅ Paddle initialized successfully in production mode`);
+      console.log(`✅ Paddle initialized successfully in ${environment} mode`);
     }
   };
   script.onerror = () => {
@@ -114,6 +119,7 @@ export function openCheckout(priceId: string, email?: string) {
         settings: {
           displayMode: "overlay",
           theme: "light",
+          allowOpeningInNewWindow: true,
         },
         items: [
           {
