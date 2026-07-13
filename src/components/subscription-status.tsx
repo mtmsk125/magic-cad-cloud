@@ -1,4 +1,4 @@
-/**
+P/**
  * Subscription Status Indicator
  * Shows subscription tier and user email in UI
  */
