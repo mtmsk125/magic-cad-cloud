@@ -12,8 +12,25 @@ import { getUserSubscribed as isViralUnlocked, setUserSubscribed } from "@/lib/v
 /**
  * Ad slot component — only renders for free/unsubscribed users.
  * Hides completely for Pro/Workshop subscribers.
+ * Integrates Google AdSense automatically when ad container is visible.
  */
 function AdSlot({ lang, userIsSubscribed }: { lang: "ar" | "en"; userIsSubscribed: boolean }) {
+  const adRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Only load AdSense ads for non-subscribed users
+    if (userIsSubscribed) return;
+
+    // Push a new ad slot to the global AdSense queue
+    try {
+      if ((window as any).adsbygoogle) {
+        (window as any).adsbygoogle.push({});
+      }
+    } catch (e) {
+      console.warn("AdSense push failed:", e);
+    }
+  }, [userIsSubscribed]);
+
   if (userIsSubscribed) return null;
 
   return (
@@ -21,12 +38,16 @@ function AdSlot({ lang, userIsSubscribed }: { lang: "ar" | "en"; userIsSubscribe
       <div className="font-mono text-[10px] text-muted-foreground/40 uppercase tracking-widest mb-2">
         {lang === "ar" ? "إعلان" : "Advertisement"}
       </div>
-      <div className="flex items-center justify-center gap-4 flex-wrap">
-        <div className="w-full max-w-[300px] h-[100px] bg-gradient-to-br from-primary/5 to-accent/5 border border-border/40 rounded-lg flex items-center justify-center">
-          <span className="text-xs text-muted-foreground/50 font-mono">
-            {lang === "ar" ? "مساحة إعلانية" : "Ad Space"}
-          </span>
-        </div>
+      <div ref={adRef} className="flex items-center justify-center gap-4 flex-wrap">
+        {/* Google AdSense responsive ad unit — replace IDs below with your own */}
+        <ins
+          className="adsbygoogle"
+          style={{ display: "block", minWidth: "250px", maxWidth: "300px", width: "100%", height: "100px" }}
+          data-ad-client="ca-pub-XXXXXXXXXXXXXXXX"
+          data-ad-slot="XXXXXXXXXX"
+          data-ad-format="auto"
+          data-full-width-responsive="true"
+        />
       </div>
       <p className="font-mono text-[10px] text-muted-foreground/30 mt-2">
         {lang === "ar"

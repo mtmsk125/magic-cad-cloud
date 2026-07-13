@@ -111,13 +111,16 @@ export function openCheckout(priceId: string, email?: string) {
   const attemptOpen = (retries: number) => {
     if (window.Paddle && window.Paddle.Checkout) {
       window.Paddle.Checkout.open({
-        items: [{ priceId: priceId, quantity: 1 }],
-        customer: email ? { email } : undefined,
         settings: {
-          allowLogout: false,
-          displayMode: 'overlay',
-          theme: 'dark',
+          displayMode: "overlay",
+          theme: "light",
         },
+        items: [
+          {
+            priceId: priceId,
+            quantity: 1,
+          },
+        ],
         eventCallback: (event: any) => {
           if (event.name === 'checkout-completed') {
             console.log("✅ Paddle checkout completed for tier:", tier);
