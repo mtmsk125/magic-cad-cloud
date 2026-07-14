@@ -5,6 +5,7 @@ declare global {
 }
 
 import { markAsSubscribed } from '@/lib/subscription';
+import { subscribeOnServer } from '@/lib/subscription-auth';
 
 let initialized = false;
 
@@ -165,7 +166,22 @@ export function openCheckout(priceId: string, email?: string) {
                 const customerId = event.data?.customer?.id;
                 const transactionId = event.data?.transaction?.id;
                 
+                // Save locally
                 markAsSubscribed(tier as 'pro' | 'workshop' | 'enterprise', customerId, transactionId, customerEmail);
+                
+                // Verify with server (async - don't block redirect)
+                if (customerEmail) {
+                  subscribeOnServer(customerEmail, tier as 'pro' | 'workshop' | 'enterprise')
+                    .then(success => {
+                      if (success) {
+                        console.log("✅ Server subscription saved");
+                      }
+                    })
+                    .catch(err => {
+                      console.warn("⚠️ Server subscription failed, local only:", err);
+                    });
+                }
+                
                 window.location.href = '/tool';
               }
             }
