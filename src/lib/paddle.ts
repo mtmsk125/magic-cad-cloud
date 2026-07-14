@@ -125,7 +125,7 @@ function setupCheckoutListener(tier: string, email?: string) {
   window.Paddle.EventBus.on('checkout.completed', checkoutCompletedListener);
 }
 
-export function openCheckout(priceId: string, email?: string) {
+export async function openCheckout(priceId: string, email?: string) {
   if (!priceId || priceId === 'undefined' || priceId.trim() === '') {
     console.error("Invalid priceId:", priceId);
     alert("عذراً، معرف السعر غير صحيح.");
@@ -142,47 +142,40 @@ export function openCheckout(priceId: string, email?: string) {
     return;
   }
 
-  // Ensure Paddle is initialized
-  initPaddle();
+  // ✅ انتظر تحميل Paddle SDK بالكامل قبل فتح Checkout
+  console.log("⏳ Loading Paddle SDK...");
+  const initialized = await initPaddle();
+  
+  if (!initialized || !window.Paddle || !window.Paddle.Checkout) {
+    console.error("❌ Paddle SDK failed to initialize");
+    openMockCheckout(tier, priceId, email);
+    return;
+  }
 
-  // Setup listener for checkout completion BEFORE opening checkout
-  const attemptOpen = (retries: number) => {
-    if (window.Paddle && window.Paddle.Checkout) {
-      try {
-        // Set up the event listener for checkout completion (Paddle v2)
-        setupCheckoutListener(tier, email);
+  console.log("✅ Paddle SDK loaded, opening checkout...");
 
-        // Open the Paddle checkout overlay (Paddle v2 API)
-        window.Paddle.Checkout.open({
-          settings: {
-            displayMode: "overlay",
-            theme: "light",
-            allowOpeningInNewWindow: true,
-          },
-          items: [
-            {
-              priceId: priceId,
-              quantity: 1,
-            },
-          ],
-        });
-      } catch (paddleError) {
-        console.warn("⚠️ Paddle checkout threw an error, falling back to mock:", paddleError);
-        openMockCheckout(tier, priceId, email);
-      }
-    } else if (retries > 0) {
-      console.log(`⏳ Waiting for Paddle SDK to load... (${retries} retries left)`);
-      setTimeout(() => attemptOpen(retries - 1), 500);
-    } else {
-      console.error("❌ Paddle SDK failed to load after multiple retries");
-      // Fallback to mock checkout
-      console.log("🌊 Falling back to mock checkout");
-      openMockCheckout(tier, priceId, email);
-    }
-  };
+  try {
+    // Set up the event listener for checkout completion (Paddle v2)
+    setupCheckoutListener(tier, email);
 
-  // Give the SDK time to load (up to 3 seconds with retries)
-  setTimeout(() => attemptOpen(5), 500);
+    // Open the Paddle checkout overlay (Paddle v2 API)
+    window.Paddle.Checkout.open({
+      settings: {
+        displayMode: "overlay",
+        theme: "light",
+        allowOpeningInNewWindow: true,
+      },
+      items: [
+        {
+          priceId: priceId,
+          quantity: 1,
+        },
+      ],
+    });
+  } catch (paddleError) {
+    console.warn("⚠️ Paddle checkout threw an error, falling back to mock:", paddleError);
+    openMockCheckout(tier, priceId, email);
+  }
 }
 
 // ─── Mock Checkout (offline/local payment simulation) ───────────────
