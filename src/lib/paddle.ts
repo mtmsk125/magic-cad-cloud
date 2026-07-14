@@ -13,12 +13,12 @@ let initialized = false;
  */
 const PLANS = {
   pro: {
-    priceIds: ['pri_pro_monthly', 'pri_pro'],
+    priceIds: ['pri_01kwe9s2cv7fb2x854jkdshw8c', 'pri_pro_monthly', 'pri_pro'],
     label: 'Pro',
     price: '$19',
   },
   workshop: {
-    priceIds: ['pri_workshop_monthly', 'pri_workshop', '49'],
+    priceIds: ['pri_01kwe9yxzj0n4njwbncmgt8he0', 'pri_workshop_monthly', 'pri_workshop', '49'],
     label: 'ورشة',
     price: '$49',
   },
@@ -75,12 +75,10 @@ export function initPaddle() {
   script.async = true;
   script.onload = () => {
     if (window.Paddle) {
-      // Set environment based on token type
-      window.Paddle.Environment.set(environment);
-
-      // Initialize Paddle with the token
+      // Initialize Paddle with the token and environment
       window.Paddle.Initialize({
         token: token,
+        environment: environment,
       });
 
       console.log(`✅ Paddle initialized successfully in ${environment} mode`);
@@ -90,6 +88,26 @@ export function initPaddle() {
     console.error("❌ Failed to load Paddle SDK");
   };
   document.head.appendChild(script);
+}
+
+let checkoutCompletedListener: (() => void) | null = null;
+
+/**
+ * Listen for Paddle checkout completion events (Paddle v2)
+ */
+function setupCheckoutListener(tier: string, email?: string) {
+  // Remove old listener if exists
+  if (checkoutCompletedListener) {
+    window.Paddle.EventBus.off('checkout.completed', checkoutCompletedListener);
+  }
+
+  checkoutCompletedListener = () => {
+    console.log("✅ Paddle checkout completed for tier:", tier);
+    markAsSubscribed(tier as 'pro' | 'workshop' | 'enterprise', undefined, undefined, email);
+    window.location.href = '/tool';
+  };
+
+  window.Paddle.EventBus.on('checkout.completed', checkoutCompletedListener);
 }
 
 export function openCheckout(priceId: string, email?: string) {
@@ -112,10 +130,14 @@ export function openCheckout(priceId: string, email?: string) {
   // Ensure Paddle is initialized
   initPaddle();
 
-  // Check if Paddle SDK is loaded, if not wait for it
+  // Setup listener for checkout completion BEFORE opening checkout
   const attemptOpen = (retries: number) => {
     if (window.Paddle && window.Paddle.Checkout) {
       try {
+        // Set up the event listener for checkout completion (Paddle v2)
+        setupCheckoutListener(tier, email);
+
+        // Open the Paddle checkout overlay (Paddle v2 API)
         window.Paddle.Checkout.open({
           settings: {
             displayMode: "overlay",
@@ -128,13 +150,6 @@ export function openCheckout(priceId: string, email?: string) {
               quantity: 1,
             },
           ],
-          eventCallback: (event: any) => {
-            if (event.name === 'checkout-completed') {
-              console.log("✅ Paddle checkout completed for tier:", tier);
-              markAsSubscribed(tier, event.data?.customer?.id, event.data?.transaction?.id, email || event.data?.customer?.email);
-              window.location.href = '/tool';
-            }
-          },
         });
       } catch (paddleError) {
         console.warn("⚠️ Paddle checkout threw an error, falling back to mock:", paddleError);
