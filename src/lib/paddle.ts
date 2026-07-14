@@ -105,26 +105,6 @@ export function initPaddle(): Promise<boolean> {
   return paddleLoadPromise;
 }
 
-let checkoutCompletedListener: (() => void) | null = null;
-
-/**
- * Listen for Paddle checkout completion events (Paddle v2)
- */
-function setupCheckoutListener(tier: string, email?: string) {
-  // Remove old listener if exists
-  if (checkoutCompletedListener) {
-    window.Paddle.EventBus.off('checkout.completed', checkoutCompletedListener);
-  }
-
-  checkoutCompletedListener = () => {
-    console.log("✅ Paddle checkout completed for tier:", tier);
-    markAsSubscribed(tier as 'pro' | 'workshop' | 'enterprise', undefined, undefined, email);
-    window.location.href = '/tool';
-  };
-
-  window.Paddle.EventBus.on('checkout.completed', checkoutCompletedListener);
-}
-
 export async function openCheckout(priceId: string, email?: string) {
   if (!priceId || priceId === 'undefined' || priceId.trim() === '') {
     console.error("Invalid priceId:", priceId);
@@ -148,53 +128,57 @@ export async function openCheckout(priceId: string, email?: string) {
   // Start loading paddle in background
   const paddlePromise = initPaddle();
   
-  // Wait for paddle to load with a timeout (3 seconds max)
+  // Wait for paddle to load with a timeout (5 seconds max)
   const timeoutPromise = new Promise<boolean>((resolve) => {
-    setTimeout(() => resolve(false), 3000);
+    setTimeout(() => {
+      console.warn("⏰ Paddle SDK loading timed out");
+      resolve(false);
+    }, 5000);
   });
   
   const initialized = await Promise.race([paddlePromise, timeoutPromise]);
   
-  // Try up to 3 times with small delays if checkout isn't ready yet
-  for (let i = 0; i < 3; i++) {
-    if (window.Paddle && window.Paddle.Checkout && initialized) {
-      try {
-        console.log("✅ Paddle SDK loaded, opening checkout...");
-        
-        // Set up the event listener for checkout completion (Paddle v2)
-        setupCheckoutListener(tier, email);
+  if (!initialized || !window.Paddle) {
+    console.warn("❌ Paddle SDK failed to initialize. Using mock checkout.");
+    openMockCheckout(tier, priceId, email);
+    return;
+  }
 
-        // Open the Paddle checkout overlay (Paddle v2 API)
-        window.Paddle.Checkout.open({
-          settings: {
-            displayMode: "overlay",
-            theme: "light",
-            allowOpeningInNewWindow: true,
-          },
-          items: [
-            {
-              priceId: priceId,
-              quantity: 1,
-            },
-          ],
-        });
-        
-        // If we get here without error, return
-        return;
-      } catch (paddleError) {
-        console.warn(`⚠️ Paddle checkout attempt ${i + 1} failed:`, paddleError);
-        // Wait a bit and retry
-        await new Promise(r => setTimeout(r, 500));
-      }
+  console.log("✅ Paddle SDK loaded, opening checkout...");
+
+  try {
+    // Paddle v2 API: `Paddle.Checkout.open()` returns a Promise
+    // that resolves when checkout is completed
+    const checkoutResult = await window.Paddle.Checkout.open({
+      items: [
+        {
+          priceId: priceId,
+          quantity: 1,
+        },
+      ],
+      // Optional: pre-fill customer email
+      ...(email ? { customer: { email } } : {}),
+    });
+    
+    // If we reach here, checkout was completed successfully
+    console.log("✅ Paddle checkout completed for tier:", tier, checkoutResult);
+    
+    // Extract customer info from checkout result
+    const customerEmail = checkoutResult?.customer?.email || email;
+    const customerId = checkoutResult?.customer?.id;
+    const transactionId = checkoutResult?.transaction?.id;
+    
+    markAsSubscribed(tier as 'pro' | 'workshop' | 'enterprise', customerId, transactionId, customerEmail);
+    window.location.href = '/tool';
+  } catch (checkoutError: any) {
+    // Check if user cancelled or actual error
+    if (checkoutError?.message?.includes('cancelled') || checkoutError?.message?.includes('closed')) {
+      console.log("ℹ️ User cancelled checkout");
     } else {
-      console.log(`⏳ Waiting for Paddle SDK... attempt ${i + 1}`);
-      await new Promise(r => setTimeout(r, 500));
+      console.warn("⚠️ Paddle checkout error, falling back to mock:", checkoutError?.message || checkoutError);
+      openMockCheckout(tier, priceId, email);
     }
   }
-  
-  // If Paddle checkout didn't work after all attempts, use mock checkout
-  console.warn("❌ Paddle SDK failed to initialize or open checkout after retries. Using mock checkout.");
-  openMockCheckout(tier, priceId, email);
 }
 
 // ─── Mock Checkout (offline/local payment simulation) ───────────────
