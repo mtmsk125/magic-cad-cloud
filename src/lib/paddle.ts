@@ -54,14 +54,16 @@ function getPaddleToken(): string | null {
   return null;
 }
 
-export function initPaddle() {
-  if (initialized || typeof window === "undefined") return;
-  initialized = true;
+let paddleLoadPromise: Promise<boolean> | null = null;
+
+export function initPaddle(): Promise<boolean> {
+  if (paddleLoadPromise) return paddleLoadPromise;
+  if (typeof window === "undefined") return Promise.resolve(false);
 
   const token = getPaddleToken();
   if (!token) {
     console.log("ℹ️ No Paddle token configured");
-    return;
+    return Promise.resolve(false);
   }
 
   // Detect environment from token prefix: test_ = sandbox, live_ = production
@@ -69,25 +71,38 @@ export function initPaddle() {
   const environment = isSandbox ? 'sandbox' : 'production';
   console.log(`🌊 Paddle environment detected: ${environment} (token prefix: ${token.slice(0, 5)}...)`);
 
-  // Load Paddle SDK
-  const script = document.createElement("script");
-  script.src = "https://cdn.paddle.com/paddle/v2/paddle.js";
-  script.async = true;
-  script.onload = () => {
-    if (window.Paddle) {
-      // Initialize Paddle with the token and environment
-      window.Paddle.Initialize({
-        token: token,
-        environment: environment,
-      });
+  // If Paddle is already loaded and initialized, resolve immediately
+  if (window.Paddle && window.Paddle.Checkout) {
+    return Promise.resolve(true);
+  }
 
-      console.log(`✅ Paddle initialized successfully in ${environment} mode`);
-    }
-  };
-  script.onerror = () => {
-    console.error("❌ Failed to load Paddle SDK");
-  };
-  document.head.appendChild(script);
+  paddleLoadPromise = new Promise((resolve) => {
+    // Load Paddle SDK
+    const script = document.createElement("script");
+    script.src = "https://cdn.paddle.com/paddle/v2/paddle.js";
+    script.async = true;
+    script.onload = () => {
+      if (window.Paddle) {
+        // Initialize Paddle with the token and environment
+        window.Paddle.Initialize({
+          token: token,
+          environment: environment,
+        });
+
+        console.log(`✅ Paddle initialized successfully in ${environment} mode`);
+        resolve(true);
+      } else {
+        resolve(false);
+      }
+    };
+    script.onerror = () => {
+      console.error("❌ Failed to load Paddle SDK");
+      resolve(false);
+    };
+    document.head.appendChild(script);
+  });
+
+  return paddleLoadPromise;
 }
 
 let checkoutCompletedListener: (() => void) | null = null;
