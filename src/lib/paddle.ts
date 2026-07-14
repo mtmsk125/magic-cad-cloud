@@ -116,7 +116,7 @@ export function initPaddle(): Promise<boolean> {
   return paddleLoadPromise;
 }
 
-export function openCheckout(priceId: string, email?: string) {
+export async function openCheckout(priceId: string, email?: string) {
   if (!priceId || priceId === 'undefined' || priceId.trim() === '') {
     console.error("Invalid priceId:", priceId);
     alert("عذراً، معرف السعر غير صحيح.");
@@ -135,83 +135,65 @@ export function openCheckout(priceId: string, email?: string) {
 
   console.log("⏳ Loading Paddle SDK...");
 
-  // Wait for Paddle to be ready, then open checkout
-  const waitForPaddleAndOpen = (retries: number) => {
-    // Make sure Paddle SDK is loaded
-    if (window.Paddle && window.Paddle.Checkout) {
-      console.log("✅ Paddle SDK loaded, opening checkout...");
-      
-      try {
-        // Paddle v2 API: open checkout overlay with eventCallback
-        window.Paddle.Checkout.open({
-          items: [
-            {
-              priceId: priceId,
-              quantity: 1,
-            },
-          ],
-          customer: email ? { email } : undefined,
-          settings: {
-            displayMode: "overlay",
-          },
-          eventCallback: (event: any) => {
-            console.log("📩 Paddle event received:", event?.name);
-            
-            if (event.name === 'checkout-completed' || event.name === 'checkout.closed') {
-              // Check if completed successfully
-              if (event.name === 'checkout-completed') {
-                console.log("✅ Paddle checkout completed for tier:", tier);
-                
-                const customerEmail = event.data?.customer?.email || email;
-                const customerId = event.data?.customer?.id;
-                const transactionId = event.data?.transaction?.id;
-                
-                // Save locally
-                markAsSubscribed(tier as 'pro' | 'workshop' | 'enterprise', customerId, transactionId, customerEmail);
-                
-                // Verify with server (async - don't block redirect)
-                if (customerEmail) {
-                  subscribeOnServer(customerEmail, tier as 'pro' | 'workshop' | 'enterprise')
-                    .then(success => {
-                      if (success) {
-                        console.log("✅ Server subscription saved");
-                      }
-                    })
-                    .catch(err => {
-                      console.warn("⚠️ Server subscription failed, local only:", err);
-                    });
-                }
-                
-                window.location.href = '/tool';
-              }
-            }
-          },
-        });
-        
-        return; // Success, no need to retry
-      } catch (paddleError: any) {
-        console.warn(`⚠️ Paddle checkout open failed (retry ${3 - retries}/3):`, paddleError?.message || paddleError);
-        if (retries > 0) {
-          setTimeout(() => waitForPaddleAndOpen(retries - 1), 1000);
-        } else {
-          console.warn("❌ All Paddle checkout attempts failed. Using mock checkout.");
-          openMockCheckout(tier, priceId, email);
-        }
-      }
-    } else if (retries > 0) {
-      console.log(`⏳ Waiting for Paddle SDK... (${retries} retries left)`);
-      setTimeout(() => waitForPaddleAndOpen(retries - 1), 1000);
-    } else {
-      console.warn("❌ Paddle SDK not available. Using mock checkout.");
-      openMockCheckout(tier, priceId, email);
-    }
-  };
+  // ✅ انتظر تحميل Paddle SDK (مع Timeout 8 ثواني)
+  const paddleReady = await Promise.race([
+    initPaddle(),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 8000)),
+  ]);
 
-  // Start Paddle initialization and wait for it
-  initPaddle();
-  
-  // Give Paddle time to load (up to 7 seconds with 7 retries)
-  setTimeout(() => waitForPaddleAndOpen(7), 500);
+  if (!paddleReady || !window.Paddle || !window.Paddle.Checkout) {
+    console.warn("❌ Paddle SDK not available after timeout. Using mock checkout.");
+    openMockCheckout(tier, priceId, email);
+    return;
+  }
+
+  console.log("✅ Paddle SDK loaded, opening checkout...");
+
+  try {
+    // Paddle v2 API: open checkout overlay with eventCallback
+    window.Paddle.Checkout.open({
+      items: [
+        {
+          priceId: priceId,
+          quantity: 1,
+        },
+      ],
+      customer: email ? { email } : undefined,
+      settings: {
+        displayMode: "overlay",
+      },
+      eventCallback: (event: any) => {
+        console.log("📩 Paddle event received:", event?.name);
+        
+        if (event.name === 'checkout-completed') {
+          console.log("✅ Paddle checkout completed for tier:", tier);
+          
+          const customerEmail = event.data?.customer?.email || email;
+          const customerId = event.data?.customer?.id;
+          const transactionId = event.data?.transaction?.id;
+          
+          // Save locally
+          markAsSubscribed(tier as 'pro' | 'workshop' | 'enterprise', customerId, transactionId, customerEmail);
+          
+          // Verify with server (async - don't block redirect)
+          if (customerEmail) {
+            subscribeOnServer(customerEmail, tier as 'pro' | 'workshop' | 'enterprise')
+              .then(success => {
+                if (success) console.log("✅ Server subscription saved");
+              })
+              .catch(err => {
+                console.warn("⚠️ Server subscription failed, local only:", err);
+              });
+          }
+          
+          window.location.href = '/tool';
+        }
+      },
+    });
+  } catch (paddleError: any) {
+    console.warn("⚠️ Paddle checkout open failed:", paddleError?.message || paddleError);
+    openMockCheckout(tier, priceId, email);
+  }
 }
 
 // ─── Mock Checkout (offline/local payment simulation) ───────────────
