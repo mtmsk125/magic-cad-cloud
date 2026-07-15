@@ -9,7 +9,7 @@ export const Route = createFileRoute("/")({
     meta: [
       { title: "DXFix — إصلاح وفحص ملفات DXF لورش CNC | مجاني" },
       { name: "description", content: "أصلح أخطاء ملفات DXF، احصل على تقييم جاهزية القص، وصدّر ملفاً نظيفاً خلال ثوانٍ. مجاني خلال فترة الإطلاق لورش الليزر والبلازما والـ CNC." },
-      { name: "keywords", content: "DXF repair, إصلاح DXF, CNC workshop, ورشة CNC, laser cutting, قص ليزر, DXF validator, AutoCAD, plasma cutting, قص بلازما" },
+      { name: "keywords", content: "إصلاح ملفات DXF, أداة CNC عربية, برنامج تصليح DXF, DXF repair, CNC workshop, ورشة CNC, laser cutting, قص ليزر, DXF validator, AutoCAD, plasma cutting, قص بلازما, تحويل DXF, إصلاح أخطاء DXF اونلاين, CNC software Arabic" },
       { name: "robots", content: "index, follow" },
       { name: "author", content: "DXFix" },
       { property: "og:title", content: "DXFix — إصلاح ملفات DXF لورش CNC | مجاني" },
