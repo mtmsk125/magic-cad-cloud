@@ -85,13 +85,12 @@ export function initPaddle(): Promise<boolean> {
     script.onload = () => {
       if (window.Paddle) {
         try {
-          // Initialize Paddle with the token and environment
+          // Initialize Paddle with the token - environment auto-detected from token prefix
           window.Paddle.Initialize({
             token: token,
-            environment: environment,
           });
 
-          console.log(`✅ Paddle initialized successfully in ${environment} mode`);
+          console.log(`✅ Paddle initialized successfully`);
           
           // Wait a moment for Paddle.Checkout to become available
           // Paddle.Initialize() is async internally

@@ -37,10 +37,126 @@ function verifySignature(token: string, email: string, tier: string, signature: 
   return expected === signature;
 }
 
+// ─── Paddle Webhook Handler ─────────────────────────────────────────
+
+import { Paddle, Environment } from '@paddle/paddle-node-sdk';
+import { upsertCustomer, upsertSubscription } from './db/paddleMirror';
+
+const paddleSdk = new Paddle(process.env.PADDLE_API_KEY || '', {
+  environment: process.env.PADDLE_ENVIRONMENT === 'sandbox' ? Environment.sandbox : Environment.production,
+});
+
+/**
+ * Handle Paddle webhook events with signature verification
+ * Uses raw body parsing to preserve the unmodified payload for verification
+ */
+async function handlePaddleWebhook(request: Request): Promise<Response> {
+  const signature = request.headers.get('paddle-signature') || '';
+  const secret = process.env.PADDLE_WEBHOOK_SECRET || '';
+
+  if (!signature || !secret) {
+    return new Response(JSON.stringify({ error: 'Webhook verification components missing.' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  try {
+    // Read the raw body as text for signature verification
+    const rawBody = await request.text();
+
+    // Verify signature using Paddle SDK (returns a Promise)
+    const event = await paddleSdk.webhooks.unmarshal(rawBody, secret, signature);
+
+    // Route events to typed handlers
+    switch (event.eventType) {
+      case 'customer.created':
+      case 'customer.updated': {
+        const customerData = event.data as any;
+        await upsertCustomer({
+          customer_id: customerData.id,
+          email: customerData.email,
+        });
+        break;
+      }
+
+      case 'subscription.created':
+      case 'subscription.updated': {
+        const subData = event.data as any;
+        const item = subData.items?.[0];
+        await upsertSubscription({
+          subscription_id: subData.id,
+          customer_id: subData.customerId,
+          status: subData.status,
+          price_id: item?.priceId || '',
+          product_id: item?.price?.productId || '',
+          scheduled_change_action: subData.scheduledChange?.action || null,
+          scheduled_change_at: subData.scheduledChange?.effectiveAt || null,
+        });
+        break;
+      }
+
+      case 'subscription.canceled': {
+        const subData = event.data as any;
+        const item = subData.items?.[0];
+        await upsertSubscription({
+          subscription_id: subData.id,
+          customer_id: subData.customerId,
+          status: 'canceled',
+          price_id: item?.priceId || '',
+          product_id: item?.price?.productId || '',
+          scheduled_change_action: null,
+          scheduled_change_at: null,
+        });
+        break;
+      }
+
+      case 'transaction.completed': {
+        const txData = event.data as any;
+        if (txData.customerId) {
+          await upsertCustomer({
+            customer_id: txData.customerId,
+            email: txData.customer?.email || '',
+          });
+        }
+        break;
+      }
+
+      default:
+        console.log(`Ignored tracked telemetry hook: ${event.eventType}`);
+        break;
+    }
+
+    return new Response(JSON.stringify({ received: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (err: any) {
+    console.error(`Webhook signature verification error context: ${err.message}`);
+    return new Response('Signature Verification Unsuccessful', {
+      status: 401,
+    });
+  }
+}
+
+// ─── Customer Portal Redirect ──────────────────────────────────────
+
+import { handleCustomerPortalRedirect } from './controllers/customerPortal';
+
 // API handlers for subscription
 async function handleApiRequest(request: Request): Promise<Response | null> {
   const url = new URL(request.url);
   
+  // POST /api/v1/webhooks/paddle - Paddle webhook handler
+  if (url.pathname === '/api/v1/webhooks/paddle' && request.method === 'POST') {
+    return handlePaddleWebhook(request);
+  }
+
+  // GET /api/portal - Customer portal redirect
+  if (url.pathname === '/api/portal' && request.method === 'GET') {
+    return handleCustomerPortalRedirect(request);
+  }
+
   // POST /api/subscribe - Register a new subscription
   if (url.pathname === '/api/subscribe' && request.method === 'POST') {
     try {
@@ -180,9 +296,9 @@ let serverEntryPromise: ServerEntry | undefined;
 
 async function getServerEntry(): Promise<ServerEntry> {
   if (!serverEntryPromise) {
-    serverEntryPromise = (await import("@tanstack/react-start/server-entry")).default ?? (await import("@tanstack/react-start/server-entry"));
+    serverEntryPromise = ((await import("@tanstack/react-start/server-entry")).default ?? (await import("@tanstack/react-start/server-entry"))) as unknown as ServerEntry;
   }
-  return serverEntryPromise;
+  return serverEntryPromise as unknown as ServerEntry;
 }
 
 // h3 swallows in-handler throws into a normal 500 Response with body
