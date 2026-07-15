@@ -97,6 +97,16 @@ const T = {
     s2d: "نحلل الملف خلال ثوانٍ ونعرض كل المشاكل مع اقتراحات الإصلاح.",
     s3t: "حمّل النظيف",
     s3d: "نزّل ملف DXF جاهز للقص مباشرةً على ماكينتك.",
+    sectionRoadmap: "خارطة الطريق",
+    roadmapTitle: "أدوات متقدمة قادمة قريباً",
+    roadmapSub: "نعمل على أدوات صناعية ترفع إنتاجية ورشتك وتوفّر وقت المشغّل. اشترك لتصلك فور الإطلاق.",
+    roadmapBadge: "قريباً",
+    roadmapTool1: "حاسبة تكاليف القص الفورية (ليزر و CNC)",
+    roadmapTool1Desc: "احسب تكاليف الإنتاج بناءً على طول مسار القص، سُمك المادة، وزمن تشغيل الماكينة. صدّر عروض أسعار PDF احترافية لعملائك فوراً.",
+    roadmapTool2: "محوّل الصور إلى CAD (DXF/SVG)",
+    roadmapTool2Desc: "ارفع أي صورة عادية (PNG/JPG) واستخرج تلقائياً خطوط فيكتور نظيفة خالية من التداخل، جاهزة لماكينة الليزر أو الراوتر CNC.",
+    roadmapTool3: "مدقق ومحسّن أكواد G-Code",
+    roadmapTool3Desc: "فحص أولي لملفات التشغيل قبل التحميل على الماكينة. اكتشف حركات خارج الحدود وقعّن زمن الدورة قبل البدء.",
     sectionPricing: "الأسعار",
     pricingTitle: "ابدأ مجاناً، طوّر عند الحاجة.",
     pricingDesc: "خطط شفافة بدون مفاجآت.",
@@ -201,6 +211,16 @@ const T = {
     s2d: "We scan in seconds and show every issue with suggested fixes.",
     s3t: "Download clean",
     s3d: "Get a DXF that's ready to cut on your machine.",
+    sectionRoadmap: "Roadmap",
+    roadmapTitle: "Upcoming Advanced Tools Roadmap",
+    roadmapSub: "We're building industrial-grade tools that boost your shop's productivity and save operator time. Subscribe to get notified on launch.",
+    roadmapBadge: "Coming Soon",
+    roadmapTool1: "Instant Laser & CNC Quoting Calculator",
+    roadmapTool1Desc: "Calculate production costs based on cutting path length, material thickness, and machine runtime. Generate professional PDF quotes for your clients instantly.",
+    roadmapTool2: "Image to CAD (DXF/SVG) Vector Converter",
+    roadmapTool2Desc: "Upload any standard image (PNG/JPG) and automatically extract clean, overlapping-free vector lines ready for your laser cutter or CNC router.",
+    roadmapTool3: "G-Code Error Checker & Optimizer",
+    roadmapTool3Desc: "Pre-flight check for your tooling files. Detect out-of-boundary movements and estimate cycle times before loading the machine.",
     sectionPricing: "Pricing",
     pricingTitle: "Start free, upgrade when ready.",
     pricingDesc: "Transparent plans, no surprises.",
@@ -571,6 +591,89 @@ function Index() {
                 <p className="mt-3 text-sm text-muted-foreground leading-relaxed">{desc}</p>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ROADMAP */}
+      <section id="roadmap" className="relative border-y border-border/60 bg-card/30">
+        <div className="absolute inset-0 blueprint-grid opacity-20" />
+        <div className="relative max-w-7xl mx-auto px-5 sm:px-8 py-24">
+          <div className="text-center">
+            <p className="font-mono text-xs text-primary uppercase tracking-[0.25em]">{t.sectionRoadmap}</p>
+            <h2 className="font-display mt-3 text-4xl lg:text-5xl font-bold">{t.roadmapTitle}</h2>
+            <p className="mt-4 text-lg text-muted-foreground max-w-2xl mx-auto">{t.roadmapSub}</p>
+          </div>
+
+          <div className="mt-14 grid md:grid-cols-3 gap-6">
+            {[
+              {
+                icon: "📊",
+                title: t.roadmapTool1,
+                desc: t.roadmapTool1Desc,
+                badge: t.roadmapBadge,
+              },
+              {
+                icon: "🖼️",
+                title: t.roadmapTool2,
+                desc: t.roadmapTool2Desc,
+                badge: t.roadmapBadge,
+              },
+              {
+                icon: "⚙️",
+                title: t.roadmapTool3,
+                desc: t.roadmapTool3Desc,
+                badge: t.roadmapBadge,
+              },
+            ].map((tool, i) => (
+              <div
+                key={i}
+                className="group relative bg-background border border-border rounded-2xl p-8 flex flex-col hover:border-primary/40 transition duration-300 hover:shadow-[var(--shadow-spark)]"
+              >
+                {/* Hover glow */}
+                <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-primary/[0.02] to-accent/[0.02] opacity-0 group-hover:opacity-100 transition duration-300 pointer-events-none" />
+
+                {/* Coming Soon badge */}
+                <div className="relative z-10 flex items-start justify-between mb-5">
+                  <span className="text-3xl">{tool.icon}</span>
+                  <span className="inline-flex items-center gap-1.5 font-mono text-[10px] font-semibold px-2.5 py-1 rounded-full bg-accent/10 text-accent border border-accent/30 tracking-wider whitespace-nowrap">
+                    <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+                    {tool.badge}
+                  </span>
+                </div>
+
+                {/* Content */}
+                <div className="relative z-10 flex-1 flex flex-col">
+                  <h3 className="font-display text-lg font-bold leading-snug">{tool.title}</h3>
+                  <p className="mt-3 text-sm text-muted-foreground leading-relaxed flex-1">{tool.desc}</p>
+                </div>
+
+                {/* Bottom accent line */}
+                <div className="absolute bottom-0 inset-x-6 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent opacity-0 group-hover:opacity-100 transition duration-300" />
+              </div>
+            ))}
+          </div>
+
+          {/* Subscription prompt */}
+          <div className="mt-14 text-center">
+            <p className="text-sm text-muted-foreground font-mono">
+              {lang === "ar"
+                ? "🔔 سجّل بريدك الإلكتروني لتصلك فور إطلاق كل أداة"
+                : "🔔 Subscribe to get notified when each tool launches"}
+            </p>
+            <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3 max-w-md mx-auto">
+              <input
+                type="email"
+                placeholder={lang === "ar" ? "بريدك الإلكتروني" : "Your email address"}
+                dir="ltr"
+                className="w-full px-5 py-3 rounded-md bg-background border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition text-sm"
+              />
+              <button
+                className="w-full sm:w-auto px-6 py-3 rounded-md bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition shadow-[var(--shadow-elegant)] whitespace-nowrap"
+              >
+                {lang === "ar" ? "أشعرني" : "Notify me"}
+              </button>
+            </div>
           </div>
         </div>
       </section>
