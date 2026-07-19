@@ -4,6 +4,7 @@ import { analyzeDxf, repairDxf, scoreColor, scoreBg, scoreLabel, getDxfBounds, b
 import type { DxfAnalysis, DxfIssue, FixSummaryItem, DxfBounds, SvgPath } from "@/lib/dxf";
 import { getSubscriptionData, isSubscribed, getFreeUsageCount, incrementFreeUsage, FREE_USAGE_LIMIT } from "@/lib/subscription";
 import { downloadAllAsZip, triggerSelfDestruct, isSelfDestructTriggered } from "@/lib/zip-export";
+import { track } from '@vercel/analytics';
 import { FeedbackModal } from "@/components/feedback-modal";
 import { ViralUnlockModal } from "@/components/viral-unlock-modal";
 import { SafetyBadge } from "@/components/safety-badge";
@@ -728,6 +729,13 @@ function ToolPage() {
     if (!file.name.toLowerCase().endsWith(".dxf")) {
       alert(lang === "ar" ? "يرجى رفع ملف بصيغة .dxf فقط" : "Please upload a .dxf file only");
       return;
+    }
+
+    // Track file upload (excluding localhost and admin users)
+    const isLocalhost = typeof window !== "undefined" && window.location.hostname === "localhost";
+    const isAdmin = typeof window !== "undefined" && window.location.search.includes("admin=true");
+    if (!isLocalhost && !isAdmin) {
+      track('Used DXF Fixer', { timestamp: new Date().toISOString() });
     }
 
     // Increment free usage counter for non-subscribed users
