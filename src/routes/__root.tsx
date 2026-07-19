@@ -7,13 +7,14 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect, type ReactNode } from "react";
-import { Analytics } from "@vercel/analytics/react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { initPaddle } from "../lib/paddle";
 import { SubscriptionPrompt } from "../components/subscription-prompt";
+import { getLangDir, type Lang } from "../lib/i18n";
+import { Analytics } from "@vercel/analytics/next";
 
 function NotFoundComponent() {
   return (
@@ -75,6 +76,14 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   );
 }
 
+function getInitialLang(): Lang {
+  if (typeof window !== "undefined") {
+    const stored = localStorage.getItem("dxfix_lang") as Lang | null;
+    if (stored && ["ar", "en", "fr", "zh"].includes(stored)) return stored;
+  }
+  return "ar";
+}
+
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   head: () => ({
     meta: [
@@ -106,8 +115,23 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 });
 
 function RootShell({ children }: { children: ReactNode }) {
+  const [lang, setLang] = useState<Lang>(getInitialLang);
+  const dir = getLangDir(lang);
+
+  // Listen for language changes from child routes (via custom event)
+  useEffect(() => {
+    const handleLangChange = (e: CustomEvent) => {
+      const newLang = e.detail as Lang;
+      if (["ar", "en", "fr", "zh"].includes(newLang)) {
+        setLang(newLang);
+      }
+    };
+    window.addEventListener("dxfix-lang-change" as any, handleLangChange as any);
+    return () => window.removeEventListener("dxfix-lang-change" as any, handleLangChange as any);
+  }, []);
+
   return (
-    <html lang="ar" dir="rtl">
+    <html lang={lang} dir={dir}>
       <head>
         <HeadContent />
       </head>
@@ -128,7 +152,8 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <SubscriptionPrompt lang="ar" />
+      <Analytics />
+      <SubscriptionPrompt />
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <Outlet />
       <Analytics />

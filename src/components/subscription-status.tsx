@@ -21,10 +21,25 @@ export function SubscriptionStatus({ className = "", size = "sm" }: Subscription
     return null;
   }
 
-  const tierLabel = status === "pro" ? "Pro" : "Workshop";
-  const tierColor = status === "pro" 
-    ? "bg-blue-500/20 text-blue-300 border-blue-500/30"
-    : "bg-purple-500/20 text-purple-300 border-purple-500/30";
+  const tierLabels: Record<string, string> = {
+    monthly: "شهري",
+    lifetime: "مدى الحياة",
+    workshop: "مشغل",
+    pro: "Pro",
+    enterprise: "Enterprise",
+    "per-file": "لكل ملف",
+  };
+  const tierLabel = tierLabels[status] || status;
+
+  const tierColors: Record<string, string> = {
+    monthly: "bg-blue-500/20 text-blue-300 border-blue-500/30",
+    lifetime: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+    workshop: "bg-purple-500/20 text-purple-300 border-purple-500/30",
+    pro: "bg-blue-500/20 text-blue-300 border-blue-500/30",
+    enterprise: "bg-green-500/20 text-green-300 border-green-500/30",
+    "per-file": "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
+  };
+  const tierColor = tierColors[status] || "bg-blue-500/20 text-blue-300 border-blue-500/30";
 
   const sizeClasses = {
     sm: "px-2 py-1 text-xs",
@@ -61,7 +76,15 @@ export function SubscriptionDetails() {
     );
   }
 
-  const tierLabel = status === "pro" ? "Pro" : "Workshop";
+  const tierLabels: Record<string, string> = {
+    monthly: "شهري",
+    lifetime: "مدى الحياة",
+    workshop: "مشغل",
+    pro: "Pro",
+    enterprise: "Enterprise",
+    "per-file": "لكل ملف",
+  };
+  const tierLabel = tierLabels[status] || status;
 
   return (
     <div className="text-xs text-muted-foreground">

@@ -3,6 +3,9 @@ import { useState, useEffect } from "react";
 import heroImg from "@/assets/hero-cnc.jpg";
 import { openCheckout } from "@/lib/paddle";
 import { ReviewsCarousel } from "@/components/reviews-carousel";
+import { LanguageSwitcher } from "@/components/language-switcher";
+import { getTranslations, getLangDir, type Lang } from "@/lib/i18n";
+import { FREE_USAGE_LIMIT } from "@/lib/subscription";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -37,8 +40,9 @@ export const Route = createFileRoute("/")({
           operatingSystem: "Web",
           offers: [
             { "@type": "Offer", price: "0", priceCurrency: "USD", name: "Free" },
-            { "@type": "Offer", price: "19", priceCurrency: "USD", name: "Pro" },
-            { "@type": "Offer", price: "49", priceCurrency: "USD", name: "Workshop" },
+            { "@type": "Offer", price: "2", priceCurrency: "USD", name: "Per File" },
+            { "@type": "Offer", price: "7", priceCurrency: "USD", name: "Monthly" },
+            { "@type": "Offer", price: "10", priceCurrency: "USD", name: "Workshop" },
           ],
           description: "Arabic-first DXF file repair and validation tool for CNC, laser and plasma workshops.",
           url: "https://dxfix.replit.app/",
@@ -55,7 +59,6 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
-type Lang = "ar" | "en";
 
 const T = {
   ar: {
@@ -107,6 +110,8 @@ const T = {
     roadmapTool2Desc: "ارفع أي صورة عادية (PNG/JPG) واستخرج تلقائياً خطوط فيكتور نظيفة خالية من التداخل، جاهزة لماكينة الليزر أو الراوتر CNC.",
     roadmapTool3: "مدقق ومحسّن أكواد G-Code",
     roadmapTool3Desc: "فحص أولي لملفات التشغيل قبل التحميل على الماكينة. اكتشف حركات خارج الحدود وقعّن زمن الدورة قبل البدء.",
+    sectionSpecificFeatures: "مميزات كل باقة",
+    sectionSpecificDesc: "تعرف على ما تحصل عليه في كل خطة",
     sectionPricing: "الأسعار",
     pricingTitle: "ابدأ مجاناً، طوّر عند الحاجة.",
     pricingDesc: "خطط شفافة بدون مفاجآت.",
@@ -114,38 +119,72 @@ const T = {
       {
         name: "مجاني",
         price: "$0",
-        period: "للأبد",
+        period: `${FREE_USAGE_LIMIT} استخدامات`,
         desc: "مثالي للتجربة والاستخدام الخفيف.",
-        items: ["معاينة بصرية للملف", "تقرير بالمشاكل المكتشفة (دون إصلاح)", "إحصائيات العناصر الأساسية"],
+        items: [
+          "🔍 معاينة بصرية للملف",
+          "📋 تقرير بالمشاكل المكتشفة (دون إصلاح)",
+          "📊 إحصائيات العناصر الأساسية",
+          "🆓 بدون بطاقة ائتمان",
+        ],
         cta: "ابدأ مجاناً",
         highlight: false,
         priceId: null,
       },
       {
-        name: "Pro",
-        price: "$19",
-        period: "/ شهر",
-        desc: "للمشغّل اليومي الذي يرفع ملفات باستمرار.",
-        items: ["🔒 إصلاح وتحميل ملفات DXF مصلحة", "🔒 حاسبة تكلفة القص التقديرية", "🔒 محاكاة حركة رأس الماكينة 3D", "🔒 تصدير بصيغ SVG و PDF"],
-        cta: "اشترك في Pro",
-        highlight: true,
-        priceId: import.meta.env.VITE_PADDLE_PRO_PRICE_ID,
+        name: "لكل ملف",
+        price: "$2",
+        period: "لكل ملف",
+        desc: "ادفع فقط عند الحاجة. كل ملف $2 — صالح 24 ساعة.",
+        items: [
+          "🛠️ إصلاح وتحميل ملف DXF واحد",
+          "💰 حاسبة تكلفة القص التقديرية",
+          "📐 تصدير بصيغ SVG و PDF",
+          "✅ صالح لمدة 24 ساعة",
+        ],
+        cta: "ادفع $2 ←",
+        highlight: false,
+        priceId: import.meta.env.VITE_PADDLE_PER_FILE_PRICE_ID || 'pri_per_file',
       },
       {
-        name: "Workshop",
-        price: "$49",
+        name: "شهري",
+        price: "$7",
         period: "/ شهر",
-        desc: "للمصانع والورش الكبيرة التي تحتاج معالجة جماعية.",
-        items: ["🔒 معالجة جماعية للملفات (Bulk / Zip)", "🔒 ميزة الترتيب الذكي لتقليل الهدر (Nesting)", "🔒 التدمير الذاتي وحذف الملفات الفوري"],
-        cta: "اشترك في Workshop",
+        desc: "للاستخدام المنتظم والشهري. اشتراك شهري بأسعار مناسبة للجميع.",
+        items: [
+          "🛠️ إصلاح وتحميل غير محدود للملفات",
+          "💰 حاسبة تكلفة القص التقديرية",
+          "🔄 محاكاة حركة رأس الماكينة 3D",
+          "📐 تصدير بصيغ SVG و PDF",
+          "✅ غير محدود من الملفات",
+        ],
+        cta: "اشترك شهرياً ←",
+        highlight: true,
+        priceId: import.meta.env.VITE_PADDLE_PRO_PRICE_ID || 'pri_pro_monthly',
+      },
+      {
+        name: "مشغل",
+        price: "$10",
+        period: "/ شهر",
+        desc: "لأصحاب ورش CNC المحترفين. مميزات متقدمة للورش الكبيرة.",
+        items: [
+          "🛠️ إصلاح وتحميل غير محدود للملفات",
+          "💰 حاسبة تكلفة القص التقديرية",
+          "🔄 محاكاة مسار الماكينة 3D",
+          "📐 تصدير بصيغ SVG و PDF",
+          "📦 معالجة جماعية للملفات",
+          "⭐ دعم فني مخصص وأولوية",
+        ],
+        cta: "اشترك في المشغل ←",
         highlight: false,
-        priceId: import.meta.env.VITE_PADDLE_WORKSHOP_PRICE_ID,
+        priceId: import.meta.env.VITE_PADDLE_WORKSHOP_PRICE_ID || 'pri_workshop_monthly',
       },
     ] as const,
+    pricingPerFile: "💡 كما يمكنك الدفع لكل ملف — $2 فقط للملف الواحد",
     pricingNote: "* الدفع آمن عبر Paddle. يمكن الإلغاء في أي وقت. المبالغ بالدولار الأمريكي.",
     sectionFaq: "أسئلة شائعة",
     faqs: [
-      { q: "هل فعلاً مجاني؟", a: "نعم، 100% مجاني خلال فترة الإطلاق. لا بطاقة، لا اشتراك، لا حد للملفات." },
+      { q: "هل فعلاً مجاني؟", a: "نعم، 100% مجاني خلال فترة الإطلاق. لا بطاقة، لا اشتراك، $FREE_USAGE_LIMIT استخدامات مجانية." },
       { q: "هل ملفاتي بأمان؟", a: "نعالج الملف ونحذفه فوراً بعد التحميل. لا نخزّن تصاميمك أبداً." },
       { q: "أي برامج القص يدعم الملف الناتج؟", a: "ملف DXF القياسي (R12/R2013) يعمل مع LaserCAD, RDWorks, Mach3, FastCAM، وأغلب البرامج التجارية." },
       { q: "هل أحتاج خبرة AutoCAD؟", a: "لا. الواجهة مصممة للمشغّل، ليس للمهندس. اضغط زر واحد." },
@@ -228,38 +267,72 @@ const T = {
       {
         name: "Free",
         price: "$0",
-        period: "forever",
+        period: `${FREE_USAGE_LIMIT} uses`,
         desc: "Perfect for trying it out or occasional use.",
-        items: ["Visual file preview", "Issue detection report (no repair)", "Basic entity statistics"],
+        items: [
+          "🔍 Visual file preview",
+          "📋 Issue detection report (no repair)",
+          "📊 Basic entity statistics",
+          "🆓 No credit card required",
+        ],
         cta: "Start free",
         highlight: false,
         priceId: null,
       },
       {
-        name: "Pro",
-        price: "$19",
+        name: "Per File",
+        price: "$2",
+        period: "per file",
+        desc: "Pay only when you need it. $2 per file — valid 24 hours.",
+        items: [
+          "🛠️ Repair & download one DXF file",
+          "💰 Cutting cost estimator",
+          "📐 Export to SVG and PDF",
+          "✅ Valid for 24 hours",
+        ],
+        cta: "Pay $2 →",
+        highlight: false,
+        priceId: import.meta.env.VITE_PADDLE_PER_FILE_PRICE_ID || 'pri_per_file',
+      },
+      {
+        name: "Monthly",
+        price: "$7",
         period: "/ month",
-        desc: "For the daily operator who uploads files constantly.",
-        items: ["🔒 Repair & download fixed DXF files", "🔒 Cutting cost estimator", "🔒 3D CNC toolpath simulation", "🔒 Export to SVG and PDF"],
-        cta: "Subscribe to Pro",
+        desc: "For regular monthly use. Affordable subscription for everyone.",
+        items: [
+          "🛠️ Unlimited repair & downloads",
+          "💰 Cutting cost estimator",
+          "🔄 3D CNC toolpath simulation",
+          "📐 Export to SVG and PDF",
+          "✅ Unlimited file processing",
+        ],
+        cta: "Subscribe Monthly →",
         highlight: true,
-        priceId: import.meta.env.VITE_PADDLE_PRO_PRICE_ID,
+        priceId: import.meta.env.VITE_PADDLE_PRO_PRICE_ID || 'pri_pro_monthly',
       },
       {
         name: "Workshop",
-        price: "$49",
+        price: "$10",
         period: "/ month",
-        desc: "For factories and large shops needing bulk processing.",
-        items: ["🔒 Bulk file processing (Bulk / Zip)", "🔒 Smart nesting optimization to reduce waste", "🔒 Self-destruct & instant file deletion"],
-        cta: "Subscribe to Workshop",
+        desc: "For professional CNC workshops. Advanced features for large shops.",
+        items: [
+          "🛠️ Unlimited repair & downloads",
+          "💰 Cutting cost estimator",
+          "🔄 CNC toolpath simulation",
+          "📐 Export to SVG and PDF",
+          "📦 Bulk file processing",
+          "⭐ Dedicated support & priority",
+        ],
+        cta: "Subscribe Workshop →",
         highlight: false,
-        priceId: import.meta.env.VITE_PADDLE_WORKSHOP_PRICE_ID,
+        priceId: import.meta.env.VITE_PADDLE_WORKSHOP_PRICE_ID || 'pri_workshop_monthly',
       },
     ] as const,
+    pricingPerFile: "💡 Or pay per file — $2 only per file",
     pricingNote: "* Payments secured by Paddle. Cancel anytime. Prices in USD.",
     sectionFaq: "FAQ",
     faqs: [
-      { q: "Is it really free?", a: "Yes — 100% free during launch. No card, no signup, no file limit." },
+      { q: "Is it really free?", a: "Yes — 100% free during launch. No card, no signup, ${FREE_USAGE_LIMIT} free uses." },
       { q: "Are my files safe?", a: "We process and delete each file immediately. We never store your designs." },
       { q: "Which cutters does the output work with?", a: "Standard DXF (R12/R2013) — works with LaserCAD, RDWorks, Mach3, FastCAM and most commercial software." },
       { q: "Do I need AutoCAD experience?", a: "No. The UI is built for operators, not engineers. One button does it." },
@@ -292,7 +365,13 @@ const APP_URL = "/tool";
 const WHATSAPP_URL = "https://wa.me/962795156768";
 
 function Index() {
-  const [lang, setLang] = useState<Lang>("ar");
+  const [lang, setLang] = useState<Lang>(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("dxfix_lang") as Lang | null;
+      if (stored && ["ar", "en", "fr", "zh"].includes(stored)) return stored;
+    }
+    return "ar";
+  });
   const [copied, setCopied] = useState(false);
   const [refCode, setRefCode] = useState("");
   const [referralLink, setReferralLink] = useState("");
@@ -303,7 +382,7 @@ function Index() {
   const [exitSent, setExitSent] = useState(false);
   const [proofIndex, setProofIndex] = useState(0);
   const [showProof, setShowProof] = useState(false);
-  const t = T[lang];
+  const t = T[lang as keyof typeof T] || T.en;
   const isRTL = t.dir === "rtl";
 
   const socialProofAr = [
@@ -379,6 +458,12 @@ function Index() {
       ? `جرّب DXFix — أداة عربية لإصلاح ملفات DXF لورش CNC! مجاني تماماً. ${referralLink}`
       : `Try DXFix — Arabic DXF repair tool for CNC workshops! Completely free. ${referralLink}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
+  }
+
+  function handleLangChange(newLang: Lang) {
+    setLang(newLang);
+    localStorage.setItem("dxfix_lang", newLang);
+    window.dispatchEvent(new CustomEvent("dxfix-lang-change", { detail: newLang }));
   }
 
   const proofMessages = lang === "ar" ? socialProofAr : socialProofEn;
@@ -469,12 +554,7 @@ function Index() {
             <a href="#faq" className="hover:text-foreground transition">{t.nav.faq}</a>
           </nav>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setLang(lang === "ar" ? "en" : "ar")}
-              className="font-mono text-xs px-3 py-1.5 rounded-md border border-border hover:border-primary/60 hover:text-primary transition"
-            >
-              {t.langSwitch}
-            </button>
+            <LanguageSwitcher currentLang={lang} onLangChange={handleLangChange} />
             <a
               href="/tool"
               className="hidden sm:inline-flex px-4 py-2 rounded-md bg-accent text-accent-foreground font-semibold text-sm hover:opacity-90 transition shadow-[var(--shadow-spark)]"
@@ -686,13 +766,15 @@ function Index() {
           <p className="mt-4 text-muted-foreground">{t.pricingDesc}</p>
         </div>
 
-        <div className="mt-14 grid md:grid-cols-3 gap-6">
+        <div className="mt-14 grid md:grid-cols-2 lg:grid-cols-4 gap-6">
           {t.plans.map((plan) => (
             <div
               key={plan.name}
               className={`relative rounded-2xl border p-8 flex flex-col transition ${
                 plan.highlight
                   ? "border-accent/70 bg-gradient-to-br from-accent/10 to-card shadow-[var(--shadow-spark)]"
+                  : plan.name === "لكل ملف" || plan.name === "Per File"
+                  ? "border-emerald-500/70 bg-gradient-to-br from-emerald-500/10 to-card"
                   : "border-border bg-card"
               }`}
             >
@@ -708,7 +790,8 @@ function Index() {
               <div>
                 <p className="font-display font-bold text-lg">{plan.name}</p>
                 <div className="mt-3 flex items-baseline gap-2">
-                  <span className={`font-display text-5xl font-bold ${plan.highlight ? "text-gradient-spark" : "text-foreground"}`}>{plan.price}</span>
+                  <span className={`font-display text-5xl font-bold ${plan.highlight ? "text-gradient-spark" : 
+                    plan.name === "لكل ملف" || plan.name === "Per File" ? "text-emerald-400" : "text-foreground"}`}>{plan.price}</span>
                   <span className="text-muted-foreground/80 font-mono text-sm">{plan.period}</span>
                 </div>
                 <p className="mt-3 text-sm text-foreground/80">{plan.desc}</p>
@@ -717,7 +800,8 @@ function Index() {
               <ul className="mt-7 space-y-3 flex-1">
                 {plan.items.map((item) => (
                   <li key={item} className="flex items-center gap-3 text-sm text-foreground/90">
-                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs flex-shrink-0 ${plan.highlight ? "bg-accent/20 text-accent" : "bg-primary/10 text-primary"}`}>✓</span>
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs flex-shrink-0 ${plan.highlight ? "bg-accent/20 text-accent" : 
+                      plan.name === "لكل ملف" || plan.name === "Per File" ? "bg-emerald-500/20 text-emerald-400" : "bg-primary/10 text-primary"}`}>✓</span>
                     {item}
                   </li>
                 ))}
@@ -782,7 +866,7 @@ function Index() {
       </section>
 
       {/* Reviews Carousel */}
-      <ReviewsCarousel lang={lang} />
+      <ReviewsCarousel lang={lang as "ar" | "en"} />
 
       {/* TESTIMONIALS */}
       <section id="testimonials" className="max-w-7xl mx-auto px-5 sm:px-8 py-24">

@@ -17,7 +17,7 @@ export interface UseSubscriptionReturn {
   isSubscribed: boolean;
   isLoading: boolean;
   data: SubscriptionData;
-  markAsSubscribed: (tier: 'pro' | 'workshop', email?: string) => void;
+  markAsSubscribed: (tier: 'monthly' | 'lifetime' | 'workshop' | 'pro' | 'enterprise', email?: string) => void;
   markAsFree: () => void;
   refresh: () => Promise<void>;
 }
@@ -51,15 +51,15 @@ export function useSubscription(): UseSubscriptionReturn {
     }
   }, [isClient, refresh]);
 
-  const markAsSubscribed = useCallback((tier: 'pro' | 'workshop', email?: string) => {
+  const markAsSubscribed = useCallback((tier: string, email?: string) => {
     const newData: SubscriptionData = {
-      status: tier,
+      status: tier as SubscriptionStatus,
       email,
       lastChecked: Date.now(),
     };
     saveSubscriptionData(newData);
     setData(newData);
-    setStatus(tier);
+    setStatus(tier as SubscriptionStatus);
   }, []);
 
   const markAsFree = useCallback(() => {

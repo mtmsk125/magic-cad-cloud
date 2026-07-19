@@ -5,9 +5,10 @@
 
 import { useState } from "react";
 import { saveEmail, getReferralLink, getReferralCount, getOrCreateReferralCode, setUserSubscribed, hasReachedReferralThreshold, incrementReferralCount } from "@/lib/viral-launch";
+import { type Lang } from "@/lib/i18n";
 
 interface ViralUnlockModalProps {
-  lang: "ar" | "en";
+  lang: Lang;
   isOpen: boolean;
   onClose: () => void;
   onUnlocked: () => void;
@@ -67,7 +68,7 @@ export function ViralUnlockModal({ lang, isOpen, onClose, onUnlocked }: ViralUnl
   const [activeTab, setActiveTab] = useState<"email" | "referral">("email");
   const [unlocked, setUnlocked] = useState(false);
 
-  const t = T[lang];
+  const t = T[lang as keyof typeof T] || T.en;
   const isRTL = lang === "ar";
   const referralLink = getReferralLink();
   const referralCode = getOrCreateReferralCode();

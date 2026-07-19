@@ -3,7 +3,7 @@
  * Handles user subscription status, storage, and Paddle integration
  */
 
-export type SubscriptionStatus = 'free' | 'pro' | 'workshop' | 'enterprise' | null;
+export type SubscriptionStatus = 'free' | 'monthly' | 'lifetime' | 'workshop' | 'pro' | 'enterprise' | 'per-file' | null;
 
 export interface SubscriptionData {
   status: SubscriptionStatus;
@@ -92,16 +92,16 @@ export function markAsFree() {
 }
 
 /**
- * Mark user as subscribed (pro or workshop)
+ * Mark user as subscribed (monthly, lifetime, workshop, pro, or enterprise)
  */
 export function markAsSubscribed(
-  status: 'pro' | 'workshop' | 'enterprise',
+  status: string,
   customerId?: string,
   subscriptionId?: string,
   email?: string,
 ) {
   saveSubscriptionData({
-    status,
+    status: status as SubscriptionStatus,
     customerId,
     subscriptionId,
     email,
@@ -132,7 +132,7 @@ export function initPaddleSubscriptionListener() {
       // User completed checkout - mark as subscribed
       const subscriptionType = data.data?.plan?.name?.includes('Workshop')
         ? 'workshop'
-        : 'pro';
+        : 'monthly';
       
       markAsSubscribed(
         subscriptionType,
@@ -154,14 +154,14 @@ export function handlePaddleCheckoutComplete(email: string) {
   if (!isClient()) return;
 
   // Mark user as having initiated subscription
-  markAsSubscribed('pro', undefined, undefined, email);
+  markAsSubscribed('monthly', undefined, undefined, email);
 }
 
 // --- Free usage counter ---
 
 const FREE_USAGE_STORAGE_KEY = 'dxfix_free_usage';
 
-export const FREE_USAGE_LIMIT = 5;
+export const FREE_USAGE_LIMIT = 3;
 
 /**
  * Get the current free usage count
@@ -198,6 +198,58 @@ export function resetFreeUsage() {
   if (!isClient()) return;
   try {
     localStorage.removeItem(FREE_USAGE_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+// --- Per-file payment tracking ---
+
+const PER_FILE_STORAGE_KEY = 'dxfix_per_file';
+
+/**
+ * Track a per-file payment
+ */
+export function trackPerFilePayment(email?: string) {
+  if (!isClient()) return;
+  try {
+    localStorage.setItem(PER_FILE_STORAGE_KEY, JSON.stringify({
+      paid: true,
+      email: email || '',
+      lastPaid: Date.now(),
+    }));
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Check if user has paid per-file
+ */
+export function hasPerFilePayment(): boolean {
+  if (!isClient()) return false;
+  try {
+    const stored = localStorage.getItem(PER_FILE_STORAGE_KEY);
+    if (!stored) return false;
+    const data = JSON.parse(stored);
+    // Per-file payment lasts 24 hours
+    if (data.lastPaid && Date.now() - data.lastPaid > 24 * 60 * 60 * 1000) {
+      localStorage.removeItem(PER_FILE_STORAGE_KEY);
+      return false;
+    }
+    return data.paid === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Clear per-file payment
+ */
+export function clearPerFilePayment() {
+  if (!isClient()) return;
+  try {
+    localStorage.removeItem(PER_FILE_STORAGE_KEY);
   } catch {
     // ignore
   }

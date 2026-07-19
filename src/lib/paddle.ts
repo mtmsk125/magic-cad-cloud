@@ -4,7 +4,7 @@ declare global {
   }
 }
 
-import { markAsSubscribed } from '@/lib/subscription';
+import { markAsSubscribed, trackPerFilePayment } from '@/lib/subscription';
 import { subscribeOnServer } from '@/lib/subscription-auth';
 
 let initialized = false;
@@ -13,35 +13,35 @@ let initialized = false;
  * Plans configuration for easy tier detection and rendering
  */
 const PLANS = {
-  pro: {
+  monthly: {
     priceIds: ['pri_01kwe9s2cv7fb2x854jkdshw8c', 'pri_pro_monthly', 'pri_pro'],
-    label: 'Pro',
-    price: '$19',
+    label: 'شهري',
+    price: '$7',
+  },
+  perFile: {
+    priceIds: ['pri_per_file', 'pri_pay_per_file'],
+    label: 'لكل ملف',
+    price: '$2',
   },
   workshop: {
-    priceIds: ['pri_01kwe9yxzj0n4njwbncmgt8he0', 'pri_workshop_monthly', 'pri_workshop', '49'],
-    label: 'ورشة',
-    price: '$49',
-  },
-  enterprise: {
-    priceIds: ['pri_enterprise_monthly', 'pri_enterprise'],
-    label: 'Enterprise',
-    price: '$49',
+    priceIds: ['pri_workshop_monthly', 'pri_workshop'],
+    label: 'مشغل',
+    price: '$10',
   },
 } as const;
 
 /**
  * Detect plan tier from a price ID
  */
-function detectTier(priceId: string): 'pro' | 'workshop' | 'enterprise' {
+function detectTier(priceId: string): 'monthly' | 'perFile' | 'workshop' {
   const lower = priceId.toLowerCase();
   if (PLANS.workshop.priceIds.some(id => lower.includes(id))) {
     return 'workshop';
   }
-  if (PLANS.enterprise.priceIds.some(id => lower.includes(id))) {
-    return 'enterprise';
+  if (PLANS.perFile.priceIds.some(id => lower.includes(id))) {
+    return 'perFile';
   }
-  return 'pro';
+  return 'monthly';
 }
 
 /**
@@ -171,12 +171,19 @@ export async function openCheckout(priceId: string, email?: string) {
           const customerId = event.data?.customer?.id;
           const transactionId = event.data?.transaction?.id;
           
-          // Save locally
-          markAsSubscribed(tier as 'pro' | 'workshop' | 'enterprise', customerId, transactionId, customerEmail);
+          if (tier === 'perFile') {
+            // Per-file payment - track it
+            trackPerFilePayment(customerEmail);
+            window.location.href = '/tool';
+            return;
+          }
+          
+          // Save locally - use tier as subscription status
+          markAsSubscribed(tier as unknown as 'pro' | 'workshop' | 'enterprise', customerId, transactionId, customerEmail);
           
           // Verify with server (async - don't block redirect)
           if (customerEmail) {
-            subscribeOnServer(customerEmail, tier as 'pro' | 'workshop' | 'enterprise')
+            subscribeOnServer(customerEmail, tier as unknown as 'pro' | 'workshop' | 'enterprise')
               .then(success => {
                 if (success) console.log("✅ Server subscription saved");
               })
@@ -227,9 +234,9 @@ export function getMockCheckouts(): MockCheckoutData[] {
  */
 function openMockCheckout(tier: string, priceId: string, email?: string) {
   const planLabels: Record<string, { name: string; price: string }> = {
-    pro: { name: 'Pro', price: '$19/month' },
-    workshop: { name: 'Workshop', price: '$49/month' },
-    enterprise: { name: 'Enterprise', price: '$49/month' },
+    monthly: { name: 'شهري', price: '$7/شهر' },
+    perFile: { name: 'لكل ملف', price: '$2/ملف' },
+    workshop: { name: 'مشغل', price: '$10/شهر' },
   };
   const plan = planLabels[tier] || { name: tier, price: '' };
 
@@ -353,8 +360,13 @@ function openMockCheckout(tier: string, priceId: string, email?: string) {
       localStorage.setItem(MOCK_CHECKOUT_KEY, JSON.stringify(existing));
     } catch {}
 
-    // Mark user as subscribed
-    markAsSubscribed(tier as 'pro' | 'workshop' | 'enterprise', undefined, undefined, userEmail);
+    if (tier === 'perFile') {
+      // Per-file payment
+      trackPerFilePayment(userEmail);
+    } else {
+      // Mark user as subscribed
+      markAsSubscribed(tier as unknown as 'pro' | 'workshop' | 'enterprise', undefined, undefined, userEmail);
+    }
 
     // Show success
     document.getElementById('mock-checkout-form')!.style.display = 'none';

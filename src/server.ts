@@ -42,9 +42,39 @@ function verifySignature(token: string, email: string, tier: string, signature: 
 import { Paddle, Environment } from '@paddle/paddle-node-sdk';
 import { upsertCustomer, upsertSubscription } from './db/paddleMirror';
 
-const paddleSdk = new Paddle(process.env.PADDLE_API_KEY || '', {
-  environment: process.env.PADDLE_ENVIRONMENT === 'sandbox' ? Environment.sandbox : Environment.production,
-});
+// Validate Paddle API key on startup
+const paddleApiKey = process.env.PADDLE_API_KEY || '';
+const paddleClientToken = process.env.VITE_PADDLE_CLIENT_TOKEN || '';
+const paddleWebhookSecret = process.env.PADDLE_WEBHOOK_SECRET || '';
+
+// Log Paddle configuration status at startup
+if (!paddleApiKey) {
+  console.warn('⚠️  PADDLE_API_KEY is not set. Server-side Paddle features (webhooks, portal) will be DISABLED.');
+  console.warn('   Get your API key from: https://vendors.paddle.com/authentication');
+}
+if (!paddleWebhookSecret) {
+  console.warn('⚠️  PADDLE_WEBHOOK_SECRET is not set. Webhook signature verification will be DISABLED.');
+  console.warn('   Create a webhook at: https://vendors.paddle.com/webhooks');
+}
+if (!paddleClientToken) {
+  console.warn('⚠️  VITE_PADDLE_CLIENT_TOKEN is not set. Client-side checkout will use MOCK mode.');
+} else {
+  console.log(`✅ Paddle client token found: ${paddleClientToken.slice(0, 5)}... (${paddleClientToken.startsWith('test_') ? 'sandbox' : 'production'})`);
+}
+if (paddleApiKey) {
+  console.log(`✅ Paddle API key found: ${paddleApiKey.slice(0, 5)}...`);
+}
+if (paddleWebhookSecret) {
+  console.log(`✅ Paddle webhook secret configured`);
+}
+
+// Only initialize SDK if we have an API key
+let paddleSdk: Paddle | null = null;
+if (paddleApiKey) {
+  paddleSdk = new Paddle(paddleApiKey, {
+    environment: process.env.PADDLE_ENVIRONMENT === 'sandbox' ? Environment.sandbox : Environment.production,
+  });
+}
 
 /**
  * Handle Paddle webhook events with signature verification
@@ -65,6 +95,13 @@ async function handlePaddleWebhook(request: Request): Promise<Response> {
     // Read the raw body as text for signature verification
     const rawBody = await request.text();
 
+    if (!paddleSdk) {
+      console.error('❌ Paddle SDK not initialized. PADDLE_API_KEY is missing.');
+      return new Response(JSON.stringify({ error: 'Paddle SDK not configured on server.' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
     // Verify signature using Paddle SDK (returns a Promise)
     const event = await paddleSdk.webhooks.unmarshal(rawBody, secret, signature);
 
