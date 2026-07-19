@@ -14,7 +14,8 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { initPaddle } from "../lib/paddle";
 import { SubscriptionPrompt } from "../components/subscription-prompt";
 import { getLangDir, type Lang } from "../lib/i18n";
-import { Analytics } from "@vercel/analytics/next";
+import { inject } from "@vercel/analytics";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 
 function NotFoundComponent() {
   return (
@@ -148,15 +149,15 @@ function RootComponent() {
 
   useEffect(() => {
     initPaddle();
+    inject();
   }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
-      <Analytics />
+      <SpeedInsights />
       <SubscriptionPrompt />
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <Outlet />
-      <Analytics />
     </QueryClientProvider>
   );
 }

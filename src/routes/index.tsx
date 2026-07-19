@@ -6,6 +6,7 @@ import { ReviewsCarousel } from "@/components/reviews-carousel";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { getTranslations, getLangDir, type Lang } from "@/lib/i18n";
 import { FREE_USAGE_LIMIT } from "@/lib/subscription";
+import { track } from '@vercel/analytics';
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -583,6 +584,13 @@ function Index() {
 
             <div className={`mt-9 flex flex-wrap gap-3 ${isRTL ? "flex-row-reverse justify-end" : ""}`}>
               <a href="/tool"
+                onClick={() => {
+                  const isLocalhost = window.location.hostname === "localhost";
+                  const isAdmin = window.location.search.includes("admin=true");
+                  if (!isLocalhost && !isAdmin) {
+                    track('Clicked Start - Upload DXF', { timestamp: new Date().toISOString() });
+                  }
+                }}
                 className="inline-flex items-center gap-2 px-6 py-3.5 rounded-md bg-accent text-accent-foreground font-semibold hover:opacity-90 transition shadow-[var(--shadow-spark)]">
                 {t.primaryCta}
                 <span aria-hidden>{isRTL ? "←" : "→"}</span>
