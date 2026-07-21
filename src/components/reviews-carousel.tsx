@@ -50,7 +50,7 @@ export function ReviewsCarousel({ lang = "ar" }: ReviewsCarouselProps) {
   const [reviews, setReviews] = useState<ReviewEntry[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
-  const t = T[lang];
+  const t = T[lang] || T.en;
 
   useEffect(() => {
     // Get seed reviews 

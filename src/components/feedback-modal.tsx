@@ -81,7 +81,7 @@ export function FeedbackModal({ lang = "ar", onRewardUnlocked }: FeedbackModalPr
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const t = T[lang];
+  const t = T[lang] || T.en;
   const isRTL = lang === "ar";
   const machines = MACHINE_TYPES[lang];
 

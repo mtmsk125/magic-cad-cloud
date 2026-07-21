@@ -386,7 +386,7 @@ function PricingPage() {
   });
   const [redirectParam, setRedirectParam] = useState(false);
   const [showViralModal, setShowViralModal] = useState(false);
-  const t = T[lang];
+  const t = T[lang] || T.en;
   const isRTL = getLangDir(lang) === "rtl";
 
   useEffect(() => {
