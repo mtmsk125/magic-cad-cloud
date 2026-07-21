@@ -426,8 +426,14 @@ export const Route = createFileRoute("/tool")({
   },
   head: () => ({
     meta: [
-      { title: "DXFix — أداة إصلاح ملفات DXF" },
-      { name: "description", content: "ارفع ملف DXF، نكشف الأخطاء ونصلحها تلقائياً، وتحمّل ملفاً نظيفاً جاهزاً للقص." },
+      { title: "DXFix — أداة إصلاح وفحص ملفات DXF اونلاين | مجاني" },
+      { name: "description", content: "ارفع ملف DXF، نكشف الأخطاء ونصلحها تلقائياً، ونعطيك تقييم جاهزية القص. حمّل ملفاً نظيفاً جاهزاً للماكينة خلال ثوانٍ. مجاني." },
+      { name: "keywords", content: "إصلاح DXF, فحص DXF, أداة DXF اونلاين, DXF repair tool, CNC, laser cutting, تصليح ملفات DXF" },
+      { property: "og:title", content: "DXFix — أداة إصلاح وفحص ملفات DXF اونلاين" },
+      { property: "og:description", content: "ارفع ملف DXF، نصلح الأخطاء تلقائياً وتحمّل ملفاً نظيفاً جاهزاً للقص. مجاني." },
+      { property: "og:type", content: "website" },
+      { property: "og:url", content: "https://dxfix.com/tool" },
+      { name: "robots", content: "index, follow" },
     ],
   }),
   component: ToolPage,
