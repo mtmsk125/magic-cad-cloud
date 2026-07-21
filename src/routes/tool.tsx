@@ -475,6 +475,9 @@ function ToolPage() {
 
   // Viral Unlock Modal (Phase 1 - replaces old subscribe modal for free users)
   const [showViralUnlockModal, setShowViralUnlockModal] = useState(false);
+  const [showAdGateModal, setShowAdGateModal] = useState(false);
+  const [adWatched, setAdWatched] = useState(false);
+  const [adTimer, setAdTimer] = useState(0);
   const [viralUnlocked, setViralUnlocked] = useState(false);
 
   // Bulk upload state
@@ -805,8 +808,10 @@ function ToolPage() {
   const handleDownloadFixed = () => {
     // Gate: Check if user is subscribed before allowing download
     if (!userIsSubscribed) {
-      // Phase 1: Show viral unlock modal instead of old subscribe modal
-      setShowViralUnlockModal(true);
+      // Show ad gate modal for free users - watch ad to unlock download
+      setShowAdGateModal(true);
+      setAdWatched(false);
+      setAdTimer(0);
       return;
     }
     // Proceed with download
@@ -1598,6 +1603,109 @@ function ToolPage() {
           }
         }}
       />
+
+      {/* Ad Gate Modal (Watch ad to download) */}
+      {showAdGateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+          <div className="relative bg-card border border-accent/40 rounded-2xl p-8 max-w-md w-full shadow-[var(--shadow-spark)] text-center">
+            <button
+              onClick={() => setShowAdGateModal(false)}
+              className="absolute top-4 end-4 text-muted-foreground hover:text-foreground transition font-mono text-lg"
+            >✕</button>
+            <div className="text-5xl mb-4">
+              {adWatched ? "✅" : "📺"}
+            </div>
+            <h3 className="font-display text-2xl font-bold mb-3">
+              {lang === "ar" ? "شاهد إعلاناً قصيراً لتحميل الملف" : "Watch a short ad to download"}
+            </h3>
+            <p className="text-muted-foreground mb-6">
+              {lang === "ar"
+                ? "ادعم الأداة بمشاهدة إعلان قصير. سيتم تفعيل التحميل فور انتهاء الإعلان."
+                : "Support the tool by watching a short ad. Download will be enabled once the ad ends."}
+            </p>
+
+            {/* Ad Container */}
+            <div className="bg-background border border-border/60 rounded-xl p-4 mb-4 min-h-[120px] flex flex-col items-center justify-center">
+              {adWatched ? (
+                <div className="text-green-400 font-semibold">
+                  {lang === "ar" ? "✓ تم مشاهدة الإعلان!" : "✓ Ad watched!"}
+                </div>
+              ) : (
+                <>
+                  <div className="text-3xl mb-2">📺</div>
+                  <div className="font-mono text-xs text-muted-foreground mb-3">
+                    {lang === "ar" ? "Google AdSense" : "Advertisement"}
+                  </div>
+                  {/* Google AdSense container */}
+                  <ins
+                    className="adsbygoogle"
+                    style={{ display: "block", minWidth: "200px", width: "100%", height: "60px" }}
+                    data-ad-client="ca-pub-XXXXXXXXXXXXXXXX"
+                    data-ad-slot="XXXXXXXXXX"
+                    data-ad-format="auto"
+                  />
+                </>
+              )}
+            </div>
+
+            {/* Timer / Watch Button */}
+            {!adWatched && (
+              <div className="flex flex-col gap-3">
+                {adTimer > 0 ? (
+                  <div className="w-full py-3 rounded-lg bg-accent/20 text-accent font-semibold">
+                    {lang === "ar" ? `⏳ انتظر ${adTimer} ثوانٍ...` : `⏳ Wait ${adTimer}s...`}
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => {
+                      // Start 10-second ad timer
+                      setAdTimer(10);
+                      const interval = setInterval(() => {
+                        setAdTimer(prev => {
+                          if (prev <= 1) {
+                            clearInterval(interval);
+                            setAdWatched(true);
+                            return 0;
+                          }
+                          return prev - 1;
+                        });
+                      }, 1000);
+                    }}
+                    className="w-full py-3 rounded-lg bg-accent text-accent-foreground font-semibold hover:opacity-90 transition shadow-[var(--shadow-spark)]"
+                  >
+                    {lang === "ar" ? "▶ شاهد الإعلان" : "▶ Watch Ad"}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Download Button (only after ad watched) */}
+            {adWatched && (
+              <button
+                onClick={() => {
+                  setShowAdGateModal(false);
+                  if (repairedContent) {
+                    downloadFile(repairedContent, fileName.replace(".dxf", "_fixed.dxf"));
+                  }
+                }}
+                className="w-full py-3.5 rounded-lg bg-accent text-accent-foreground font-semibold hover:opacity-90 transition shadow-[var(--shadow-spark)]"
+              >
+                ⬇ {lang === "ar" ? "حمّل الملف الآن" : "Download now"}
+              </button>
+            )}
+
+            {/* Skip link */}
+            <div className="mt-4">
+              <a
+                href="/?redirect=pricing"
+                className="font-mono text-xs text-muted-foreground/60 hover:text-foreground transition underline"
+              >
+                {lang === "ar" ? "اشترك لإزالة الإعلانات" : "Subscribe to remove ads"}
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Subscription Required Modal (Download Gating - fallback) */}
       {showSubscribeModal && (
