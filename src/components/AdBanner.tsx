@@ -25,9 +25,9 @@ export interface AdBannerProps {
 }
 
 const ADSENSE_CLIENT_ID =
-  (typeof process !== "undefined" &&
-    (process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID ||
-      process.env.VITE_ADSENSE_CLIENT_ID)) ||
+  (typeof import.meta !== "undefined" &&
+    (import.meta.env.VITE_ADSENSE_CLIENT_ID ||
+      import.meta.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID)) ||
   "ca-pub-XXXXXXXXXXXXXXXX";
 
 const FORMAT_STYLES: Record<string, React.CSSProperties> = {
