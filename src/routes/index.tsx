@@ -4,6 +4,7 @@ import heroImg from "@/assets/hero-cnc.jpg";
 import { openCheckout } from "@/lib/paddle";
 import { ReviewsCarousel } from "@/components/reviews-carousel";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { AdBanner } from "@/components/AdBanner";
 import { getTranslations, getLangDir, type Lang } from "@/lib/i18n";
 import { FREE_USAGE_LIMIT } from "@/lib/subscription";
 import { track } from '@vercel/analytics';
@@ -120,8 +121,8 @@ const T = {
       {
         name: "مجاني",
         price: "$0",
-        period: `${FREE_USAGE_LIMIT} استخدامات`,
-        desc: "مثالي للتجربة والاستخدام الخفيف.",
+        period: "مدعوم بالإعلانات",
+        desc: "مثالي للتجربة والاستخدام الخفيف مع إعلانات.",
         items: [
           "🔍 معاينة بصرية للملف",
           "📋 تقرير بالمشاكل المكتشفة (دون إصلاح)",
@@ -131,57 +132,44 @@ const T = {
         cta: "ابدأ مجاناً",
         highlight: false,
         priceId: null,
+        badge: null,
       },
       {
-        name: "لكل ملف",
-        price: "$2",
-        period: "لكل ملف",
-        desc: "ادفع فقط عند الحاجة. كل ملف $2 — صالح 24 ساعة.",
-        items: [
-          "🛠️ إصلاح وتحميل ملف DXF واحد",
-          "💰 حاسبة تكلفة القص التقديرية",
-          "📐 تصدير بصيغ SVG و PDF",
-          "✅ صالح لمدة 24 ساعة",
-        ],
-        cta: "ادفع $2 ←",
-        highlight: false,
-        priceId: import.meta.env.VITE_PADDLE_PER_FILE_PRICE_ID || 'pri_per_file',
-      },
-      {
-        name: "شهري",
-        price: "$7",
+        name: "ورشة",
+        price: "$5",
         period: "/ شهر",
         desc: "للاستخدام المنتظم والشهري. اشتراك شهري بأسعار مناسبة للجميع.",
         items: [
-          "🛠️ إصلاح وتحميل غير محدود للملفات",
+          "🛠️ إصلاح وتحميل ملفات DXF مصلحة",
           "💰 حاسبة تكلفة القص التقديرية",
           "🔄 محاكاة حركة رأس الماكينة 3D",
           "📐 تصدير بصيغ SVG و PDF",
-          "✅ غير محدود من الملفات",
+          "🚫 بدون إعلانات",
         ],
-        cta: "اشترك شهرياً ←",
+        cta: "اشترك في الورشة ←",
         highlight: true,
-        priceId: import.meta.env.VITE_PADDLE_PRO_PRICE_ID || 'pri_pro_monthly',
+        priceId: import.meta.env.NEXT_PUBLIC_PADDLE_PRICE_WORKSHOP || import.meta.env.VITE_PADDLE_WORKSHOP_PRICE_ID || 'pri_workshop_monthly',
+        badge: null,
       },
       {
-        name: "مشغل",
+        name: "مؤسسة",
         price: "$10",
         period: "/ شهر",
         desc: "لأصحاب ورش CNC المحترفين. مميزات متقدمة للورش الكبيرة.",
         items: [
-          "🛠️ إصلاح وتحميل غير محدود للملفات",
-          "💰 حاسبة تكلفة القص التقديرية",
-          "🔄 محاكاة مسار الماكينة 3D",
-          "📐 تصدير بصيغ SVG و PDF",
-          "📦 معالجة جماعية للملفات",
-          "⭐ دعم فني مخصص وأولوية",
+          "🛠️ جميع مميزات باقة الورشة",
+          "📦 معالجة جماعية للملفات (Bulk / Zip)",
+          "🧩 ميزة الترتيب الذكي لتقليل الهدر (Nesting)",
+          "⭐ دعم فني مخصص وأولوية في المعالجة",
+          "🚫 بدون إعلانات",
         ],
-        cta: "اشترك في المشغل ←",
+        cta: "اشترك في المؤسسة ←",
         highlight: false,
-        priceId: import.meta.env.VITE_PADDLE_WORKSHOP_PRICE_ID || 'pri_workshop_monthly',
+        priceId: import.meta.env.NEXT_PUBLIC_PADDLE_PRICE_PRO || import.meta.env.VITE_PADDLE_PRO_PRICE_ID || 'pri_pro_monthly',
+        badge: "الأكثر ميزات",
       },
     ] as const,
-    pricingPerFile: "💡 كما يمكنك الدفع لكل ملف — $2 فقط للملف الواحد",
+    pricingPerFile: null,
     pricingNote: "* الدفع آمن عبر Paddle. يمكن الإلغاء في أي وقت. المبالغ بالدولار الأمريكي.",
     sectionFaq: "أسئلة شائعة",
     faqs: [
@@ -268,8 +256,8 @@ const T = {
       {
         name: "Free",
         price: "$0",
-        period: `${FREE_USAGE_LIMIT} uses`,
-        desc: "Perfect for trying it out or occasional use.",
+        period: "Ad-supported",
+        desc: "Perfect for trying it out or occasional use with ads.",
         items: [
           "🔍 Visual file preview",
           "📋 Issue detection report (no repair)",
@@ -279,57 +267,44 @@ const T = {
         cta: "Start free",
         highlight: false,
         priceId: null,
-      },
-      {
-        name: "Per File",
-        price: "$2",
-        period: "per file",
-        desc: "Pay only when you need it. $2 per file — valid 24 hours.",
-        items: [
-          "🛠️ Repair & download one DXF file",
-          "💰 Cutting cost estimator",
-          "📐 Export to SVG and PDF",
-          "✅ Valid for 24 hours",
-        ],
-        cta: "Pay $2 →",
-        highlight: false,
-        priceId: import.meta.env.VITE_PADDLE_PER_FILE_PRICE_ID || 'pri_per_file',
-      },
-      {
-        name: "Monthly",
-        price: "$7",
-        period: "/ month",
-        desc: "For regular monthly use. Affordable subscription for everyone.",
-        items: [
-          "🛠️ Unlimited repair & downloads",
-          "💰 Cutting cost estimator",
-          "🔄 3D CNC toolpath simulation",
-          "📐 Export to SVG and PDF",
-          "✅ Unlimited file processing",
-        ],
-        cta: "Subscribe Monthly →",
-        highlight: true,
-        priceId: import.meta.env.VITE_PADDLE_PRO_PRICE_ID || 'pri_pro_monthly',
+        badge: null,
       },
       {
         name: "Workshop",
+        price: "$5",
+        period: "/ month",
+        desc: "For regular monthly use. Affordable subscription for everyone.",
+        items: [
+          "🛠️ Repair & download fixed DXF files",
+          "💰 Cutting cost estimator",
+          "🔄 3D CNC toolpath simulation",
+          "📐 Export to SVG and PDF",
+          "🚫 Ad-free experience",
+        ],
+        cta: "Subscribe Workshop →",
+        highlight: true,
+        priceId: import.meta.env.NEXT_PUBLIC_PADDLE_PRICE_WORKSHOP || import.meta.env.VITE_PADDLE_WORKSHOP_PRICE_ID || 'pri_workshop_monthly',
+        badge: null,
+      },
+      {
+        name: "Enterprise",
         price: "$10",
         period: "/ month",
         desc: "For professional CNC workshops. Advanced features for large shops.",
         items: [
-          "🛠️ Unlimited repair & downloads",
-          "💰 Cutting cost estimator",
-          "🔄 CNC toolpath simulation",
-          "📐 Export to SVG and PDF",
-          "📦 Bulk file processing",
-          "⭐ Dedicated support & priority",
+          "🛠️ All Workshop plan features",
+          "📦 Bulk file processing (Bulk / Zip)",
+          "🧩 Smart nesting optimization to reduce waste",
+          "⭐ Dedicated support & priority processing",
+          "🚫 Ad-free experience",
         ],
-        cta: "Subscribe Workshop →",
+        cta: "Subscribe Enterprise →",
         highlight: false,
-        priceId: import.meta.env.VITE_PADDLE_WORKSHOP_PRICE_ID || 'pri_workshop_monthly',
+        priceId: import.meta.env.NEXT_PUBLIC_PADDLE_PRICE_PRO || import.meta.env.VITE_PADDLE_PRO_PRICE_ID || 'pri_pro_monthly',
+        badge: "Most features",
       },
     ] as const,
-    pricingPerFile: "💡 Or pay per file — $2 only per file",
+    pricingPerFile: null,
     pricingNote: "* Payments secured by Paddle. Cancel anytime. Prices in USD.",
     sectionFaq: "FAQ",
     faqs: [
@@ -774,32 +749,48 @@ function Index() {
           <p className="mt-4 text-muted-foreground">{t.pricingDesc}</p>
         </div>
 
-        <div className="mt-14 grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* 📢 AdBanner — only visible for free users */}
+        <AdBanner format="horizontal" lang={lang} />
+
+        <div className="mt-14 grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-4xl mx-auto">
           {t.plans.map((plan) => (
             <div
               key={plan.name}
               className={`relative rounded-2xl border p-8 flex flex-col transition ${
                 plan.highlight
-                  ? "border-accent/70 bg-gradient-to-br from-accent/10 to-card shadow-[var(--shadow-spark)]"
-                  : plan.name === "لكل ملف" || plan.name === "Per File"
-                  ? "border-emerald-500/70 bg-gradient-to-br from-emerald-500/10 to-card"
+                  ? "border-accent/70 bg-gradient-to-br from-accent/10 to-card shadow-[var(--shadow-spark)] scale-105 md:scale-105"
+                  : plan.badge
+                  ? "border-purple-500/70 bg-gradient-to-br from-purple-500/10 to-card"
                   : "border-border bg-card"
               }`}
             >
               {plan.highlight && (
-                <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-accent to-transparent rounded-t-2xl" />
+                <>
+                  <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-accent to-transparent rounded-t-2xl" />
+                  <span className="absolute -top-3 start-1/2 -translate-x-1/2 font-mono text-xs px-3 py-1 rounded-full bg-accent text-accent-foreground uppercase tracking-wider whitespace-nowrap">
+                    {lang === "ar" ? "الأكثر طلباً" :
+                     lang === "en" ? "Most popular" : "Most popular"}
+                  </span>
+                </>
               )}
-              {plan.highlight && (
-                <span className="absolute -top-3 start-1/2 -translate-x-1/2 font-mono text-xs px-3 py-1 rounded-full bg-accent text-accent-foreground uppercase tracking-wider whitespace-nowrap">
-                  {lang === "ar" ? "الأكثر طلباً" : "Most popular"}
-                </span>
+
+              {/* Badge */}
+              {plan.badge && (
+                <div className="absolute -top-3 end-4">
+                  <span className="font-mono text-[10px] px-2 py-1 rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/30 whitespace-nowrap">
+                    ⭐ {plan.badge}
+                  </span>
+                </div>
               )}
 
               <div>
                 <p className="font-display font-bold text-lg">{plan.name}</p>
                 <div className="mt-3 flex items-baseline gap-2">
-                  <span className={`font-display text-5xl font-bold ${plan.highlight ? "text-gradient-spark" : 
-                    plan.name === "لكل ملف" || plan.name === "Per File" ? "text-emerald-400" : "text-foreground"}`}>{plan.price}</span>
+                  <span className={`font-display text-5xl font-bold ${
+                    plan.highlight ? "text-gradient-spark" :
+                    plan.badge ? "text-purple-400" :
+                    "text-foreground"
+                  }`}>{plan.price}</span>
                   <span className="text-muted-foreground/80 font-mono text-sm">{plan.period}</span>
                 </div>
                 <p className="mt-3 text-sm text-foreground/80">{plan.desc}</p>
@@ -808,8 +799,11 @@ function Index() {
               <ul className="mt-7 space-y-3 flex-1">
                 {plan.items.map((item) => (
                   <li key={item} className="flex items-center gap-3 text-sm text-foreground/90">
-                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs flex-shrink-0 ${plan.highlight ? "bg-accent/20 text-accent" : 
-                      plan.name === "لكل ملف" || plan.name === "Per File" ? "bg-emerald-500/20 text-emerald-400" : "bg-primary/10 text-primary"}`}>✓</span>
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs flex-shrink-0 ${
+                      plan.highlight ? "bg-accent/20 text-accent" :
+                      plan.badge ? "bg-purple-500/20 text-purple-400" :
+                      "bg-primary/10 text-primary"
+                    }`}>✓</span>
                     {item}
                   </li>
                 ))}
