@@ -8,6 +8,7 @@ import { track } from '@vercel/analytics';
 import { FeedbackModal } from "@/components/feedback-modal";
 import { ViralUnlockModal } from "@/components/viral-unlock-modal";
 import { SafetyBadge } from "@/components/safety-badge";
+import { AdBanner } from "@/components/AdBanner";
 import { getUserSubscribed as isViralUnlocked, setUserSubscribed } from "@/lib/viral-launch";
 
 /**
@@ -806,15 +807,7 @@ function ToolPage() {
   };
 
   const handleDownloadFixed = () => {
-    // Gate: Check if user is subscribed before allowing download
-    if (!userIsSubscribed) {
-      // Show ad gate modal for free users - watch ad to unlock download
-      setShowAdGateModal(true);
-      setAdWatched(false);
-      setAdTimer(0);
-      return;
-    }
-    // Proceed with download
+    // Allow all users (free and subscribed) to download directly
     downloadFile(repairedContent, fileName.replace(".dxf", "_fixed.dxf"));
   };
 
@@ -1164,8 +1157,8 @@ function ToolPage() {
               )}
             </div>
 
-            {/* Ad Slot — Upload stage (only for free users) */}
-            <AdSlot lang={lang} userIsSubscribed={userIsSubscribed} />
+            {/* 📢 Smart AdBanner — Upload stage (automatically hidden for premium users) */}
+            <AdBanner format="horizontal" lang={lang} />
 
             {/* FILE HISTORY */}
             <div className="mt-8">
@@ -1240,6 +1233,9 @@ function ToolPage() {
               />
             </div>
             <p className="mt-3 font-mono text-xs text-muted-foreground">{Math.round(progress)}%</p>
+
+            {/* 📢 AdBanner while analyzing — highest CPM opportunity while user waits */}
+            <AdBanner format="horizontal" lang={lang} />
           </div>
         )}
 
@@ -1422,8 +1418,8 @@ function ToolPage() {
               )}
             </div>
 
-            {/* Ad Slot — Result stage (only for free users) */}
-            <AdSlot lang={lang} userIsSubscribed={userIsSubscribed} />
+            {/* 📢 Smart AdBanner — Result stage (automatically hidden for premium users) */}
+            <AdBanner format="rectangle" lang={lang} />
 
             {/* Issues */}
             <div className="rounded-2xl border border-border bg-card p-6">

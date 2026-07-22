@@ -121,8 +121,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "alternate", hrefLang: "ar", href: "https://dxfix.com/" },
       { rel: "alternate", hrefLang: "en", href: "https://dxfix.com/en" },
       { rel: "alternate", hrefLang: "x-default", href: "https://dxfix.com/" },
-      // Google AdSense script — only activates for free users (gated by AdSlot component)
-      { script: { src: "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX", crossOrigin: "anonymous", async: true } },
+    ],
+    scripts: [
+      // Google AdSense script — loaded globally, but ads only render for free users
+      // (gated by the AdBanner component which checks usePremiumStatus)
+      {
+        src: "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX",
+        crossOrigin: "anonymous",
+        async: true,
+      },
     ],
   }),
   shellComponent: RootShell,
