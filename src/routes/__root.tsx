@@ -126,7 +126,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       // Google AdSense script — loaded globally, but ads only render for free users
       // (gated by the AdBanner component which checks usePremiumStatus)
       {
-        src: "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX",
+        src: `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${import.meta.env.VITE_ADSENSE_CLIENT_ID || "ca-pub-8107838298388341"}`,
         crossOrigin: "anonymous",
         async: true,
       },
