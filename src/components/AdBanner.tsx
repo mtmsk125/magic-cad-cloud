@@ -21,7 +21,7 @@ export interface AdBannerProps {
   slot?: string;
   format?: "horizontal" | "rectangle" | "vertical";
   className?: string;
-  lang?: "ar" | "en";
+  lang?: "ar" | "en" | "fr" | "zh";
 }
 
 const ADSENSE_CLIENT_ID =

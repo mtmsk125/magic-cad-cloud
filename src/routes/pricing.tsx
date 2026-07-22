@@ -4,6 +4,8 @@ import { openCheckout } from "@/lib/paddle";
 import { ViralUnlockModal } from "@/components/viral-unlock-modal";
 import { getUserSubscribed, setUserSubscribed } from "@/lib/viral-launch";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { AdBanner } from "@/components/AdBanner";
+import { usePremiumStatus } from "@/lib/subscription-status";
 import { getLangDir, type Lang, type PlanItem } from "@/lib/i18n";
 import { FREE_USAGE_LIMIT } from "@/lib/subscription";
 
@@ -45,12 +47,13 @@ const T: Record<Lang, LangContent> = {
       {
         name: "مجاني",
         price: "$0",
-        period: `${FREE_USAGE_LIMIT} استخدامات`,
-        desc: "مثالي للتجربة والاستخدام الخفيف.",
+        period: "مدعوم بالإعلانات",
+        desc: "مثالي للتجربة والاستخدام الخفيف مع إعلانات.",
         items: [
           "معاينة بصرية للملف",
           "تقرير بالمشاكل المكتشفة (دون إصلاح)",
           "إحصائيات العناصر الأساسية",
+          "مدعوم بإعلانات غير مزعجة",
         ],
         cta: "ابدأ مجاناً",
         highlight: false,
@@ -58,24 +61,8 @@ const T: Record<Lang, LangContent> = {
         badge: null,
       },
       {
-        name: "لكل ملف",
-        price: "$2",
-        period: "لكل ملف",
-        desc: "ادفع فقط عند الحاجة. كل ملف $2 — صالح لمدة 24 ساعة.",
-        items: [
-          "إصلاح وتحميل ملف DXF واحد",
-          "حاسبة تكلفة القص التقديرية",
-          "تصدير بصيغ SVG و PDF",
-          "صالح لمدة 24 ساعة",
-        ],
-        cta: "ادفع $2 الآن",
-        highlight: false,
-        priceId: import.meta.env.VITE_PADDLE_PER_FILE_PRICE_ID || 'pri_per_file',
-        badge: "مرن",
-      },
-      {
-        name: "شهري",
-        price: "$7",
+        name: "ورشة",
+        price: "$5",
         period: "/ شهر",
         desc: "للاستخدام المنتظم والشهري. اشتراك شهري بأسعار مناسبة للجميع.",
         items: [
@@ -83,27 +70,29 @@ const T: Record<Lang, LangContent> = {
           "حاسبة تكلفة القص التقديرية",
           "محاكاة حركة رأس الماكينة 3D",
           "تصدير بصيغ SVG و PDF",
+          "بدون إعلانات",
         ],
-        cta: "اشترك شهرياً",
+        cta: "اشترك في الورشة",
         highlight: true,
-        priceId: import.meta.env.VITE_PADDLE_PRO_PRICE_ID || 'pri_pro_monthly',
+        priceId: import.meta.env.NEXT_PUBLIC_PADDLE_PRICE_WORKSHOP || import.meta.env.VITE_PADDLE_WORKSHOP_PRICE_ID || 'pri_workshop_monthly',
         badge: null,
       },
       {
-        name: "مشغل",
+        name: "مؤسسة",
         price: "$10",
         period: "/ شهر",
         desc: "لأصحاب ورش CNC المحترفين. مميزات متقدمة للورش الكبيرة.",
         items: [
-          "جميع مميزات الباقة الشهرية",
+          "جميع مميزات باقة الورشة",
           "معالجة جماعية للملفات (Bulk / Zip)",
           "ميزة الترتيب الذكي لتقليل الهدر (Nesting)",
           "دعم فني مخصص وأولوية في المعالجة",
+          "بدون إعلانات",
         ],
-        cta: "اشترك في المشغل",
+        cta: "اشترك في المؤسسة",
         highlight: false,
-        priceId: import.meta.env.VITE_PADDLE_WORKSHOP_PRICE_ID || 'pri_workshop_monthly',
-        badge: null,
+        priceId: import.meta.env.NEXT_PUBLIC_PADDLE_PRICE_PRO || import.meta.env.VITE_PADDLE_PRO_PRICE_ID || 'pri_pro_monthly',
+        badge: "الأكثر ميزات",
       },
     ],
     pricingNote: "* الدفع آمن عبر Paddle. يمكن الإلغاء في أي وقت. المبالغ بالدولار الأمريكي.",
@@ -130,12 +119,13 @@ const T: Record<Lang, LangContent> = {
       {
         name: "Free",
         price: "$0",
-        period: `${FREE_USAGE_LIMIT} uses`,
-        desc: "Perfect for trying it out or occasional use.",
+        period: "Ad-supported",
+        desc: "Perfect for trying it out or occasional use with ads.",
         items: [
           "Visual file preview",
           "Issue detection report (no repair)",
           "Basic entity statistics",
+          "Supported by non-intrusive ads",
         ],
         cta: "Start free",
         highlight: false,
@@ -143,24 +133,8 @@ const T: Record<Lang, LangContent> = {
         badge: null,
       },
       {
-        name: "Per File",
-        price: "$2",
-        period: "per file",
-        desc: "Pay only when you need it. $2 per file — valid for 24 hours.",
-        items: [
-          "Repair & download one DXF file",
-          "Cutting cost estimator",
-          "Export to SVG and PDF",
-          "Valid for 24 hours",
-        ],
-        cta: "Pay $2 now",
-        highlight: false,
-        priceId: import.meta.env.VITE_PADDLE_PER_FILE_PRICE_ID || 'pri_per_file',
-        badge: "Flexible",
-      },
-      {
-        name: "Monthly",
-        price: "$7",
+        name: "Workshop",
+        price: "$5",
         period: "/ month",
         desc: "For regular monthly use. Affordable subscription for everyone.",
         items: [
@@ -168,27 +142,29 @@ const T: Record<Lang, LangContent> = {
           "Cutting cost estimator",
           "3D CNC toolpath simulation",
           "Export to SVG and PDF",
+          "Ad-free experience",
         ],
-        cta: "Subscribe Monthly",
+        cta: "Subscribe Workshop",
         highlight: true,
-        priceId: import.meta.env.VITE_PADDLE_PRO_PRICE_ID || 'pri_pro_monthly',
+        priceId: import.meta.env.NEXT_PUBLIC_PADDLE_PRICE_WORKSHOP || import.meta.env.VITE_PADDLE_WORKSHOP_PRICE_ID || 'pri_workshop_monthly',
         badge: null,
       },
       {
-        name: "Workshop",
+        name: "Enterprise",
         price: "$10",
         period: "/ month",
         desc: "For professional CNC workshops. Advanced features for large shops.",
         items: [
-          "All monthly plan features",
+          "All Workshop plan features",
           "Bulk file processing (Bulk / Zip)",
           "Smart nesting optimization to reduce waste",
           "Dedicated support & priority processing",
+          "Ad-free experience",
         ],
-        cta: "Subscribe Workshop",
+        cta: "Subscribe Enterprise",
         highlight: false,
-        priceId: import.meta.env.VITE_PADDLE_WORKSHOP_PRICE_ID || 'pri_workshop_monthly',
-        badge: null,
+        priceId: import.meta.env.NEXT_PUBLIC_PADDLE_PRICE_PRO || import.meta.env.VITE_PADDLE_PRO_PRICE_ID || 'pri_pro_monthly',
+        badge: "Most features",
       },
     ],
     pricingNote: "* Payments secured by Paddle. Cancel anytime. Prices in USD.",
@@ -215,12 +191,13 @@ const T: Record<Lang, LangContent> = {
       {
         name: "Gratuit",
         price: "$0",
-        period: `${FREE_USAGE_LIMIT} utilisations`,
-        desc: "Parfait pour essayer ou une utilisation occasionnelle.",
+        period: "Avec pubs",
+        desc: "Parfait pour essayer ou une utilisation occasionnelle avec des annonces.",
         items: [
           "Aperçu visuel du fichier",
           "Rapport de détection des problèmes (sans réparation)",
           "Statistiques de base des entités",
+          "Supporté par des annonces non intrusives",
         ],
         cta: "Commencer gratuit",
         highlight: false,
@@ -228,24 +205,8 @@ const T: Record<Lang, LangContent> = {
         badge: null,
       },
       {
-        name: "Par fichier",
-        price: "$2",
-        period: "par fichier",
-        desc: "Payez seulement quand vous en avez besoin. $2 par fichier — valable 24h.",
-        items: [
-          "Réparation et téléchargement d'un fichier DXF",
-          "Estimateur de coût de coupe",
-          "Export en SVG et PDF",
-          "Valable 24 heures",
-        ],
-        cta: "Payer $2",
-        highlight: false,
-        priceId: import.meta.env.VITE_PADDLE_PER_FILE_PRICE_ID || 'pri_per_file',
-        badge: "Flexible",
-      },
-      {
-        name: "Mensuel",
-        price: "$7",
+        name: "Atelier",
+        price: "$5",
         period: "/ mois",
         desc: "Pour une utilisation mensuelle régulière. Abonnement abordable pour tous.",
         items: [
@@ -253,27 +214,29 @@ const T: Record<Lang, LangContent> = {
           "Estimateur de coût de coupe",
           "Simulation 3D du parcours d'outil CNC",
           "Export en SVG et PDF",
+          "Sans publicité",
         ],
-        cta: "S'abonner mensuel",
+        cta: "S'abonner Atelier",
         highlight: true,
-        priceId: import.meta.env.VITE_PADDLE_PRO_PRICE_ID || 'pri_pro_monthly',
+        priceId: import.meta.env.NEXT_PUBLIC_PADDLE_PRICE_WORKSHOP || import.meta.env.VITE_PADDLE_WORKSHOP_PRICE_ID || 'pri_workshop_monthly',
         badge: null,
       },
       {
-        name: "Atelier",
+        name: "Entreprise",
         price: "$10",
         period: "/ mois",
         desc: "Pour les ateliers CNC professionnels. Fonctionnalités avancées pour les grands ateliers.",
         items: [
-          "Toutes les fonctionnalités du plan mensuel",
+          "Toutes les fonctionnalités du plan Atelier",
           "Traitement par lots (Bulk / Zip)",
           "Optimisation intelligente du nesting",
           "Support dédié et traitement prioritaire",
+          "Sans publicité",
         ],
-        cta: "S'abonner Atelier",
+        cta: "S'abonner Entreprise",
         highlight: false,
-        priceId: import.meta.env.VITE_PADDLE_WORKSHOP_PRICE_ID || 'pri_workshop_monthly',
-        badge: null,
+        priceId: import.meta.env.NEXT_PUBLIC_PADDLE_PRICE_PRO || import.meta.env.VITE_PADDLE_PRO_PRICE_ID || 'pri_pro_monthly',
+        badge: "Plus de fonctionnalités",
       },
     ],
     pricingNote: "* Paiements sécurisés par Paddle. Annulez à tout moment. Prix en USD.",
@@ -300,12 +263,13 @@ const T: Record<Lang, LangContent> = {
       {
         name: "免费",
         price: "$0",
-        period: `${FREE_USAGE_LIMIT}次使用`,
-        desc: "非常适合试用或偶尔使用。",
+        period: "广告支持",
+        desc: "非常适合试用或偶尔使用，包含广告。",
         items: [
           "文件视觉预览",
           "问题检测报告（无修复）",
           "基本实体统计",
+          "由非侵入式广告支持",
         ],
         cta: "免费开始",
         highlight: false,
@@ -313,24 +277,8 @@ const T: Record<Lang, LangContent> = {
         badge: null,
       },
       {
-        name: "按文件",
-        price: "$2",
-        period: "每文件",
-        desc: "只在需要时付费。每文件$2 — 24小时有效。",
-        items: [
-          "修复和下载一个DXF文件",
-          "切割成本估算",
-          "导出为SVG和PDF",
-          "24小时有效",
-        ],
-        cta: "支付$2",
-        highlight: false,
-        priceId: import.meta.env.VITE_PADDLE_PER_FILE_PRICE_ID || 'pri_per_file',
-        badge: "灵活",
-      },
-      {
-        name: "月度",
-        price: "$7",
+        name: "工坊",
+        price: "$5",
         period: "/ 月",
         desc: "适合定期月度使用。适合所有人的实惠订阅。",
         items: [
@@ -338,27 +286,29 @@ const T: Record<Lang, LangContent> = {
           "切割成本估算",
           "3D CNC刀具路径模拟",
           "导出为SVG和PDF",
+          "无广告体验",
         ],
-        cta: "订阅月度",
+        cta: "订阅工坊",
         highlight: true,
-        priceId: import.meta.env.VITE_PADDLE_PRO_PRICE_ID || 'pri_pro_monthly',
+        priceId: import.meta.env.NEXT_PUBLIC_PADDLE_PRICE_WORKSHOP || import.meta.env.VITE_PADDLE_WORKSHOP_PRICE_ID || 'pri_workshop_monthly',
         badge: null,
       },
       {
-        name: "工坊",
+        name: "企业",
         price: "$10",
         period: "/ 月",
         desc: "适合专业CNC工坊。大型工坊的高级功能。",
         items: [
-          "所有月度计划功能",
+          "所有工坊计划功能",
           "批量文件处理（Bulk / Zip）",
           "智能嵌套优化以减少浪费",
           "专属支持和优先处理",
+          "无广告体验",
         ],
-        cta: "订阅工坊",
+        cta: "订阅企业",
         highlight: false,
-        priceId: import.meta.env.VITE_PADDLE_WORKSHOP_PRICE_ID || 'pri_workshop_monthly',
-        badge: null,
+        priceId: import.meta.env.NEXT_PUBLIC_PADDLE_PRICE_PRO || import.meta.env.VITE_PADDLE_PRO_PRICE_ID || 'pri_pro_monthly',
+        badge: "功能最多",
       },
     ],
     pricingNote: "* 支付由Paddle保护。随时取消。价格为美元。",
@@ -386,6 +336,7 @@ function PricingPage() {
   });
   const [redirectParam, setRedirectParam] = useState(false);
   const [showViralModal, setShowViralModal] = useState(false);
+  const { isPremium } = usePremiumStatus();
   const t = T[lang] || T.en;
   const isRTL = getLangDir(lang) === "rtl";
 
@@ -466,22 +417,25 @@ function PricingPage() {
           </div>
         </div>
 
-        {/* PRICING PLANS - FOUR COLUMNS */}
+        {/* 📢 AdBanner — only visible for free users */}
+        <AdBanner format="horizontal" lang={lang} />
+
+        {/* PRICING PLANS - THREE COLUMNS */}
         <div className="mt-14">
           <div className="text-center mb-10">
             <p className="font-mono text-xs text-primary uppercase tracking-[0.25em]">{t.sectionTitle}</p>
             <h2 className="font-display mt-3 text-3xl sm:text-4xl font-bold">{t.sectionDesc}</h2>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
+          <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
             {t.plans.map((plan) => (
               <div
                 key={plan.name}
                 className={`relative rounded-2xl border p-8 flex flex-col transition ${
                   plan.highlight
                     ? "border-accent/70 bg-gradient-to-br from-accent/10 to-card shadow-[var(--shadow-spark)] scale-105 md:scale-105"
-                    : plan.name === "لكل ملف" || plan.name === "Per File" || plan.name === "Par fichier" || plan.name === "按文件"
-                    ? "border-emerald-500/70 bg-gradient-to-br from-emerald-500/10 to-card"
+                    : plan.badge
+                    ? "border-purple-500/70 bg-gradient-to-br from-purple-500/10 to-card"
                     : "border-border bg-card"
                 }`}
               >
@@ -500,7 +454,7 @@ function PricingPage() {
                 {/* Badge */}
                 {plan.badge && (
                   <div className="absolute -top-3 end-4">
-                    <span className="font-mono text-[10px] px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 whitespace-nowrap">
+                    <span className="font-mono text-[10px] px-2 py-1 rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/30 whitespace-nowrap">
                       ⭐ {plan.badge}
                     </span>
                   </div>
@@ -513,7 +467,7 @@ function PricingPage() {
                   <div className="mt-3 flex items-baseline gap-2">
                     <span className={`font-display text-5xl font-bold ${
                       plan.highlight ? "text-gradient-spark" :
-                      plan.name === "لكل ملف" || plan.name === "Per File" || plan.name === "Par fichier" || plan.name === "按文件" ? "text-emerald-400" :
+                      plan.badge ? "text-purple-400" :
                       "text-foreground"
                     }`}>{plan.price}</span>
                     <span className="text-muted-foreground/80 font-mono text-sm">{plan.period}</span>
@@ -526,7 +480,7 @@ function PricingPage() {
                     <li key={item} className="flex items-center gap-3 text-sm text-foreground/90">
                       <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs flex-shrink-0 ${
                         plan.highlight ? "bg-accent/20 text-accent" :
-                        plan.name === "لكل ملف" || plan.name === "Per File" || plan.name === "Par fichier" || plan.name === "按文件" ? "bg-emerald-500/20 text-emerald-400" :
+                        plan.badge ? "bg-purple-500/20 text-purple-400" :
                         "bg-primary/10 text-primary"
                       }`}>✓</span>
                       {item}
