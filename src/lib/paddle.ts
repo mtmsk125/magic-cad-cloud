@@ -78,6 +78,13 @@ export function initPaddle(): Promise<boolean> {
   }
 
   paddleLoadPromise = new Promise((resolve) => {
+    // ✅ Guard: Don't inject script if document.head isn't ready yet (SSR hydration)
+    if (!document.head) {
+      console.warn("⚠️ Paddle: document.head not available yet, deferring");
+      resolve(false);
+      return;
+    }
+
     // Load Paddle SDK
     const script = document.createElement("script");
     script.src = "https://cdn.paddle.com/paddle/v2/paddle.js";

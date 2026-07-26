@@ -124,15 +124,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "alternate", hrefLang: "en", href: "https://dxfix.com/en" },
       { rel: "alternate", hrefLang: "x-default", href: "https://dxfix.com/" },
     ],
-    scripts: [
-      // Google AdSense script — loaded globally, but ads only render for free users
-      // (gated by the AdBanner component which checks usePremiumStatus)
-      {
-        src: `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${import.meta.env.VITE_ADSENSE_CLIENT_ID || "ca-pub-8107638298388341"}`,
-        crossOrigin: "anonymous",
-        async: true,
-      },
-    ],
+    // ⚠️ AdSense script removed from SSR head() — moved to client-side useEffect
+    // in RootComponent to fix React #419 hydration errors
+    scripts: [],
   }),
   shellComponent: RootShell,
   component: RootComponent,
@@ -171,9 +165,25 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isMounted) return;
     initPaddle();
+
+    // Load AdSense script client-side only (fixes React #419 hydration error)
+    const adSenseId = import.meta.env.VITE_ADSENSE_CLIENT_ID || "ca-pub-8107638298388341";
+    if (!document.querySelector(`script[src*="adsbygoogle.js"]`)) {
+      const script = document.createElement("script");
+      script.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adSenseId}`;
+      script.crossOrigin = "anonymous";
+      script.async = true;
+      document.head.appendChild(script);
+    }
 
     // Skip Vercel Analytics for personal visits and testing traffic
     // This prevents inflating analytics with developer/owner page views
@@ -190,7 +200,7 @@ function RootComponent() {
     if (!shouldSkipAnalytics) {
       inject();
     }
-  }, []);
+  }, [isMounted]);
 
   return (
     <QueryClientProvider client={queryClient}>

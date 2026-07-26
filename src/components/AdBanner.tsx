@@ -47,12 +47,18 @@ export function AdBanner({
   const [currentNetwork, setCurrentNetwork] = useState<AdNetwork | null>(null);
   const [adError, setAdError] = useState(false);
   const [waterfallIndex, setWaterfallIndex] = useState(0);
+  const [isMounted, setIsMounted] = useState(false);
   const pushed = useRef(false);
   const waterfall = useRef<AdNetwork[]>([]);
 
-  // Build the waterfall list once on mount
+  // ✅ Guard: Wait until component is fully mounted on the client
   useEffect(() => {
-    if (isLoading || isPremium) return;
+    setIsMounted(true);
+  }, []);
+
+  // Build the waterfall list once on mount (only after isMounted)
+  useEffect(() => {
+    if (!isMounted || isLoading || isPremium) return;
     // If a specific network is requested, use only that one
     if (network) {
       waterfall.current = [network];
@@ -67,10 +73,11 @@ export function AdBanner({
       // No networks configured at all — show fallback
       setCurrentNetwork(null);
     }
-  }, [isLoading, isPremium, network]);
+  }, [isMounted, isLoading, isPremium, network]);
 
   // When waterfallIndex changes, update the current network
   useEffect(() => {
+    if (!isMounted) return;
     if (waterfall.current.length === 0) {
       setCurrentNetwork(null);
     } else if (waterfallIndex < waterfall.current.length) {
@@ -81,16 +88,16 @@ export function AdBanner({
       // Exhausted all networks — show fallback
       setCurrentNetwork(null);
     }
-  }, [waterfallIndex]);
+  }, [isMounted, waterfallIndex]);
 
   // Advance to the next network in the waterfall
   const advanceWaterfall = useCallback(() => {
     setWaterfallIndex(prev => prev + 1);
   }, []);
 
-  // Push ad to network's queue after render
+  // Push ad to network's queue after render (only after isMounted)
   useEffect(() => {
-    if (isLoading || isPremium || !currentNetwork || adError) return;
+    if (!isMounted || isLoading || isPremium || !currentNetwork || adError) return;
     if (pushed.current) return;
 
     const timer = setTimeout(() => {
@@ -125,7 +132,7 @@ export function AdBanner({
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [isLoading, isPremium, currentNetwork, adError, format, advanceWaterfall]);
+  }, [isMounted, isLoading, isPremium, currentNetwork, adError, format, advanceWaterfall]);
 
   // If still loading or premium, render nothing
   if (isLoading || isPremium) {
