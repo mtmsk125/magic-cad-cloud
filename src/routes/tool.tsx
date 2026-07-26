@@ -11,6 +11,13 @@ import { SafetyBadge } from "@/components/safety-badge";
 import { AdBanner, AdGateModal } from "@/components/AdBanner";
 import { ShareToolWidget } from "@/components/share-tool-widget";
 import { getUserSubscribed as isViralUnlocked, setUserSubscribed } from "@/lib/viral-launch";
+import { parseSvg, isSvgContent, isSvgFile } from "@/lib/svg-parser";
+import { advancedSimplify, arcToPoints, circleToPoints, ellipseToPoints } from "@/lib/path-simplify";
+import type { Point } from "@/lib/path-simplify";
+import { fullPathCleanup, pathLength } from "@/lib/path-union";
+import type { PathSegment } from "@/lib/path-union";
+import { pathsToCuttingPaths, advancedOptimize, generateOptimizationReport } from "@/lib/toolpath-optimizer";
+import type { CuttingPath } from "@/lib/toolpath-optimizer";
 
 /**
  * Ad slot component — only renders for free/unsubscribed users.
@@ -710,8 +717,11 @@ function ToolPage() {
   const t = T[lang];
 
   const processFile = useCallback((file: File) => {
-    if (!file.name.toLowerCase().endsWith(".dxf")) {
-      alert(lang === "ar" ? "يرجى رفع ملف بصيغة .dxf فقط" : "Please upload a .dxf file only");
+    const isSvg = file.name.toLowerCase().endsWith(".svg");
+    const isDxf = file.name.toLowerCase().endsWith(".dxf");
+    
+    if (!isDxf && !isSvg) {
+      alert(lang === "ar" ? "يرجى رفع ملف بصيغة .dxf أو .svg فقط" : "Please upload a .dxf or .svg file only");
       return;
     }
 
@@ -745,7 +755,31 @@ function ToolPage() {
       }, 120);
 
       setTimeout(() => {
-        const result = analyzeDxf(content);
+        let result: DxfAnalysis;
+
+        if (isSvg) {
+          // Parse SVG and convert to DXF entities
+          const svgResult = parseSvg(content);
+          if (svgResult.errors.length > 0) {
+            alert(lang === "ar" 
+              ? `خطأ في تحليل SVG: ${svgResult.errors.join(", ")}` 
+              : `SVG parse error: ${svgResult.errors.join(", ")}`);
+            clearInterval(interval);
+            setStage("upload");
+            return;
+          }
+          // Create a temporary DXF content from SVG entities
+          const tempHeader = "  0\nSECTION\n  2\nHEADER\n  9\n$ACADVER\n  1\nAC1015\n  0\nENDSEC\n";
+          const tempTail = "  0\nEOF\n";
+          const tempContent = tempHeader + "\n  0\nSECTION\n  2\nENTITIES\n" + 
+            svgResult.entities.map(e => e.rawLines.join("\n")).join("\n") + 
+            "\n  0\nENDSEC\n" + tempTail;
+          
+          result = analyzeDxf(tempContent);
+        } else {
+          result = analyzeDxf(content);
+        }
+
         clearInterval(interval);
         setProgress(100);
         saveToHistory(file.name, result, false);
@@ -995,6 +1029,212 @@ function ToolPage() {
         {/* UPLOAD */}
         {stage === "upload" && (
           <>
+            {/* ✨ FEATURES SHOWCASE — إمكانيات الأداة */}
+            <div className="mb-10 rounded-2xl border border-accent/20 bg-gradient-to-br from-accent/5 via-card to-primary/5 p-6 sm:p-8">
+              <div className="text-center mb-6">
+                <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-accent/10 border border-accent/30 text-accent text-xs font-mono mb-3">
+                  ⚡ {lang === "ar" ? "10 خطوات معالجة تلقائية" : "10 Automatic Processing Steps"}
+                </div>
+                <h2 className="font-display text-2xl sm:text-3xl font-bold">
+                  {lang === "ar" ? "ماذا تفعل الأداة؟" : "What does the tool do?"}
+                </h2>
+                <p className="text-muted-foreground text-sm mt-2 max-w-xl mx-auto">
+                  {lang === "ar"
+                    ? "كل ما يفعله مصممو الملفات المحترفون — تلقائياً وبضغطة زر"
+                    : "Everything professional file designers do — automatically, with one click"}
+                </p>
+              </div>
+
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {/* Feature 1 */}
+                <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-green-500/20 to-green-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">✏️</div>
+                  <div>
+                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "تقليل النقاط" : "Node Reduction"}</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "حذف النقاط الزائدة بدون تغيير الشكل — حتى 70% أقل" : "Remove excess nodes without changing shape — up to 70% less"}</p>
+                  </div>
+                </div>
+
+                {/* Feature 2 */}
+                <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500/20 to-blue-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">🔗</div>
+                  <div>
+                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "دمج الخطوط" : "Merge Paths"}</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "دمج جميع الخطوط المتلامسة في مسار واحد متصل" : "Join all touching lines into a single continuous path"}</p>
+                  </div>
+                </div>
+
+                {/* Feature 3 */}
+                <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500/20 to-purple-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">⭕</div>
+                  <div>
+                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "إغلاق المسارات" : "Close Paths"}</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "إغلاق جميع المسارات المفتوحة تلقائياً — 100%" : "Automatically close all open paths — 100%"}</p>
+                  </div>
+                </div>
+
+                {/* Feature 4 */}
+                <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-red-500/20 to-red-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">🔀</div>
+                  <div>
+                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "إزالة التكرارات" : "Remove Duplicates"}</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "كشف وحذف العناصر المكررة — يمنع القطع المزدوج" : "Detect & delete duplicate entities — prevents double-cutting"}</p>
+                  </div>
+                </div>
+
+                {/* Feature 5 */}
+                <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-yellow-500/20 to-yellow-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">🧹</div>
+                  <div>
+                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "تنظيف الملف" : "File Cleaning"}</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "إزالة النقاط المعلقة، الخطوط التالفة، الطبقات المخفية" : "Remove dangling nodes, broken lines, hidden layers"}</p>
+                  </div>
+                </div>
+
+                {/* Feature 6 */}
+                <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-pink-500/20 to-pink-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">🔄</div>
+                  <div>
+                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "تحويل المنحنيات" : "Curve Conversion"}</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "تحويل ARCS, CIRCLES, SPLINES, ELLIPSES إلى POLYLINES" : "Convert ARCS, CIRCLES, SPLINES, ELLIPSES to POLYLINES"}</p>
+                  </div>
+                </div>
+
+                {/* Feature 7 */}
+                <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-cyan-500/20 to-cyan-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">🔍</div>
+                  <div>
+                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "فحص الجودة" : "Quality Check"}</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "كشف 7 أنواع من المشاكل: تقاطعات، فجوات، منحنيات مكسورة..." : "Detect 7 issue types: intersections, gaps, broken curves..."}</p>
+                  </div>
+                </div>
+
+                {/* Feature 8 */}
+                <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-orange-500/20 to-orange-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">📐</div>
+                  <div>
+                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "تحسين سرعة القص" : "Speed Optimization"}</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "ترتيب مسارات القص لتقليل حركة رأس الليزر حتى 40%" : "Order cut paths to minimize laser head movement up to 40%"}</p>
+                  </div>
+                </div>
+
+                {/* Feature 9 */}
+                <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-teal-500/20 to-teal-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">📊</div>
+                  <div>
+                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "تقييم جاهزية" : "Readiness Score"}</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "تقييم من 0-100 مع تقرير مفصل بالإصلاحات" : "Score 0-100 with detailed fix report"}</p>
+                  </div>
+                </div>
+
+                {/* Feature 10 */}
+                <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500/20 to-indigo-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">📁</div>
+                  <div>
+                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "دعم DXF + SVG" : "DXF + SVG Support"}</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "ارفع DXF أو SVG — المخرجات DXF جاهز للماكينة" : "Upload DXF or SVG — output is machine-ready DXF"}</p>
+                  </div>
+                </div>
+
+                {/* Feature 11 */}
+                <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-500/20 to-emerald-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">🖼</div>
+                  <div>
+                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "معاينة تفاعلية" : "Interactive Preview"}</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "عرض الرسم مع إخفاء/إظهار الطبقات واكتشاف المشاكل بصرياً" : "View drawing with layer toggle and visual issue highlighting"}</p>
+                  </div>
+                </div>
+
+                {/* Feature 12 */}
+                <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-rose-500/20 to-rose-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">▶️</div>
+                  <div>
+                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "محاكاة مسار القص" : "Cut Path Simulation"}</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "محاكاة متحركة لمسار رأس الليزر على الرسم" : "Animated simulation of laser head path on the drawing"}</p>
+                  </div>
+                </div>
+
+                {/* Feature 13 */}
+                <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-sky-500/20 to-sky-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">💰</div>
+                  <div>
+                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "تقدير تكلفة القص" : "Cost Estimator"}</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "حساب تكلفة القص التقديرية بناءً على طول المسار والسعر" : "Calculate estimated cutting cost based on path length and rate"}</p>
+                  </div>
+                </div>
+
+                {/* Feature 14 */}
+                <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-violet-500/20 to-violet-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">📦</div>
+                  <div>
+                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "معالجة مجمعة" : "Batch Processing"}</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "رفع عدة ملفات دفعة واحدة وتحميلها كملف ZIP مضغوط" : "Upload multiple files at once and download as ZIP archive"}</p>
+                  </div>
+                </div>
+
+                {/* Feature 15 */}
+                <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-lime-500/20 to-lime-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">🔒</div>
+                  <div>
+                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "التدمير الذاتي" : "Self-Destruct"}</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "حذف الملفات تلقائياً من السيرفر بعد التحميل لضمان السرية" : "Auto-delete files from server after download for confidentiality"}</p>
+                  </div>
+                </div>
+
+                {/* Feature 16 */}
+                <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-500/20 to-amber-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">📋</div>
+                  <div>
+                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "تقرير مفصل" : "Detailed Report"}</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "تقرير كامل بالإصلاحات مع إحصائيات الملف وتقييم الجاهزية" : "Full fix report with file statistics and readiness evaluation"}</p>
+                  </div>
+                </div>
+
+                {/* Feature 17 */}
+                <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-fuchsia-500/20 to-fuchsia-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">🛡️</div>
+                  <div>
+                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "فحص أمان الماكينة" : "Machine Safety Check"}</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "التحقق من أن الملف ضمن حدود لوح العمل وبدون حركات فجائية" : "Verify file is within work bed bounds with no jerk movements"}</p>
+                  </div>
+                </div>
+
+                {/* Feature 18 */}
+                <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-500/20 to-slate-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">🌐</div>
+                  <div>
+                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "عربية + إنجليزية" : "Arabic + English"}</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "واجهة كاملة بالعربية والإنجليزية مع دعم RTL/LTR" : "Full interface in Arabic and English with RTL/LTR support"}</p>
+                  </div>
+                </div>
+
+                {/* Feature 19 */}
+                <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-stone-500/20 to-stone-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">📜</div>
+                  <div>
+                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "سجل الملفات" : "File History"}</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "حفظ آخر 5 ملفات محللة مع نتائج التقييم للإشارة السريعة" : "Save last 5 analyzed files with scores for quick reference"}</p>
+                  </div>
+                </div>
+
+                {/* Feature 20 */}
+                <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-neutral-500/20 to-neutral-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">🔊</div>
+                  <div>
+                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "مشاركة الأداة" : "Share Tool"}</h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "مشاركة الأداة مع الأصدقاء عبر واتساب، تويتر، فيسبوك، أو نسخ الرابط" : "Share the tool via WhatsApp, Twitter, Facebook, or copy link"}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Compatible with badge */}
+              <div className="mt-5 pt-4 border-t border-border/40 text-center">
+                <p className="text-xs text-muted-foreground/60 font-mono">
+                  {lang === "ar" ? "متوافق مع:" : "Compatible with:"}
+                  <span className="text-foreground/80"> RDWorks · LightBurn · CorelDRAW · LaserGRBL · CNC · Plasma</span>
+                </p>
+              </div>
+            </div>
             <div
               onDrop={onDrop}
               onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
@@ -1017,7 +1257,7 @@ function ToolPage() {
               <input
                 ref={fileRef}
                 type="file"
-                accept=".dxf"
+                accept=".dxf,.svg"
                 className="hidden"
                 onChange={onFileChange}
               />

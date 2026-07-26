@@ -286,6 +286,116 @@ export function detectSelfIntersections(entities: DxfEntity[]): DxfIssue[] {
 }
 
 /**
+ * Détecte les courbes cassées (Broken Curves)
+ * يكشف المنحنيات المكسورة حيث يكون هناك discontinuity في المسار
+ */
+export function detectBrokenCurves(entities: DxfEntity[]): DxfIssue[] {
+  const issues: DxfIssue[] = [];
+
+  for (let i = 0; i < entities.length; i++) {
+    const e = entities[i];
+    const verts = e.vertices;
+    if (!verts || verts.length < 3) continue;
+
+    // Check for sharp angles that indicate broken curves
+    for (let j = 1; j < verts.length - 1; j++) {
+      const prev = verts[j - 1];
+      const curr = verts[j];
+      const next = verts[j + 1];
+
+      const v1 = { x: curr.x - prev.x, y: curr.y - prev.y };
+      const v2 = { x: next.x - curr.x, y: next.y - curr.y };
+
+      const len1 = Math.sqrt(v1.x * v1.x + v1.y * v1.y);
+      const len2 = Math.sqrt(v2.x * v2.x + v2.y * v2.y);
+
+      if (len1 < 0.001 || len2 < 0.001) continue;
+
+      const dot = (v1.x * v2.x + v1.y * v2.y) / (len1 * len2);
+      const angle = Math.acos(Math.max(-1, Math.min(1, dot)));
+      const angleDeg = angle * 180 / Math.PI;
+
+      // If angle is very sharp (< 10 degrees), it might be a broken curve
+      if (angleDeg < 10 && angleDeg > 0.1) {
+        issues.push({
+          id: `broken_curve_${i}_${j}`,
+          type: "open_loop",
+          severity: "warning",
+          ar: `منحنى مكسور في "${e.layer}" عند النقطة ${j} — زاوية حادة (${angleDeg.toFixed(1)}°)`,
+          en: `Broken curve on "${e.layer}" at point ${j} — sharp angle (${angleDeg.toFixed(1)}°)`,
+          entityIndices: [i],
+          fixed: false,
+        });
+        break; // One issue per entity
+      }
+    }
+  }
+
+  return issues;
+}
+
+/**
+ * Détecte les petits écarts (Tiny Gaps) entre les entités
+ * يكشف الفجوات الصغيرة جداً بين نقاط النهاية للمسارات
+ */
+export function detectTinyGaps(entities: DxfEntity[]): DxfIssue[] {
+  const issues: DxfIssue[] = [];
+  const TINY_GAP_MIN = 0.001; // 0.001mm
+  const TINY_GAP_MAX = 0.5;   // 0.5mm
+
+  // Collect all endpoints
+  const endpoints: { x: number; y: number; entityIdx: number; isStart: boolean }[] = [];
+
+  for (let i = 0; i < entities.length; i++) {
+    const e = entities[i];
+    if (e.type === "LINE") {
+      endpoints.push({ x: e.x1 ?? 0, y: e.y1 ?? 0, entityIdx: i, isStart: true });
+      endpoints.push({ x: e.x2 ?? 0, y: e.y2 ?? 0, entityIdx: i, isStart: false });
+    } else if ((e.type === "LWPOLYLINE" || e.type === "POLYLINE") && e.vertices && e.vertices.length > 0) {
+      endpoints.push({ x: e.vertices[0].x, y: e.vertices[0].y, entityIdx: i, isStart: true });
+      if (!e.closed) {
+        const last = e.vertices[e.vertices.length - 1];
+        endpoints.push({ x: last.x, y: last.y, entityIdx: i, isStart: false });
+      }
+    } else if (e.type === "ARC") {
+      const cx = e.cx ?? 0, cy = e.cy ?? 0, r = e.radius ?? 0;
+      const startAngle = (e.startAngle ?? 0) * Math.PI / 180;
+      const endAngle = (e.endAngle ?? 0) * Math.PI / 180;
+      endpoints.push({ x: cx + r * Math.cos(startAngle), y: cy + r * Math.sin(startAngle), entityIdx: i, isStart: true });
+      endpoints.push({ x: cx + r * Math.cos(endAngle), y: cy + r * Math.sin(endAngle), entityIdx: i, isStart: false });
+    }
+  }
+
+  // Find gaps between nearby endpoints
+  const matched = new Set<number>();
+  for (let i = 0; i < endpoints.length; i++) {
+    if (matched.has(i)) continue;
+    for (let j = i + 1; j < endpoints.length; j++) {
+      if (matched.has(j)) continue;
+      if (endpoints[i].entityIdx === endpoints[j].entityIdx) continue; // Same entity
+
+      const d = dist(endpoints[i].x, endpoints[i].y, endpoints[j].x, endpoints[j].y);
+      if (d > TINY_GAP_MIN && d < TINY_GAP_MAX) {
+        issues.push({
+          id: `tiny_gap_${endpoints[i].entityIdx}_${endpoints[j].entityIdx}`,
+          type: "open_loop",
+          severity: "warning",
+          ar: `فجوة صغيرة (${d.toFixed(3)} مم) بين "${entities[endpoints[i].entityIdx].layer}" و "${entities[endpoints[j].entityIdx].layer}"`,
+          en: `Tiny gap (${d.toFixed(3)}mm) between "${entities[endpoints[i].entityIdx].layer}" and "${entities[endpoints[j].entityIdx].layer}"`,
+          entityIndices: [endpoints[i].entityIdx, endpoints[j].entityIdx],
+          fixed: false,
+        });
+        matched.add(i);
+        matched.add(j);
+        break;
+      }
+    }
+  }
+
+  return issues;
+}
+
+/**
  * Détecte les segments colinéaires qui se chevauchent (overlapping collinear lines)
  * Ceci étend la détection de base des lignes dupliquées
  */

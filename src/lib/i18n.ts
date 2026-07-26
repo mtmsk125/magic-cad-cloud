@@ -3,11 +3,13 @@
  * Supports: العربية (ar), English (en), Français (fr), 中文 (zh)
  */
 
-export type Lang = "ar" | "en";
+export type Lang = "ar" | "en" | "fr" | "zh";
 
 export const LANGS: { code: Lang; name: string; dir: "rtl" | "ltr" }[] = [
   { code: "ar", name: "العربية", dir: "rtl" },
   { code: "en", name: "English", dir: "ltr" },
+  { code: "fr", name: "Français", dir: "ltr" },
+  { code: "zh", name: "中文", dir: "ltr" },
 ];
 
 export function getLangDir(lang: Lang): "rtl" | "ltr" {
@@ -98,7 +100,7 @@ export interface Translations {
   langSwitch: string;
 }
 
-export const T: Record<Lang, Translations> = {
+export const T: Partial<Record<Lang, Translations>> = {
   ar: {
     dir: "rtl",
     nav: { features: "المزايا", how: "كيف يعمل", pricing: "الأسعار", faq: "أسئلة", cta: "جرّبه مجاناً" },
@@ -234,7 +236,6 @@ export const T: Record<Lang, Translations> = {
     langSwitch: "العربية",
   },
 };
-
 export function getTranslations(lang: Lang): Translations {
-  return T[lang] || T.en;
+  return (T[lang] || T.en) as Translations;
 }

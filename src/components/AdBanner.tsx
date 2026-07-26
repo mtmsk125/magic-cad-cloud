@@ -1,4 +1,4 @@
-/**
+  /**
  * AdBanner — Smart Multi-Network Advertisement Component
  *
  * - Reads `isPremium` from `usePremiumStatus` hook.
@@ -26,12 +26,13 @@ import {
   getNextWaterfallNetwork,
   type AdNetwork,
 } from "@/lib/ad-networks";
+import type { Lang } from "@/lib/i18n";
 import { track } from '@vercel/analytics';
 
 export interface AdBannerProps {
   format?: "horizontal" | "rectangle" | "vertical";
   className?: string;
-  lang?: "ar" | "en";
+  lang?: Lang;
   network?: AdNetwork;
 }
 

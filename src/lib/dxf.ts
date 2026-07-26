@@ -711,42 +711,487 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.1): DxfAna
   };
 }
 
+/**
+ * تحويل ARC إلى LWPOLYLINE
+ */
+function convertArcToPolyline(e: DxfEntity): DxfEntity {
+  const cx = e.cx ?? 0, cy = e.cy ?? 0, r = e.radius ?? 0;
+  const startAngle = (e.startAngle ?? 0) * Math.PI / 180;
+  const endAngle = (e.endAngle ?? 0) * Math.PI / 180;
+  let sweep = endAngle - startAngle;
+  if (sweep < 0) sweep += 2 * Math.PI;
+
+  const segments = 24; // عدد المقاطع لتقريب القوس
+  const vertices: DxfVertex[] = [];
+
+  for (let i = 0; i <= segments; i++) {
+    const angle = startAngle + (sweep * i) / segments;
+    vertices.push({
+      x: cx + r * Math.cos(angle),
+      y: cy + r * Math.sin(angle),
+    });
+  }
+
+  return {
+    type: "LWPOLYLINE",
+    layer: e.layer,
+    handle: e.handle,
+    rawLines: e.rawLines,
+    vertices,
+    closed: false,
+    vertexCount: vertices.length,
+  };
+}
+
+/**
+ * تحويل CIRCLE إلى LWPOLYLINE
+ */
+function convertCircleToPolyline(e: DxfEntity): DxfEntity {
+  const cx = e.cx ?? 0, cy = e.cy ?? 0, r = e.radius ?? 0;
+  const segments = 36;
+  const vertices: DxfVertex[] = [];
+
+  for (let i = 0; i < segments; i++) {
+    const angle = (2 * Math.PI * i) / segments;
+    vertices.push({
+      x: cx + r * Math.cos(angle),
+      y: cy + r * Math.sin(angle),
+    });
+  }
+
+  return {
+    type: "LWPOLYLINE",
+    layer: e.layer,
+    handle: e.handle,
+    rawLines: e.rawLines,
+    vertices,
+    closed: true,
+    vertexCount: vertices.length,
+  };
+}
+
+/**
+ * تحويل SPLINE إلى LWPOLYLINE
+ */
+function convertSplineToPolyline(e: DxfEntity): DxfEntity {
+  if (!e.vertices || e.vertices.length < 2) return e;
+
+  // تبسيط نقاط SPLINE باستخدام خوارزمية RDP
+  const points = e.vertices.map(v => ({ x: v.x, y: v.y }));
+  const simplified = simplifyRDP(points, 0.05);
+  const vertices: DxfVertex[] = simplified.map(p => ({ x: p.x, y: p.y }));
+
+  return {
+    type: "LWPOLYLINE",
+    layer: e.layer,
+    handle: e.handle,
+    rawLines: e.rawLines,
+    vertices,
+    closed: e.closed ?? false,
+    vertexCount: vertices.length,
+  };
+}
+
+/**
+ * تحويل ELLIPSE إلى LWPOLYLINE
+ */
+function convertEllipseToPolyline(e: DxfEntity): DxfEntity {
+  const cx = e.cx ?? 0, cy = e.cy ?? 0;
+  const r = e.radius ?? 1;
+  const rx = r;
+  const ry = r * 0.6; // approximate ratio
+  const startAngle = ((e.startAngle ?? 0) * Math.PI) / 180;
+  const endAngle = ((e.endAngle ?? 0) * Math.PI) / 180;
+  let sweep = endAngle - startAngle;
+  if (sweep <= 0) sweep += 2 * Math.PI;
+
+  const segments = 36;
+  const vertices: DxfVertex[] = [];
+
+  for (let i = 0; i <= segments; i++) {
+    const t = startAngle + (sweep * i) / segments;
+    vertices.push({
+      x: cx + rx * Math.cos(t),
+      y: cy + ry * Math.sin(t),
+    });
+  }
+
+  const isFullEllipse = Math.abs(sweep - 2 * Math.PI) < 0.01;
+
+  return {
+    type: "LWPOLYLINE",
+    layer: e.layer,
+    handle: e.handle,
+    rawLines: e.rawLines,
+    vertices,
+    closed: isFullEllipse,
+    vertexCount: vertices.length,
+  };
+}
+
+/**
+ * نسخة مبسطة من simplifyRDP لتجنب مشاكل الاستيراد
+ */
+function simplifyRDP(points: { x: number; y: number }[], tolerance: number): { x: number; y: number }[] {
+  if (points.length <= 2) return points;
+
+  let maxDist = 0;
+  let maxIdx = 0;
+  const first = points[0];
+  const last = points[points.length - 1];
+
+  for (let i = 1; i < points.length - 1; i++) {
+    const dist = perpendicularDist(points[i], first, last);
+    if (dist > maxDist) {
+      maxDist = dist;
+      maxIdx = i;
+    }
+  }
+
+  if (maxDist > tolerance) {
+    const left = simplifyRDP(points.slice(0, maxIdx + 1), tolerance);
+    const right = simplifyRDP(points.slice(maxIdx), tolerance);
+    return [...left.slice(0, -1), ...right];
+  }
+
+  return [first, last];
+}
+
+function perpendicularDist(p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len === 0) return Math.sqrt((p.x - a.x) ** 2 + (p.y - a.y) ** 2);
+  const t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / (len * len);
+  const projX = a.x + t * dx;
+  const projY = a.y + t * dy;
+  return Math.sqrt((p.x - projX) ** 2 + (p.y - projY) ** 2);
+}
+
+/**
+ * تحويل جميع الكيانات إلى LWPOLYLINE
+ * ARCS → POLYLINE, CIRCLES → POLYLINE, SPLINES → POLYLINE, ELLIPSES → POLYLINE
+ */
+function convertAllToPolylines(entities: DxfEntity[]): { converted: DxfEntity[]; convertCount: number } {
+  const result: DxfEntity[] = [];
+  let convertCount = 0;
+
+  for (const e of entities) {
+    if (e.type === "ARC") {
+      result.push(convertArcToPolyline(e));
+      convertCount++;
+    } else if (e.type === "CIRCLE") {
+      result.push(convertCircleToPolyline(e));
+      convertCount++;
+    } else if (e.type === "SPLINE") {
+      result.push(convertSplineToPolyline(e));
+      convertCount++;
+    } else if (e.type === "ELLIPSE") {
+      result.push(convertEllipseToPolyline(e));
+      convertCount++;
+    } else {
+      result.push(e);
+    }
+  }
+
+  return { converted: result, convertCount };
+}
+
+/**
+ * دمج المسارات المتصلة في مسار واحد
+ * يستخدم خوارزمية مشابهة لـ path-union.ts لكن بدون استيراد
+ */
+function joinConnectedEntities(entities: DxfEntity[]): { joined: DxfEntity[]; joinCount: number } {
+  const tolerance = 0.01;
+  const used = new Set<number>();
+  const result: DxfEntity[] = [];
+  let joinCount = 0;
+
+  // أولاً: جمع كل المسارات المغلقة (Closed)
+  for (let i = 0; i < entities.length; i++) {
+    if (entities[i].type !== "LWPOLYLINE" || (entities[i].closed)) {
+      result.push(entities[i]);
+      used.add(i);
+    }
+  }
+
+  // ثانياً: محاولة دمج المسارات المفتوحة
+  let changed = true;
+  const openIndices = entities.map((e, i) => ({ idx: i, used: used.has(i) })).filter(e => !e.used).map(e => e.idx);
+
+  while (changed) {
+    changed = false;
+    for (let i = 0; i < openIndices.length; i++) {
+      if (used.has(openIndices[i])) continue;
+      const a = entities[openIndices[i]];
+      const aVerts = a.vertices;
+      if (!aVerts || aVerts.length < 2) continue;
+
+      for (let j = i + 1; j < openIndices.length; j++) {
+        if (used.has(openIndices[j])) continue;
+        const b = entities[openIndices[j]];
+        const bVerts = b.vertices;
+        if (!bVerts || bVerts.length < 2) continue;
+
+        const aStart = aVerts[0], aEnd = aVerts[aVerts.length - 1];
+        const bStart = bVerts[0], bEnd = bVerts[bVerts.length - 1];
+
+        let merged: DxfVertex[] | null = null;
+        let mergedClosed = false;
+
+        if (dist(aEnd.x, aEnd.y, bStart.x, bStart.y) < tolerance) {
+          merged = [...aVerts, ...bVerts.slice(1)];
+        } else if (dist(aEnd.x, aEnd.y, bEnd.x, bEnd.y) < tolerance) {
+          merged = [...aVerts, ...bVerts.reverse().slice(1)];
+        } else if (dist(aStart.x, aStart.y, bStart.x, bStart.y) < tolerance) {
+          merged = [...aVerts.reverse(), ...bVerts.slice(1)];
+        } else if (dist(aStart.x, aStart.y, bEnd.x, bEnd.y) < tolerance) {
+          merged = [...bVerts, ...aVerts.slice(1)];
+        }
+
+        if (merged) {
+          const mStart = merged[0], mEnd = merged[merged.length - 1];
+          mergedClosed = dist(mStart.x, mStart.y, mEnd.x, mEnd.y) < tolerance;
+          if (mergedClosed) merged = merged.slice(0, -1);
+
+          entities[openIndices[i]] = {
+            ...a,
+            vertices: merged,
+            closed: mergedClosed,
+            vertexCount: merged.length,
+          };
+          used.add(openIndices[j]);
+          joinCount++;
+          changed = true;
+          break;
+        }
+      }
+    }
+  }
+
+  // إضافة المسارات المتبقية
+  for (const idx of openIndices) {
+    if (!used.has(idx)) {
+      result.push(entities[idx]);
+    }
+  }
+
+  return { joined: result, joinCount };
+}
+
+/**
+ * إغلاق جميع المسارات المفتوحة
+ */
+function closeAllPolylines(entities: DxfEntity[]): { closed: DxfEntity[]; closeCount: number } {
+  const result = entities.map(e => {
+    if (e.type !== "LWPOLYLINE" || e.closed || !e.vertices || e.vertices.length < 2) return e;
+    return { ...e, closed: true };
+  });
+
+  const closeCount = result.filter((e, i) => e.closed && !entities[i].closed).length;
+  return { closed: result, closeCount };
+}
+
+/**
+ * إزالة النقاط المعلقة (Dangling Nodes) — نقاط منفردة لا تنتمي لأي مسار
+ */
+function removeDanglingNodes(entities: DxfEntity[]): { cleaned: DxfEntity[]; removedCount: number } {
+  const result = entities.filter(e => {
+    if (e.type === "POINT") return false;
+    if (e.type === "LINE") {
+      const len = dist(e.x1 ?? 0, e.y1 ?? 0, e.x2 ?? 0, e.y2 ?? 0);
+      return len > 0.001;
+    }
+    if ((e.type === "LWPOLYLINE" || e.type === "POLYLINE") && e.vertices) {
+      return e.vertices.length >= 2;
+    }
+    return true;
+  });
+
+  return {
+    cleaned: result,
+    removedCount: entities.length - result.length,
+  };
+}
+
+/**
+ * إزالة العناصر المخفية (من طبقات محددة تبدأ بـ _ أو __)
+ */
+function removeHiddenLayers(entities: DxfEntity[]): { cleaned: DxfEntity[]; removedCount: number } {
+  const result = entities.filter(e => {
+    const layer = e.layer || "";
+    // إزالة الطبقات المخفية (تبدأ بـ _ أو __ أو HIDDEN أو DEFPOINTS)
+    if (layer.startsWith("_") || layer.startsWith("__") || layer.toUpperCase() === "HIDDEN" || layer.toUpperCase() === "DEFPOINTS") return false;
+    if (layer.toUpperCase().includes("HATCH") || layer.toUpperCase().includes("TEXT")) {
+      // احتفظ بها إذا كانت تحتوي على عناصر
+      return true;
+    }
+    return true;
+  });
+
+  return {
+    cleaned: result,
+    removedCount: entities.length - result.length,
+  };
+}
+
+/**
+ * تحسين مسار القص: ترتيب المسارات لتقليل حركة رأس الليزر
+ */
+function optimizeCutOrder(entities: DxfEntity[]): DxfEntity[] {
+  // فصل المسارات المغلقة عن المفتوحة
+  const closedPolylines: DxfEntity[] = [];
+  const otherEntities: DxfEntity[] = [];
+
+  for (const e of entities) {
+    if (e.type === "LWPOLYLINE" && e.closed && e.vertices && e.vertices.length >= 2) {
+      closedPolylines.push(e);
+    } else {
+      otherEntities.push(e);
+    }
+  }
+
+  // ترتيب المسارات المغلقة حسب المساحة (من الأصغر إلى الأكبر = داخلي أولاً)
+  closedPolylines.sort((a, b) => {
+    const boundsA = getEntityBounds(a);
+    const boundsB = getEntityBounds(b);
+    const areaA = boundsA ? boundsA.width * boundsA.height : 0;
+    const areaB = boundsB ? boundsB.width * boundsB.height : 0;
+    return areaA - areaB;
+  });
+
+  // Nearest Neighbor لترتيب المسارات
+  const ordered: DxfEntity[] = [];
+  const remaining = new Set(closedPolylines);
+  let currentX = 0, currentY = 0;
+
+  while (remaining.size > 0) {
+    let nearest: DxfEntity | null = null;
+    let nearestDist = Infinity;
+
+    for (const poly of remaining) {
+      if (!poly.vertices || poly.vertices.length === 0) continue;
+      const first = poly.vertices[0];
+      const d = Math.sqrt((first.x - currentX) ** 2 + (first.y - currentY) ** 2);
+      if (d < nearestDist) {
+        nearestDist = d;
+        nearest = poly;
+      }
+    }
+
+    if (nearest && nearest.vertices) {
+      ordered.push(nearest);
+      const last = nearest.vertices[nearest.vertices.length - 1];
+      currentX = last.x;
+      currentY = last.y;
+      remaining.delete(nearest);
+    } else {
+      break;
+    }
+  }
+
+  return [...ordered, ...otherEntities];
+}
+
+/**
+ * pipeline المعالجة الكامل
+ */
 export function repairDxf(content: string, analysis: DxfAnalysis): { fixed: string; repaired: DxfIssue[]; fixSummary: FixSummaryItem[] } {
   const startTime = performance.now();
   const repairedIssues: DxfIssue[] = [];
   const toRemove = new Set<number>();
   const fixSummary: FixSummaryItem[] = [];
+  const originalSize = analysis.originalFileSize ?? new Blob([content]).size;
 
-  // First, apply structural purge
+  // ─── STEP 1: Structural Purge ───
   const { purgedEntities, purgedCount } = structuralPurge(analysis);
-
   if (purgedCount > 0) {
     fixSummary.push({
       id: 'structural_purge',
       icon: '🧹',
       ar: `تمت إزالة ${purgedCount} عنصر غير ضروري (كتل فارغة، نصوص مكررة، طبقات فارغة)`,
       en: `Removed ${purgedCount} unnecessary items (empty blocks, duplicate text, empty layers)`,
-      detail: `تقليص حجم الملف بنسبة ${analysis.sizeReductionPercent ?? 0}%`,
+      detail: `تنظيف هيكلي للملف`,
     });
   }
 
-  // Now apply fuzzy node snapping to the purged entities
-  const snappedEntities = snapOpenEndpoints(purgedEntities, 0.1);
+  let entities = purgedEntities;
 
+  // ─── STEP 2: Remove hidden layers ───
+  const { cleaned: noHidden, removedCount: hiddenRemoved } = removeHiddenLayers(entities);
+  if (hiddenRemoved > 0) {
+    fixSummary.push({
+      id: 'removed_hidden',
+      icon: '👁️',
+      ar: `تمت إزالة ${hiddenRemoved} عنصر من الطبقات المخفية`,
+      en: `Removed ${hiddenRemoved} items from hidden layers`,
+      detail: 'إزالة العناصر المخفية وغير المرئية',
+    });
+  }
+  entities = noHidden;
+
+  // ─── STEP 3: Remove dangling nodes ───
+  const { cleaned: noDangling, removedCount: danglingRemoved } = removeDanglingNodes(entities);
+  if (danglingRemoved > 0) {
+    fixSummary.push({
+      id: 'removed_dangling',
+      icon: '🔗',
+      ar: `تمت إزالة ${danglingRemoved} نقطة معلقة أو عنصر تالف`,
+      en: `Removed ${danglingRemoved} dangling nodes or broken items`,
+      detail: 'إزالة النقاط المعلقة والخطوط التالفة',
+    });
+  }
+  entities = noDangling;
+
+  // ─── STEP 4: Convert ARCS/CIRCLES/SPLINES/ELLIPSES to POLYLINES ───
+  const { converted, convertCount } = convertAllToPolylines(entities);
+  if (convertCount > 0) {
+    fixSummary.push({
+      id: 'converted_to_polylines',
+      icon: '🔄',
+      ar: `تم تحويل ${convertCount} عنصر (أقواس، دوائر، منحنيات) إلى POLYLINES`,
+      en: `Converted ${convertCount} entities (arcs, circles, curves) to POLYLINES`,
+      detail: 'تحويل جميع الكيانات إلى مسارات متعددة الخطوط',
+    });
+  }
+  entities = converted;
+
+  // ─── STEP 5: Snap open endpoints ───
+  const snappedEntities = snapOpenEndpoints(entities, 0.1);
+
+  // ─── STEP 6: Join connected paths ───
+  const { joined, joinCount } = joinConnectedEntities(snappedEntities);
+  if (joinCount > 0) {
+    fixSummary.push({
+      id: 'joined_paths',
+      icon: '🔗',
+      ar: `تم دمج ${joinCount} مسار متصل في مسار واحد`,
+      en: `Joined ${joinCount} connected paths into single paths`,
+      detail: 'دمج الخطوط المتلامسة في مسار واحد متصل',
+    });
+  }
+  entities = joined;
+
+  // ─── STEP 7: Close all paths ───
+  const { closed: closedEntities, closeCount } = closeAllPolylines(entities);
+  if (closeCount > 0) {
+    fixSummary.push({
+      id: 'closed_paths',
+      icon: '⭕',
+      ar: `تم إغلاق ${closeCount} مسار مفتوح`,
+      en: `Closed ${closeCount} open paths`,
+      detail: 'إغلاق جميع المسارات المفتوحة',
+    });
+  }
+  entities = closedEntities;
+
+  // ─── STEP 8: Remove duplicates (keep original logic) ───
   const dupIssue = analysis.issues.find(i => i.type === "duplicate_line");
   if (dupIssue) {
     const seenKeys = new Set<string>();
-    // We need to remap entity indices to the snapped/purged set
-    const entityMap = new Map<number, number>();
-    let mappedIdx = 0;
-    for (let i = 0; i < analysis.entities.length; i++) {
-      if (!toRemove.has(i)) {
-        entityMap.set(i, mappedIdx++);
-      }
-    }
     for (const idx of dupIssue.entityIndices) {
-      const e = analysis.entities[idx];
-      if (e.type !== "LINE") continue;
+      const e = entities[idx];
+      if (!e || e.type !== "LINE") continue;
       const key = lineKey(e);
       if (seenKeys.has(key)) {
         toRemove.add(idx);
@@ -764,6 +1209,7 @@ export function repairDxf(content: string, analysis: DxfAnalysis): { fixed: stri
     });
   }
 
+  // ─── STEP 9: Remove zero-length entities ───
   for (const issue of analysis.issues) {
     if (issue.type === "zero_length") {
       toRemove.add(issue.entityIndices[0]);
@@ -771,86 +1217,58 @@ export function repairDxf(content: string, analysis: DxfAnalysis): { fixed: stri
     }
   }
 
-  const fixedEntities: DxfEntity[] = [];
-  const openPolyIssues = analysis.issues.filter(i => i.type === "open_polyline");
-  let openPolyFixedCount = 0;
+  // ─── STEP 10: Optimize cut order ───
+  const finalEntities = optimizeCutOrder(entities.filter((_, i) => !toRemove.has(i)));
+  
+  fixSummary.push({
+    id: 'optimized_cut_order',
+    icon: '📐',
+    ar: 'تم ترتيب مسارات القص لتقليل حركة رأس الليزر',
+    en: 'Optimized cutting order to minimize laser head movement',
+    detail: 'تحسين سرعة الماكينة',
+  });
 
-  for (let i = 0; i < snappedEntities.length; i++) {
-    if (toRemove.has(i)) continue;
-    let entity = { ...snappedEntities[i] };
-
-    const openIssue = openPolyIssues.find(iss => iss.entityIndices[0] === i);
-    if (openIssue && entity.vertices && entity.vertices.length >= 2) {
-      const first = entity.vertices[0];
-      const last = entity.vertices[entity.vertices.length - 1];
-      const gap = dist(first.x, last.y, last.x, last.y);
-      if (gap < 1.0) {
-        entity = { ...entity, closed: true };
-        repairedIssues.push({ ...openIssue, fixed: true });
-        openPolyFixedCount++;
-      }
+  // ─── STEP 11: Simplify nodes ───
+  const simplifiedEntities = finalEntities.map(e => {
+    if (e.type !== "LWPOLYLINE" || !e.vertices || e.vertices.length < 5) return e;
+    const points = e.vertices.map(v => ({ x: v.x, y: v.y }));
+    const simplified = simplifyRDP(points, 0.02);
+    if (simplified.length < e.vertices.length) {
+      return {
+        ...e,
+        vertices: simplified.map(p => ({ x: p.x, y: p.y })),
+        vertexCount: simplified.length,
+      };
     }
-    fixedEntities.push(entity);
-  }
+    return e;
+  });
 
-  if (openPolyFixedCount > 0) {
+  const nodeReduction = finalEntities.length > 0
+    ? Math.round((1 - simplifiedEntities.reduce((s, e) => s + (e.vertices?.length || 0), 0) / 
+        Math.max(1, finalEntities.reduce((s, e) => s + (e.vertices?.length || 0), 0))) * 100)
+    : 0;
+
+  if (nodeReduction > 0) {
     fixSummary.push({
-      id: 'closed_polylines',
-      icon: '🔗',
-      ar: 'تم إغلاق البوليلاينات المفتوحة وربط نقاط النهاية',
-      en: 'Closed open polylines and connected endpoints',
-      detail: `${openPolyFixedCount} بوليلاين مفتوح تم إغلاقه`,
+      id: 'nodes_optimized',
+      icon: '✏️',
+      ar: `تم تقليل عدد النقاط بنسبة ${nodeReduction}% مع الحفاظ على الشكل`,
+      en: `Reduced node count by ${nodeReduction}% while preserving shape`,
+      detail: 'تبسيط المنحنيات وتقليل النقاط الزائدة',
     });
   }
 
-  // Fix open loops by merging close endpoints
-  const openLoopIssues = analysis.issues.filter(i => i.type === "open_loop");
-  let openLoopFixedCount = 0;
-  if (openLoopIssues.length > 0) {
-    openLoopFixedCount = openLoopIssues.length;
-    for (const issue of openLoopIssues) {
-      repairedIssues.push({ ...issue, fixed: true });
-    }
-    fixSummary.push({
-      id: 'merged_open_loops',
-      icon: '🔄',
-      ar: 'تم دمج النقاط المفتوحة وإزالة الفجوات',
-      en: 'Merged open points and removed gaps',
-      detail: `${openLoopFixedCount} نقطة مفتوحة تم إصلاحها`,
-    });
-  }
-
-  // Fix overlapping lines (collinear overlapping)
-  fixSummary.push({
-    id: 'removed_overlaps',
-    icon: '✂️',
-    ar: 'تمت إزالة الخطوط المتداخلة والمكررة',
-    en: 'Removed overlapping and duplicate lines',
-    detail: 'تحسين مسارات القص للتشغيل السلس',
-  });
-
-  // Fix path directions for CNC
-  fixSummary.push({
-    id: 'fixed_directions',
-    icon: '🧭',
-    ar: 'تعديل اتجاهات مسارات القص لتحسين جودة القطع',
-    en: 'Adjusted cutting path directions for better quality',
-    detail: 'تم محاذاة الاتجاهات لتقليل وقت القص',
-  });
-
-  const entitiesSection = generateEntitiesSection(fixedEntities);
+  // Generate final DXF
+  const entitiesSection = generateEntitiesSection(simplifiedEntities);
   const fixed = analysis.headerSection +
     "\n  0\nSECTION\n  2\nENTITIES\n" +
     entitiesSection +
     "\n  0\nENDSEC" +
     analysis.tailSection;
 
-  // Calculate processed file size
+  // Calculate metrics
   const processedFileSize = new Blob([fixed]).size;
-  const originalSize = analysis.originalFileSize ?? 1;
-  const sizeReductionPercent = Math.round(((originalSize - processedFileSize) / originalSize) * 100);
-
-  // Add processing time info
+  const sizeReductionPercent = originalSize > 0 ? Math.round(((originalSize - processedFileSize) / originalSize) * 100) : 0;
   const processingTimeMs = Math.round(performance.now() - startTime);
 
   fixSummary.push({
