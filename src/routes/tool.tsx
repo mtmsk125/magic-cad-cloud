@@ -8,7 +8,8 @@ import { track } from '@vercel/analytics';
 import { FeedbackModal } from "@/components/feedback-modal";
 import { ViralUnlockModal } from "@/components/viral-unlock-modal";
 import { SafetyBadge } from "@/components/safety-badge";
-import { AdBanner } from "@/components/AdBanner";
+import { AdBanner, AdGateModal } from "@/components/AdBanner";
+import { ShareToolWidget } from "@/components/share-tool-widget";
 import { getUserSubscribed as isViralUnlocked, setUserSubscribed } from "@/lib/viral-launch";
 
 /**
@@ -397,34 +398,7 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints }: {
 }
 
 export const Route = createFileRoute("/tool")({
-  beforeLoad: async () => {
-    // Check subscription status
-    const subscriptionData = getSubscriptionData();
-    const userIsSubscribed = isSubscribed(subscriptionData);
-    const freeUsageCount = getFreeUsageCount();
-
-    console.log("🔍 Subscription check on /tool:", {
-      subscriptionData,
-      userIsSubscribed,
-      freeUsageCount,
-      freeUsageRemaining: FREE_USAGE_LIMIT - freeUsageCount,
-    });
-
-    // Allow access if:
-    // 1. User is subscribed (pro/workshop/enterprise), OR
-    // 2. User has remaining free usage
-    const canAccess = userIsSubscribed || freeUsageCount < FREE_USAGE_LIMIT;
-
-    if (!canAccess) {
-      console.warn("❌ No free uses remaining - redirecting to /?redirect=pricing");
-      throw redirect({
-        to: "/",
-        search: { redirect: "tool" },
-      });
-    }
-    
-    console.log("✅ User allowed access to /tool");
-  },
+  // No beforeLoad guard — tool is 100% free, no registration or paywall required
   head: () => ({
     meta: [
       { title: "DXFix — أداة إصلاح وفحص ملفات DXF اونلاين | مجاني" },
@@ -806,6 +780,28 @@ function ToolPage() {
     setStage("repaired");
   };
 
+  const handleDownloadWithAdGate = () => {
+    // If user is subscribed, download directly
+    if (userIsSubscribed) {
+      handleDownloadFixed();
+      return;
+    }
+    // Otherwise, show ad gate modal first
+    setShowAdGateModal(true);
+  };
+
+  const handleAdGateComplete = (email?: string) => {
+    setShowAdGateModal(false);
+    // Download the file after ad gate completion
+    if (repairedContent) {
+      // Save email if provided
+      if (email) {
+        localStorage.setItem("dxfix_waitlist_email", email);
+      }
+      downloadFile(repairedContent, fileName.replace(".dxf", "_fixed.dxf"));
+    }
+  };
+
   const handleDownloadFixed = () => {
     // Allow all users (free and subscribed) to download directly
     downloadFile(repairedContent, fileName.replace(".dxf", "_fixed.dxf"));
@@ -914,11 +910,7 @@ function ToolPage() {
   }, [bulkFiles]);
 
   const downloadAllBulk = async () => {
-    // Gate: Check if user is subscribed
-    if (!userIsSubscribed) {
-      setShowSubscribeModal(true);
-      return;
-    }
+    // No gate — bulk download is free for everyone
     const doneFiles = bulkFiles.filter(f => f.status === "done" && f.fixedContent);
     const filesToZip = doneFiles.map(f => ({
       name: f.file.name.replace(".dxf", "_fixed.dxf"),
@@ -1159,6 +1151,11 @@ function ToolPage() {
 
             {/* 📢 Smart AdBanner — Upload stage (automatically hidden for premium users) */}
             <AdBanner format="horizontal" lang={lang} />
+
+            {/* Share Tool Widget — upload stage */}
+            <div className="mt-6">
+              <ShareToolWidget lang={lang} variant="inline" />
+            </div>
 
             {/* FILE HISTORY */}
             <div className="mt-8">
@@ -1421,6 +1418,9 @@ function ToolPage() {
             {/* 📢 Smart AdBanner — Result stage (automatically hidden for premium users) */}
             <AdBanner format="rectangle" lang={lang} />
 
+            {/* Share Tool Widget — result stage */}
+            <ShareToolWidget lang={lang} variant="sidebar" />
+
             {/* Issues */}
             <div className="rounded-2xl border border-border bg-card p-6">
               <h3 className="font-display font-semibold mb-4">{stage === "repaired" ? t.repaired : t.issues}</h3>
@@ -1520,13 +1520,7 @@ function ToolPage() {
               )}
               {stage === "result" && analysis.issues.length === 0 && (
                 <button
-                  onClick={() => {
-                    if (!userIsSubscribed) {
-                      setShowSubscribeModal(true);
-                      return;
-                    }
-                    downloadFile(fileContent, fileName);
-                  }}
+                  onClick={() => downloadFile(fileContent, fileName)}
                   className="px-6 py-2.5 rounded-lg bg-accent text-accent-foreground font-semibold text-sm hover:opacity-90 transition shadow-[var(--shadow-spark)]"
                 >
                   ⬇ {lang === "ar" ? "تحميل الملف" : "Download file"}
@@ -1600,108 +1594,13 @@ function ToolPage() {
         }}
       />
 
-      {/* Ad Gate Modal (Watch ad to download) */}
-      {showAdGateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
-          <div className="relative bg-card border border-accent/40 rounded-2xl p-8 max-w-md w-full shadow-[var(--shadow-spark)] text-center">
-            <button
-              onClick={() => setShowAdGateModal(false)}
-              className="absolute top-4 end-4 text-muted-foreground hover:text-foreground transition font-mono text-lg"
-            >✕</button>
-            <div className="text-5xl mb-4">
-              {adWatched ? "✅" : "📺"}
-            </div>
-            <h3 className="font-display text-2xl font-bold mb-3">
-              {lang === "ar" ? "شاهد إعلاناً قصيراً لتحميل الملف" : "Watch a short ad to download"}
-            </h3>
-            <p className="text-muted-foreground mb-6">
-              {lang === "ar"
-                ? "ادعم الأداة بمشاهدة إعلان قصير. سيتم تفعيل التحميل فور انتهاء الإعلان."
-                : "Support the tool by watching a short ad. Download will be enabled once the ad ends."}
-            </p>
-
-            {/* Ad Container */}
-            <div className="bg-background border border-border/60 rounded-xl p-4 mb-4 min-h-[120px] flex flex-col items-center justify-center">
-              {adWatched ? (
-                <div className="text-green-400 font-semibold">
-                  {lang === "ar" ? "✓ تم مشاهدة الإعلان!" : "✓ Ad watched!"}
-                </div>
-              ) : (
-                <>
-                  <div className="text-3xl mb-2">📺</div>
-                  <div className="font-mono text-xs text-muted-foreground mb-3">
-                    {lang === "ar" ? "Google AdSense" : "Advertisement"}
-                  </div>
-                  {/* Google AdSense container */}
-                  <ins
-                    className="adsbygoogle"
-                    style={{ display: "block", minWidth: "200px", width: "100%", height: "60px" }}
-                    data-ad-client="ca-pub-XXXXXXXXXXXXXXXX"
-                    data-ad-slot="XXXXXXXXXX"
-                    data-ad-format="auto"
-                  />
-                </>
-              )}
-            </div>
-
-            {/* Timer / Watch Button */}
-            {!adWatched && (
-              <div className="flex flex-col gap-3">
-                {adTimer > 0 ? (
-                  <div className="w-full py-3 rounded-lg bg-accent/20 text-accent font-semibold">
-                    {lang === "ar" ? `⏳ انتظر ${adTimer} ثوانٍ...` : `⏳ Wait ${adTimer}s...`}
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => {
-                      // Start 10-second ad timer
-                      setAdTimer(10);
-                      const interval = setInterval(() => {
-                        setAdTimer(prev => {
-                          if (prev <= 1) {
-                            clearInterval(interval);
-                            setAdWatched(true);
-                            return 0;
-                          }
-                          return prev - 1;
-                        });
-                      }, 1000);
-                    }}
-                    className="w-full py-3 rounded-lg bg-accent text-accent-foreground font-semibold hover:opacity-90 transition shadow-[var(--shadow-spark)]"
-                  >
-                    {lang === "ar" ? "▶ شاهد الإعلان" : "▶ Watch Ad"}
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* Download Button (only after ad watched) */}
-            {adWatched && (
-              <button
-                onClick={() => {
-                  setShowAdGateModal(false);
-                  if (repairedContent) {
-                    downloadFile(repairedContent, fileName.replace(".dxf", "_fixed.dxf"));
-                  }
-                }}
-                className="w-full py-3.5 rounded-lg bg-accent text-accent-foreground font-semibold hover:opacity-90 transition shadow-[var(--shadow-spark)]"
-              >
-                ⬇ {lang === "ar" ? "حمّل الملف الآن" : "Download now"}
-              </button>
-            )}
-
-            {/* Skip link */}
-            <div className="mt-4">
-              <a
-                href="/?redirect=pricing"
-                className="font-mono text-xs text-muted-foreground/60 hover:text-foreground transition underline"
-              >
-                {lang === "ar" ? "اشترك لإزالة الإعلانات" : "Subscribe to remove ads"}
-              </a>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* New Ad Gate Modal from AdBanner component — forces ad watch + email collection */}
+      <AdGateModal
+        lang={lang}
+        isOpen={showAdGateModal}
+        onClose={() => setShowAdGateModal(false)}
+        onComplete={handleAdGateComplete}
+      />
 
       {/* Subscription Required Modal (Download Gating - fallback) */}
       {showSubscribeModal && (

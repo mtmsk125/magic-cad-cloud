@@ -174,7 +174,22 @@ function RootComponent() {
 
   useEffect(() => {
     initPaddle();
-    inject();
+
+    // Skip Vercel Analytics for personal visits and testing traffic
+    // This prevents inflating analytics with developer/owner page views
+    const shouldSkipAnalytics =
+      typeof window !== 'undefined' && (
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1' ||
+        window.location.search.includes('admin=true') ||
+        window.location.search.includes('skip_analytics=1') ||
+        window.location.search.includes('debug=true') ||
+        localStorage.getItem('dxfix_skip_analytics') === 'true'
+      );
+
+    if (!shouldSkipAnalytics) {
+      inject();
+    }
   }, []);
 
   return (

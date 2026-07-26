@@ -1,81 +1,156 @@
 /**
- * AdBanner — Smart Advertisement Component
+ * AdBanner — Smart Multi-Network Advertisement Component
  *
- * - Reads `isPremium` from the `usePremiumStatus` hook.
- * - If `isPremium === true` → renders nothing (no ad code loaded).
- * - If `isPremium === false` → renders a Google AdSense container
- *   styled to match the dark theme, with automatic ad slot push.
+ * - Reads `isPremium` from `usePremiumStatus` hook.
+ * - If `isPremium === true` → renders nothing.
+ * - If `isPremium === false` → picks the highest-paying ad network
+ *   and renders it with automatic waterfall fallback.
+ * - If a network fails to load, it automatically tries the next
+ *   highest-eCPM network in the waterfall.
+ * - Networks with empty/unconfigured .env values are skipped entirely.
  *
  * Props:
- * - slot: AdSense data-ad-slot identifier (optional, defaults to a placeholder)
- * - format: "horizontal" | "rectangle" | "vertical" (optional, defaults to "horizontal")
+ * - format: "horizontal" | "rectangle" | "vertical"
  * - className: additional CSS classes
- * - lang: "ar" | "en" for localised placeholder text
+ * - lang: "ar" | "en" for localised text
+ * - network: specific network to use (optional, auto-selects best if omitted)
  */
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { usePremiumStatus } from "@/lib/subscription-status";
+import {
+  getAdHtml,
+  getBestAdNetwork,
+  getAdWaterfall,
+  getNextWaterfallNetwork,
+  type AdNetwork,
+} from "@/lib/ad-networks";
+import { track } from '@vercel/analytics';
 
 export interface AdBannerProps {
-  slot?: string;
   format?: "horizontal" | "rectangle" | "vertical";
   className?: string;
-  lang?: "ar" | "en" | "fr" | "zh";
+  lang?: "ar" | "en";
+  network?: AdNetwork;
 }
 
-const ADSENSE_CLIENT_ID =
-  (typeof import.meta !== "undefined" &&
-    (import.meta.env.VITE_ADSENSE_CLIENT_ID ||
-      import.meta.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID)) ||
-  "ca-pub-XXXXXXXXXXXXXXXX";
-
-const FORMAT_STYLES: Record<string, React.CSSProperties> = {
-  horizontal: { display: "block", minWidth: "300px", width: "100%", height: "90px" },
-  rectangle: { display: "block", minWidth: "250px", width: "100%", height: "250px" },
-  vertical: { display: "block", minWidth: "160px", width: "160px", height: "600px" },
-};
-
 export function AdBanner({
-  slot = "XXXXXXXXXX",
   format = "horizontal",
   className = "",
   lang = "ar",
+  network,
 }: AdBannerProps) {
   const { isPremium, isLoading } = usePremiumStatus();
-  const adRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [currentNetwork, setCurrentNetwork] = useState<AdNetwork | null>(null);
+  const [adError, setAdError] = useState(false);
+  const [waterfallIndex, setWaterfallIndex] = useState(0);
   const pushed = useRef(false);
+  const waterfall = useRef<AdNetwork[]>([]);
 
-  // Push ad slot to AdSense queue whenever the container mounts (for free users only)
+  // Build the waterfall list once on mount
   useEffect(() => {
     if (isLoading || isPremium) return;
+    // If a specific network is requested, use only that one
+    if (network) {
+      waterfall.current = [network];
+    } else {
+      waterfall.current = getAdWaterfall();
+    }
+    // Start with the first (highest eCPM) network
+    setWaterfallIndex(0);
+    if (waterfall.current.length > 0) {
+      setCurrentNetwork(waterfall.current[0]);
+    } else {
+      // No networks configured at all — show fallback
+      setCurrentNetwork(null);
+    }
+  }, [isLoading, isPremium, network]);
 
-    // Only push once per mount cycle
+  // When waterfallIndex changes, update the current network
+  useEffect(() => {
+    if (waterfall.current.length === 0) {
+      setCurrentNetwork(null);
+    } else if (waterfallIndex < waterfall.current.length) {
+      setCurrentNetwork(waterfall.current[waterfallIndex]);
+      setAdError(false);
+      pushed.current = false;
+    } else {
+      // Exhausted all networks — show fallback
+      setCurrentNetwork(null);
+    }
+  }, [waterfallIndex]);
+
+  // Advance to the next network in the waterfall
+  const advanceWaterfall = useCallback(() => {
+    setWaterfallIndex(prev => prev + 1);
+  }, []);
+
+  // Push ad to network's queue after render
+  useEffect(() => {
+    if (isLoading || isPremium || !currentNetwork || adError) return;
     if (pushed.current) return;
 
     const timer = setTimeout(() => {
       try {
-        const adsbygoogle = (window as any).adsbygoogle;
-        if (adsbygoogle && Array.isArray(adsbygoogle)) {
-          adsbygoogle.push({});
-          pushed.current = true;
+        // For AdSense, push to the global queue
+        if (currentNetwork === 'adsense') {
+          const adsbygoogle = (window as any).adsbygoogle;
+          if (adsbygoogle && Array.isArray(adsbygoogle)) {
+            adsbygoogle.push({});
+            pushed.current = true;
+          }
+        }
+        // For other networks, they auto-initialize via script tags
+        pushed.current = true;
+
+        // Track ad impression
+        const isLocalhost = window.location.hostname === "localhost";
+        const isAdmin = window.location.search.includes("admin=true");
+        if (!isLocalhost && !isAdmin) {
+          track('Ad Impression', { 
+            network: currentNetwork,
+            format,
+            timestamp: new Date().toISOString()
+          });
         }
       } catch (e) {
-        // Silently fail — AdSense may not be loaded yet
+        console.warn(`Ad push failed for ${currentNetwork}:`, e);
+        setAdError(true);
+        // Automatically try the next network in the waterfall
+        advanceWaterfall();
       }
-    }, 200);
+    }, 300);
 
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [isLoading, isPremium]);
+    return () => clearTimeout(timer);
+  }, [isLoading, isPremium, currentNetwork, adError, format, advanceWaterfall]);
 
-  // If still loading or premium, render nothing (no ad code at all)
+  // If still loading or premium, render nothing
   if (isLoading || isPremium) {
     return null;
   }
 
-  const adStyle: React.CSSProperties = FORMAT_STYLES[format] || FORMAT_STYLES.horizontal;
+  // If ad error or no network, show fallback CTA
+  if (adError || !currentNetwork) {
+    return (
+      <div className={`ad-banner-fallback rounded-xl border border-border/60 bg-card/30 p-4 text-center ${className}`}>
+        <p className="font-mono text-xs text-muted-foreground/50">
+          {lang === "ar"
+            ? "🚀 ادعم الأداة — اشترك في Pro لإزالة الإعلانات"
+            : "🚀 Support the tool — Subscribe to Pro to remove ads"}
+        </p>
+        <a
+          href="/?redirect=pricing"
+          className="inline-block mt-2 px-4 py-2 rounded-lg bg-accent/20 text-accent font-semibold text-sm hover:bg-accent/30 transition"
+        >
+          {lang === "ar" ? "اشترك الآن" : "Subscribe Now"}
+        </a>
+      </div>
+    );
+  }
+
+  const adUnit = getAdHtml(currentNetwork, format);
 
   return (
     <div
@@ -84,21 +159,20 @@ export function AdBanner({
       aria-label={lang === "ar" ? "إعلان" : "Advertisement"}
     >
       {/* Label */}
-      <div className="font-mono text-[10px] text-muted-foreground/40 uppercase tracking-widest mb-2">
-        {lang === "ar" ? "إعلان" : "Sponsored Ad"}
+      <div className="font-mono text-[10px] text-muted-foreground/40 uppercase tracking-widest mb-2 flex items-center justify-center gap-2">
+        <span>{lang === "ar" ? "إعلان" : "Sponsored"}</span>
+        <span className="text-[8px] opacity-30">|</span>
+        <span className="text-[8px] opacity-30">
+          {lang === "ar" ? `شبكة: ${currentNetwork}` : `Network: ${currentNetwork}`}
+        </span>
       </div>
 
       {/* Ad container */}
-      <div ref={adRef} className="flex items-center justify-center overflow-hidden rounded-lg">
-        <ins
-          className="adsbygoogle"
-          style={adStyle}
-          data-ad-client={ADSENSE_CLIENT_ID}
-          data-ad-slot={slot}
-          data-ad-format={format === "horizontal" ? "auto" : format}
-          data-full-width-responsive="true"
-        />
-      </div>
+      <div
+        ref={containerRef}
+        className="flex items-center justify-center overflow-hidden rounded-lg ad-container"
+        dangerouslySetInnerHTML={{ __html: adUnit.html }}
+      />
 
       {/* Subtle upgrade CTA */}
       <p className="font-mono text-[10px] text-muted-foreground/30 mt-2 leading-tight">
@@ -106,6 +180,192 @@ export function AdBanner({
           ? "اشترك في Pro أو Workshop لإزالة الإعلانات"
           : "Subscribe to Pro or Workshop to remove ads"}
       </p>
+    </div>
+  );
+}
+
+/**
+ * AdGateModal — Forces user to watch an ad before downloading
+ * After ad completes, shows email collection form
+ */
+interface AdGateModalProps {
+  lang: "ar" | "en";
+  isOpen: boolean;
+  onClose: () => void;
+  onComplete: (email?: string) => void;
+}
+
+export function AdGateModal({ lang, isOpen, onClose, onComplete }: AdGateModalProps) {
+  const [adWatched, setAdWatched] = useState(false);
+  const [adTimer, setAdTimer] = useState(7);
+  const [email, setEmail] = useState("");
+  const [emailSubmitted, setEmailSubmitted] = useState(false);
+  const [showEmailForm, setShowEmailForm] = useState(false);
+
+  if (!isOpen) return null;
+
+  const handleWatchAd = () => {
+    // Start timer
+    setAdTimer(7);
+    const interval = setInterval(() => {
+      setAdTimer(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          setAdWatched(true);
+          setShowEmailForm(true);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const handleEmailSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) return;
+
+    // Save email to server
+    try {
+      await fetch('/api/waitlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      // Also save locally
+      localStorage.setItem("dxfix_waitlist_email", email);
+    } catch (err) {
+      console.warn("Failed to save email:", err);
+      localStorage.setItem("dxfix_waitlist_email", email);
+    }
+
+    setEmailSubmitted(true);
+    setTimeout(() => {
+      onComplete(email);
+    }, 1500);
+  };
+
+  const adUnit = getAdHtml(getBestAdNetwork(), "horizontal");
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+      <div className="relative bg-card border border-accent/40 rounded-2xl p-8 max-w-md w-full shadow-[var(--shadow-spark)] text-center">
+        <button
+          onClick={onClose}
+          className="absolute top-4 end-4 text-muted-foreground hover:text-foreground transition font-mono text-lg"
+        >✕</button>
+
+        {emailSubmitted ? (
+          <>
+            <div className="text-5xl mb-4">🎉</div>
+            <h3 className="font-display text-2xl font-bold mb-3">
+              {lang === "ar" ? "تم التحميل!" : "Download ready!"}
+            </h3>
+            <p className="text-muted-foreground mb-6">
+              {lang === "ar"
+                ? "شكراً لك! سيبدأ التحميل تلقائياً."
+                : "Thank you! Your download will start automatically."}
+            </p>
+          </>
+        ) : showEmailForm ? (
+          <>
+            <div className="text-5xl mb-4">✉️</div>
+            <h3 className="font-display text-2xl font-bold mb-3">
+              {lang === "ar"
+                ? "اشترك لتصلك آخر التحديثات"
+                : "Subscribe for updates"}
+            </h3>
+            <p className="text-muted-foreground mb-6">
+              {lang === "ar"
+                ? "سجل بريدك الإلكتروني لتصلك أدوات جديدة وعروض حصرية."
+                : "Enter your email to get new tools and exclusive offers."}
+            </p>
+            <form onSubmit={handleEmailSubmit} className="flex flex-col gap-3">
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder={lang === "ar" ? "بريدك الإلكتروني" : "Your email"}
+                dir="ltr"
+                className="w-full px-4 py-3 rounded-lg bg-background border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition"
+              />
+              <button
+                type="submit"
+                className="w-full py-3 rounded-lg bg-accent text-accent-foreground font-semibold hover:opacity-90 transition shadow-[var(--shadow-spark)]"
+              >
+                {lang === "ar" ? "اشترك وحمل الملف ←" : "Subscribe & Download →"}
+              </button>
+            </form>
+            <p className="mt-3 font-mono text-xs text-muted-foreground/50">
+              {lang === "ar" ? "لن نرسل لك بريداً مزعجاً. يمكنك الإلغاء في أي وقت." : "No spam. Unsubscribe anytime."}
+            </p>
+          </>
+        ) : adWatched ? (
+          <>
+            <div className="text-5xl mb-4">✅</div>
+            <h3 className="font-display text-2xl font-bold mb-3">
+              {lang === "ar" ? "تم مشاهدة الإعلان!" : "Ad watched!"}
+            </h3>
+            <button
+              onClick={() => setShowEmailForm(true)}
+              className="w-full py-3.5 rounded-lg bg-accent text-accent-foreground font-semibold hover:opacity-90 transition shadow-[var(--shadow-spark)]"
+            >
+              ⬇ {lang === "ar" ? "تحميل الملف" : "Download now"}
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="text-5xl mb-4">📺</div>
+            <h3 className="font-display text-2xl font-bold mb-3">
+              {lang === "ar"
+                ? "شاهد إعلاناً قصيراً لتحميل الملف"
+                : "Watch a short ad to download"}
+            </h3>
+            <p className="text-muted-foreground mb-6">
+              {lang === "ar"
+                ? "ادعم الأداة بمشاهدة إعلان قصير. سيتم تفعيل التحميل بعد انتهاء الإعلان."
+                : "Support the tool by watching a short ad. Download will be enabled after the ad ends."}
+            </p>
+
+            {/* Ad Container */}
+            <div className="bg-background border border-border/60 rounded-xl p-4 mb-4 min-h-[120px] flex flex-col items-center justify-center">
+              {adTimer > 0 && adTimer < 7 ? (
+                <div className="text-3xl mb-2">⏳</div>
+              ) : (
+                <div className="text-3xl mb-2">📺</div>
+              )}
+              <div
+                className="ad-container w-full"
+                dangerouslySetInnerHTML={{ __html: adUnit.html }}
+              />
+            </div>
+
+            {/* Timer / Watch Button */}
+            {adTimer > 0 && adTimer < 7 ? (
+              <div className="w-full py-3 rounded-lg bg-accent/20 text-accent font-semibold">
+                {lang === "ar" ? `⏳ انتظر ${adTimer} ثوانٍ...` : `⏳ Wait ${adTimer}s...`}
+              </div>
+            ) : (
+              <button
+                onClick={handleWatchAd}
+                className="w-full py-3 rounded-lg bg-accent text-accent-foreground font-semibold hover:opacity-90 transition shadow-[var(--shadow-spark)]"
+              >
+                {lang === "ar" ? "▶ شاهد الإعلان" : "▶ Watch Ad"}
+              </button>
+            )}
+
+            {/* Skip link */}
+            <div className="mt-4">
+              <a
+                href="/?redirect=pricing"
+                className="font-mono text-xs text-muted-foreground/60 hover:text-foreground transition underline"
+              >
+                {lang === "ar" ? "اشترك لإزالة الإعلانات" : "Subscribe to remove ads"}
+              </a>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

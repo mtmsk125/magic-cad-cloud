@@ -344,7 +344,7 @@ function Index() {
   const [lang, setLang] = useState<Lang>(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("dxfix_lang") as Lang | null;
-      if (stored && ["ar", "en", "fr", "zh"].includes(stored)) return stored;
+      if (stored && ["ar", "en"].includes(stored)) return stored;
     }
     return "ar";
   });

@@ -1,19 +1,14 @@
-# Task Progress
+# خطة العمل - تحديثات مشروع DXFix
 
-## ✅ Completed Tasks
-- [x] Install @paddle/paddle-node-sdk
-- [x] Fix 1-6: Paddle integration + RTL + env vars
-- [x] TypeScript 0 errors
-- [x] **تحسين `__root.tsx`**: SubscriptionPrompt ديناميكي
-- [x] **تحسين `pricing.tsx`**: 4 لغات + LanguageSwitcher
-- [x] **إصلاح `ViralUnlockModal`**: قبول Lang
-- [x] **تحسين `index.tsx`**: LanguageSwitcher
-- [x] **ضبط Paddle**: PADDLE_API_KEY ✅ + PADDLE_WEBHOOK_SECRET ✅
-- [x] **إصلاح تضارب Types `PlanItem`**: توحيده في `i18n.ts`
-- [x] **تثبيت @vercel/analytics** + إضافته في `__root.tsx`
+## قائمة المهام
 
-## 🔄 Pending Tasks
-- [ ] تحسين Server-Side API: in-memory → database
-- [ ] تحسينات SEO: sitemap.xml, blog section
-- [ ] اختبار نظام الاشتراك مع webhook
-- [ ] إصلاح mock checkout cast غير آمن
+- [ ] 1. **جاهزية Google AdSense** - التحقق من متطلبات AdSense في الموقع
+- [ ] 2. **عداد التحليلات في Vercel** - إخفاء زيارات المالك من Vercel Analytics
+- [ ] 3. **اللغات الفرنسية والصينية** - إزالة اللغات غير المفعلة من الموقع
+- [ ] 4. **أدوات "قريباً" المدمجة** - فحص وتنظيف الأدوات المكررة
+- [ ] 5. **كتابة ميزات الأداة على الواجهة الرئيسية**
+- [ ] 6. **نظام الإعلانات مع مشاهدة إجبارية** - تعديل تدفق التحميل
+- [ ] 7. **قائمة البريد الإلكتروني** - حفظ الإيميلات للرجوع إليها
+- [ ] 8. **شركات إعلانات بديلة** - البحث وإضافة خيارات إضافية
+- [ ] 9. **البحث عن مشاريع مفتوحة المصدر مشابهة + إضافة ميزات جديدة**
+- [ ] 10. **عرض الإعلان الأعلى مردوداً** - نظام عرض الإعلان الأغلى

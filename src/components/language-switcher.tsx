@@ -1,6 +1,6 @@
 /**
  * Language Switcher Component
- * Supports: العربية, English, Svenska, Français, Русский, 中文
+ * Supports: العربية, English
  */
 
 import { LANGS, type Lang } from "@/lib/i18n";
@@ -36,9 +36,7 @@ export function LanguageSwitcher({ currentLang, onLangChange, className = "" }: 
           >
             <span className="text-base">
               {lang.code === "ar" ? "🇸🇦" :
-               lang.code === "en" ? "��" :
-               lang.code === "fr" ? "🇫🇷" :
-               lang.code === "zh" ? "🇨🇳" : "🌐"}
+               lang.code === "en" ? "��" : "🌐"}
             </span>
             <span>{lang.name}</span>
             {lang.code === currentLang && <span className="me-auto text-accent">✓</span>}

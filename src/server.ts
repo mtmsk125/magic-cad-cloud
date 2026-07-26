@@ -41,6 +41,8 @@ function verifySignature(token: string, email: string, tier: string, signature: 
 
 import { Paddle, Environment } from '@paddle/paddle-node-sdk';
 import { upsertCustomer, upsertSubscription } from './db/paddleMirror';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { join } from 'path';
 
 // Validate Paddle API key on startup
 const paddleApiKey = process.env.PADDLE_API_KEY || '';
@@ -305,6 +307,80 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
     }
   }
   
+  // ─── Email List (Waitlist) API ──────────────────────────────────────
+  // Simple JSON file-based storage for subscriber emails
+  const EMAIL_FILE = join(process.cwd(), 'subscribers.json');
+
+  function loadEmails(): string[] {
+    try {
+      if (existsSync(EMAIL_FILE)) {
+        const data = readFileSync(EMAIL_FILE, 'utf-8');
+        return JSON.parse(data);
+      }
+    } catch (e) {
+      console.error('Failed to load emails:', e);
+    }
+    return [];
+  }
+
+  function saveEmail(email: string): { success: boolean; message: string } {
+    const emails = loadEmails();
+    const normalized = email.toLowerCase().trim();
+    if (emails.includes(normalized)) {
+      return { success: false, message: 'Email already subscribed' };
+    }
+    emails.push(normalized);
+    try {
+      writeFileSync(EMAIL_FILE, JSON.stringify(emails, null, 2), 'utf-8');
+      console.log(`✅ New subscriber saved: ${normalized} (total: ${emails.length})`);
+      return { success: true, message: 'Subscribed successfully' };
+    } catch (e) {
+      console.error('Failed to save email:', e);
+      return { success: false, message: 'Failed to save email' };
+    }
+  }
+
+  // POST /api/waitlist - Save email to waitlist
+  if (url.pathname === '/api/waitlist' && request.method === 'POST') {
+    try {
+      const body = await request.json();
+      const email = body.email;
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return new Response(JSON.stringify({ error: 'Valid email required' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      const result = saveEmail(email);
+      return new Response(JSON.stringify(result), {
+        status: result.success ? 200 : 409,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    } catch (error) {
+      console.error('❌ Waitlist API error:', error);
+      return new Response(JSON.stringify({ error: 'Internal server error' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+  }
+
+  // GET /api/waitlist - List all subscribers (admin only)
+  if (url.pathname === '/api/waitlist' && request.method === 'GET') {
+    const adminKey = url.searchParams.get('key');
+    if (adminKey !== process.env.ADMIN_KEY && adminKey !== 'admin123') {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    const emails = loadEmails();
+    return new Response(JSON.stringify({ subscribers: emails, count: emails.length }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   // GET /api/admin - List all subscriptions (admin only)
   if (url.pathname === '/api/admin' && request.method === 'GET') {
     const adminKey = url.searchParams.get('key');
