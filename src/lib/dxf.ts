@@ -104,10 +104,6 @@ function lineKey(e: DxfEntity, tol = 1e-6): string {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
-/**
- * Fuzzy node snapping: Merge open vector endpoints within the given tolerance.
- * Returns a new entities array with endpoints snapped to nearest neighbors.
- */
 export function snapOpenEndpoints(entities: DxfEntity[], tolerance: number = 0.1): DxfEntity[] {
   // Collect all endpoint positions
   const endpoints: { x: number; y: number; entityIndex: number; isStart: boolean }[] = [];
