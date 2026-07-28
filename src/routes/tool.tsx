@@ -447,7 +447,13 @@ function ToolPage() {
 
   // Self-destruct state
   const [selfDestructEnabled, setSelfDestructEnabled] = useState(false);
-  const [selfDestructTriggered, setSelfDestructTriggered] = useState(isSelfDestructTriggered());
+  const [selfDestructTriggered, setSelfDestructTriggered] = useState(false);
+
+  useEffect(() => {
+    // Client-only: check self-destruct state from localStorage
+    setSelfDestructTriggered(isSelfDestructTriggered());
+    setFreeUsageCount(getFreeUsageCount());
+  }, []);
 
   // Trust notice modal
   const [showTrustModal, setShowTrustModal] = useState(false);
@@ -978,17 +984,6 @@ function ToolPage() {
             DX<span className="text-accent">fix</span>
           </a>
           <div className="flex items-center gap-3">
-            {/* Subscription status badge */}
-            {!userIsSubscribed && (
-              <span className="font-mono text-xs px-2.5 py-1 rounded-full border border-primary/30 text-primary bg-primary/5">
-                {t.freeBanner(freeRemaining)}
-              </span>
-            )}
-            {userIsSubscribed && (
-              <span className="font-mono text-xs px-2.5 py-1 rounded-full border border-accent/30 text-accent bg-accent/5">
-                {t.unlimited}
-              </span>
-            )}
             {/* Trust button */}
             <button
               onClick={() => setShowTrustModal(true)}
@@ -1011,15 +1006,6 @@ function ToolPage() {
       </header>
 
       <main className="max-w-5xl mx-auto px-5 py-12">
-        {/* FREE USAGE BANNER */}
-        {!userIsSubscribed && freeRemaining > 0 && freeRemaining <= 3 && (
-          <div className="mb-6 rounded-xl border border-primary/30 bg-primary/5 p-4 text-center">
-            <p className="text-sm text-primary font-medium">
-              ⚡ {t.freeBanner(freeRemaining)} — <a href="/?redirect=pricing" className="underline font-semibold hover:text-primary/80">{t.freeSubscribe}</a>
-            </p>
-          </div>
-        )}
-
         {/* HEADER */}
         <div className="text-center mb-10">
           <h1 className="font-display text-4xl sm:text-5xl font-bold">{t.title}</h1>
