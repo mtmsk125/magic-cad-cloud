@@ -154,7 +154,11 @@ export function getOrCreateReferralCode(): string {
  */
 export function getReferralLink(): string {
   const code = getOrCreateReferralCode();
-  return `${window.location.origin}/?ref=${code}`;
+  try {
+    return `${window.location.origin}/?ref=${code}`;
+  } catch {
+    return `/?ref=${code}`;
+  }
 }
 
 /**
