@@ -605,12 +605,218 @@ function Index() {
         </div>
       </section>
 
-      {/* PAIN */}
+      {/* WHAT CAN WE DO FOR YOU? — Interactive Task Selector */}
       <section className="border-y border-border/60 bg-card/40">
-        <div className="max-w-5xl mx-auto px-5 sm:px-8 py-20 text-center">
-          <p className="font-mono text-xs text-accent uppercase tracking-[0.25em]">{t.sectionPain}</p>
-          <h2 className="font-display mt-4 text-3xl sm:text-4xl lg:text-5xl font-bold">{t.painTitle}</h2>
-          <p className="mt-5 text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">{t.painDesc}</p>
+        <div className="max-w-6xl mx-auto px-5 sm:px-8 py-20">
+          <div className="text-center mb-12">
+            <p className="font-mono text-xs text-accent uppercase tracking-[0.25em]">
+              {lang === "ar" ? "ماذا تريد أن تفعل؟" : "What do you need to do?"}
+            </p>
+            <h2 className="font-display mt-4 text-3xl sm:text-4xl lg:text-5xl font-bold">
+              {lang === "ar" ? "اختر المهمة التي تريد إنجازها" : "Choose the task you want to accomplish"}
+            </h2>
+            <p className="mt-4 text-lg text-muted-foreground max-w-2xl mx-auto">
+              {lang === "ar"
+                ? "كل مهمة لها أداتها الخاصة. اختر ما يناسبك وابدأ فوراً — مجاناً."
+                : "Each task has its own tool. Pick what suits you and start instantly — for free."}
+            </p>
+          </div>
+
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Task 1: Fix DXF */}
+            <a href="/tool"
+              className="group relative bg-background border border-border rounded-2xl p-6 hover:border-accent/50 hover:shadow-[var(--shadow-spark)] transition-all duration-300 flex flex-col items-start text-start"
+            >
+              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-green-500/20 to-green-500/5 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                🔧
+              </div>
+              <h3 className="font-display font-bold text-lg">
+                {lang === "ar" ? "إصلاح ملف DXF" : "Repair a DXF File"}
+              </h3>
+              <p className="mt-2 text-sm text-muted-foreground leading-relaxed flex-1">
+                {lang === "ar"
+                  ? "يكتشف ويصلح تلقائياً: الخطوط المكررة، الفجوات، الأشكال المفتوحة، الطبقات الفوضوية. يخرج لك ملفاً نظيفاً جاهزاً للماكينة."
+                  : "Auto-detects and fixes: duplicate lines, gaps, open shapes, messy layers. Outputs a clean file ready for your machine."}
+              </p>
+              <div className="mt-4 flex items-center gap-2 text-sm font-semibold text-accent group-hover:gap-3 transition-all">
+                <span>{lang === "ar" ? "إصلاح ملف الآن" : "Repair file now"}</span>
+                <span aria-hidden>{lang === "ar" ? "←" : "→"}</span>
+              </div>
+              {/* Feature tags */}
+              <div className="mt-4 flex flex-wrap gap-1.5">
+                <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">
+                  {lang === "ar" ? "خطوط مكررة" : "Duplicates"}
+                </span>
+                <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
+                  {lang === "ar" ? "فجوات" : "Gaps"}
+                </span>
+                <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                  {lang === "ar" ? "أشكال مفتوحة" : "Open shapes"}
+                </span>
+              </div>
+            </a>
+
+            {/* Task 2: Analyze & Score */}
+            <a href="/tool"
+              className="group relative bg-background border border-border rounded-2xl p-6 hover:border-accent/50 hover:shadow-[var(--shadow-spark)] transition-all duration-300 flex flex-col items-start text-start"
+            >
+              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-500/5 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                📊
+              </div>
+              <h3 className="font-display font-bold text-lg">
+                {lang === "ar" ? "فحص وتقييم الملف" : "Analyze & Score File"}
+              </h3>
+              <p className="mt-2 text-sm text-muted-foreground leading-relaxed flex-1">
+                {lang === "ar"
+                  ? "تحليل كامل للملف مع تقييم جاهزية القص من 0-100. يكشف 7 أنواع من المشاكل مع تقرير مفصّل بموقع كل خطأ."
+                  : "Full file analysis with a 0-100 cut-readiness score. Detects 7 issue types with a detailed report of every error location."}
+              </p>
+              <div className="mt-4 flex items-center gap-2 text-sm font-semibold text-accent group-hover:gap-3 transition-all">
+                <span>{lang === "ar" ? "افحص ملفاً" : "Analyze a file"}</span>
+                <span aria-hidden>{lang === "ar" ? "←" : "→"}</span>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-1.5">
+                <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                  {lang === "ar" ? "تقييم %" : "Score %"}
+                </span>
+                <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                  {lang === "ar" ? "تقرير" : "Report"}
+                </span>
+                <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                  {lang === "ar" ? "إحصائيات" : "Statistics"}
+                </span>
+              </div>
+            </a>
+
+            {/* Task 3: Simulate Toolpath */}
+            <a href="/tool"
+              className="group relative bg-background border border-border rounded-2xl p-6 hover:border-accent/50 hover:shadow-[var(--shadow-spark)] transition-all duration-300 flex flex-col items-start text-start"
+            >
+              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-rose-500/20 to-rose-500/5 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                ▶️
+              </div>
+              <h3 className="font-display font-bold text-lg">
+                {lang === "ar" ? "محاكاة مسار القص" : "Simulate Cutting Path"}
+              </h3>
+              <p className="mt-2 text-sm text-muted-foreground leading-relaxed flex-1">
+                {lang === "ar"
+                  ? "محاكاة متحركة ثلاثية الأبعاد لمسار رأس الليزر أو البلازما على الرسم. شوف كيف راح تتحرك الماكينة قبل القطع الفعلي."
+                  : "Animated 3D simulation of the laser/plasma head path on your drawing. See how the machine will move before actual cutting."}
+              </p>
+              <div className="mt-4 flex items-center gap-2 text-sm font-semibold text-accent group-hover:gap-3 transition-all">
+                <span>{lang === "ar" ? "شاهد المحاكاة" : "Watch simulation"}</span>
+                <span aria-hidden>{lang === "ar" ? "←" : "→"}</span>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-1.5">
+                <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                  {lang === "ar" ? "محاكاة 3D" : "3D Simulation"}
+                </span>
+                <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-pink-500/10 text-pink-400 border border-pink-500/20">
+                  {lang === "ar" ? "حركة رأس الليزر" : "Laser head"}
+                </span>
+              </div>
+            </a>
+
+            {/* Task 4: Cost Estimator */}
+            <a href="/tool"
+              className="group relative bg-background border border-border rounded-2xl p-6 hover:border-accent/50 hover:shadow-[var(--shadow-spark)] transition-all duration-300 flex flex-col items-start text-start"
+            >
+              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-amber-500/20 to-amber-500/5 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                💰
+              </div>
+              <h3 className="font-display font-bold text-lg">
+                {lang === "ar" ? "حساب تكلفة القص" : "Calculate Cutting Cost"}
+              </h3>
+              <p className="mt-2 text-sm text-muted-foreground leading-relaxed flex-1">
+                {lang === "ar"
+                  ? "تقدير تكلفة القص بناءً على طول المسار الإجمالي وسعر المتر. اعرف كم راح تكلفك القطعة قبل البدء."
+                  : "Estimate cutting cost based on total path length and price per meter. Know how much the part will cost before starting."}
+              </p>
+              <div className="mt-4 flex items-center gap-2 text-sm font-semibold text-accent group-hover:gap-3 transition-all">
+                <span>{lang === "ar" ? "احسب التكلفة" : "Calculate cost"}</span>
+                <span aria-hidden>{lang === "ar" ? "←" : "→"}</span>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-1.5">
+                <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                  {lang === "ar" ? "تقدير التكلفة" : "Cost estimate"}
+                </span>
+                <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                  {lang === "ar" ? "طول المسار" : "Path length"}
+                </span>
+              </div>
+            </a>
+
+            {/* Task 5: Batch Processing */}
+            <a href="/tool"
+              className="group relative bg-background border border-border rounded-2xl p-6 hover:border-accent/50 hover:shadow-[var(--shadow-spark)] transition-all duration-300 flex flex-col items-start text-start"
+            >
+              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-violet-500/20 to-violet-500/5 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                📦
+              </div>
+              <h3 className="font-display font-bold text-lg">
+                {lang === "ar" ? "معالجة مجمعة (Batch)" : "Batch File Processing"}
+              </h3>
+              <p className="mt-2 text-sm text-muted-foreground leading-relaxed flex-1">
+                {lang === "ar"
+                  ? "ارفع عدة ملفات DXF دفعة واحدة، نعالجها كلها تلقائياً، وتحمّل النتائج كملف ZIP مضغوط. وفر وقتك."
+                  : "Upload multiple DXF files at once, we process them all automatically, and download the results as a ZIP archive. Save your time."}
+              </p>
+              <div className="mt-4 flex items-center gap-2 text-sm font-semibold text-accent group-hover:gap-3 transition-all">
+                <span>{lang === "ar" ? "معالجة مجمعة" : "Batch process"}</span>
+                <span aria-hidden>{lang === "ar" ? "←" : "→"}</span>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-1.5">
+                <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-400 border border-violet-500/20">
+                  {lang === "ar" ? "ملفات متعددة" : "Multiple files"}
+                </span>
+                <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-fuchsia-500/10 text-fuchsia-400 border border-fuchsia-500/20">
+                  ZIP
+                </span>
+              </div>
+            </a>
+
+            {/* Task 6: SVG to DXF */}
+            <a href="/tool"
+              className="group relative bg-background border border-border rounded-2xl p-6 hover:border-accent/50 hover:shadow-[var(--shadow-spark)] transition-all duration-300 flex flex-col items-start text-start"
+            >
+              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-teal-500/20 to-teal-500/5 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                🖼️
+              </div>
+              <h3 className="font-display font-bold text-lg">
+                {lang === "ar" ? "تحويل SVG إلى DXF" : "Convert SVG to DXF"}
+              </h3>
+              <p className="mt-2 text-sm text-muted-foreground leading-relaxed flex-1">
+                {lang === "ar"
+                  ? "ارفع ملف SVG (من Illustrator, Inkscape, CorelDRAW) ونحوله إلى DXF جاهز للماكينة. مع تنظيف المسارات وتحسينها."
+                  : "Upload an SVG file (from Illustrator, Inkscape, CorelDRAW) and we convert it to machine-ready DXF. With path cleaning and optimization."}
+              </p>
+              <div className="mt-4 flex items-center gap-2 text-sm font-semibold text-accent group-hover:gap-3 transition-all">
+                <span>{lang === "ar" ? "حوّل الآن" : "Convert now"}</span>
+                <span aria-hidden>{lang === "ar" ? "←" : "→"}</span>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-1.5">
+                <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-400 border border-teal-500/20">
+                  SVG
+                </span>
+                <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  DXF
+                </span>
+              </div>
+            </a>
+          </div>
+
+          {/* Bottom CTA */}
+          <div className="mt-10 text-center">
+            <a href="/tool"
+              className="inline-flex items-center gap-2 px-8 py-4 rounded-xl bg-accent text-accent-foreground font-bold text-lg hover:opacity-90 transition shadow-[var(--shadow-spark)]"
+            >
+              {lang === "ar" ? "🚀 ابدأ الآن — مجاناً" : "🚀 Start now — for free"}
+              <span aria-hidden>{lang === "ar" ? "←" : "→"}</span>
+            </a>
+            <p className="mt-3 font-mono text-xs text-muted-foreground/60">
+              {lang === "ar" ? "بدون تسجيل. بدون بطاقة. فقط ارفع ملفك وابدأ." : "No signup. No card. Just upload your file and go."}
+            </p>
+          </div>
         </div>
       </section>
 
