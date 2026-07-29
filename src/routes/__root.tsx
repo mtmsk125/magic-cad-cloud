@@ -123,6 +123,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "alternate", hrefLang: "ar", href: "https://dxfix.com/" },
       { rel: "alternate", hrefLang: "en", href: "https://dxfix.com/en" },
       { rel: "alternate", hrefLang: "x-default", href: "https://dxfix.com/" },
+      // PWA manifest for mobile install
+      { rel: "manifest", href: "/manifest.json" },
+      // Apple touch icon for iOS home screen
+      { rel: "apple-touch-icon", href: "/icons/icon-192x192.png" },
+      { name: "apple-mobile-web-app-capable", content: "yes" } as any,
+      { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" } as any,
+      { name: "apple-mobile-web-app-title", content: "DXFix" } as any,
     ],
     // ⚠️ AdSense script removed from SSR head() — moved to client-side useEffect
     // in RootComponent to fix React #419 hydration errors
