@@ -76,7 +76,7 @@ export function PwaInstallPrompt({ lang }: { lang: "ar" | "en" }) {
   return (
     <>
       {/* Install Banner */}
-      <div className="fixed bottom-4 start-4 end-4 z-50 max-w-md mx-auto">
+      <div suppressHydrationWarning={true} className="fixed bottom-4 start-4 end-4 z-50 max-w-md mx-auto">
         <div className="bg-card border border-accent/40 rounded-2xl p-5 shadow-[var(--shadow-spark)] backdrop-blur-xl">
           <div className="flex items-start gap-4">
             <div className="w-12 h-12 rounded-xl bg-accent/20 flex items-center justify-center text-2xl flex-shrink-0">
