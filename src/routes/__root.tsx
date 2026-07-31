@@ -110,6 +110,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "twitter:image", content: "https://dxfix.com/og-image.png" },
       // Google AdSense account verification
       { name: "google-adsense-account", content: "ca-pub-8107638298388341" },
+      // ═══════════════════════════════════════════════════════════════
+      // PAGE HUNT VERIFICATION — أضف كود التحقق من Page Hunt هنا
+      // اذهب إلى https://page-hunt.com وانسخ الكود، ثم أضفه في السطر التالي
+      // مثال: { name: "page-hunt-verification", content: "XXXXXXXXXX" },
+      // ═══════════════════════════════════════════════════════════════
     ],
     links: [
       {
