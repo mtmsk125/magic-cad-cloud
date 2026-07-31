@@ -47,7 +47,7 @@ export const Route = createFileRoute("/")({
             { "@type": "Offer", price: "10", priceCurrency: "USD", name: "Workshop" },
           ],
           description: "Arabic-first DXF file repair and validation tool for CNC, laser and plasma workshops.",
-          url: "https://dxfix.replit.app/",
+          url: "https://dxfix.repli
           inLanguage: ["ar", "en"],
           aggregateRating: {
             "@type": "AggregateRating",
@@ -66,7 +66,6 @@ const T = {
   ar: {
     dir: "rtl" as const,
     nav: { features: "المزايا", how: "كيف يعمل", pricing: "الأسعار", faq: "أسئلة", cta: "جرّبه مجاناً" },
-    badge: "مجاني خلال فترة الإطلاق",
     h1a: "ملفات DXF",
     h1b: "جاهزة للقص",
     h1c: "من أول محاولة.",
@@ -203,7 +202,6 @@ const T = {
   en: {
     dir: "ltr" as const,
     nav: { features: "Features", how: "How it works", pricing: "Pricing", faq: "FAQ", cta: "Try free" },
-    badge: "Free during launch",
     h1a: "DXF files",
     h1b: "ready to cut",
     h1c: "on the first try.",
@@ -546,10 +544,6 @@ function Index() {
         <div className="absolute inset-0 blueprint-grid opacity-50 [mask-image:radial-gradient(ellipse_at_top,black,transparent_70%)]" />
         <div className="relative max-w-7xl mx-auto px-5 sm:px-8 pt-16 pb-24 lg:pt-24 lg:pb-32 grid lg:grid-cols-12 gap-12 items-center">
           <div className="lg:col-span-7 relative z-10">
-            <span className="inline-flex items-center gap-2 font-mono text-xs px-3 py-1.5 rounded-full border border-accent/40 text-accent bg-accent/5">
-              <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-              {t.badge}
-            </span>
             <h1 className="font-display mt-6 text-5xl sm:text-6xl lg:text-7xl font-bold leading-[1.05] tracking-tight">
               {t.h1a}<br />
               <span className="text-gradient-spark">{t.h1b}</span><br />

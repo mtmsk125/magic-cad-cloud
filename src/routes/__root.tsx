@@ -13,6 +13,7 @@ import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { initPaddle } from "../lib/paddle";
 import { SubscriptionPrompt } from "../components/subscription-prompt";
+import { PwaInstallPrompt } from "../components/pwa-install-prompt";
 import { getLangDir, type Lang } from "../lib/i18n";
 import { inject } from "@vercel/analytics";
 import { SpeedInsights } from "@vercel/speed-insights/react";
@@ -178,6 +179,13 @@ function RootShell({ children }: { children: ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const [isMounted, setIsMounted] = useState(false);
+  const [lang, setLang] = useState<Lang>(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("dxfix_lang") as Lang | null;
+      if (stored && ["ar", "en", "fr", "zh"].includes(stored)) return stored;
+    }
+    return "ar";
+  });
 
   useEffect(() => {
     setIsMounted(true);
@@ -214,10 +222,23 @@ function RootComponent() {
     }
   }, [isMounted]);
 
+  // Listen for language changes
+  useEffect(() => {
+    const handleLangChange = (e: CustomEvent) => {
+      const newLang = e.detail as Lang;
+      if (["ar", "en", "fr", "zh"].includes(newLang)) {
+        setLang(newLang);
+      }
+    };
+    window.addEventListener("dxfix-lang-change" as any, handleLangChange as any);
+    return () => window.removeEventListener("dxfix-lang-change" as any, handleLangChange as any);
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <SpeedInsights />
       <SubscriptionPrompt />
+      <PwaInstallPrompt lang={lang === "ar" ? "ar" : "en"} />
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <Outlet />
     </QueryClientProvider>
