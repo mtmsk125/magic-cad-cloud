@@ -1209,19 +1209,37 @@ function Index() {
 
       {/* FOOTER */}
       <footer className="border-t border-border/60">
-        <div className="max-w-7xl mx-auto px-5 sm:px-8 py-10 flex flex-wrap items-center justify-between gap-4 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2 font-display font-bold text-foreground">
-            <span className="inline-block w-2 h-2 rounded-sm bg-accent" />
-            DXfix
+        <div className="max-w-7xl mx-auto px-5 sm:px-8 py-10 flex flex-col items-center gap-6 text-sm text-muted-foreground">
+          <div className="flex flex-wrap items-center justify-center gap-6 w-full">
+            <div className="flex items-center gap-2 font-display font-bold text-foreground">
+              <span className="inline-block w-2 h-2 rounded-sm bg-accent" />
+              DXfix
+            </div>
+            <div className="font-mono text-xs">{t.footer}</div>
+            <a
+              href="https://www.producthunt.com/products/dxf-file-repair-tool/reviews/new?utm_source=badge-product_review&utm_medium=badge&utm_source=badge-dxf-file-repair-tool"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block hover:opacity-80 transition"
+            >
+              <img
+                src="https://api.producthunt.com/widgets/embed-image/v1/product_review.svg?product_id=1272593&theme=light"
+                alt="DXF file repair tool - Free DXF/SVG repair free tool — Now with 40% laser speed | Product Hunt"
+                style={{ width: "250px", height: "54px" }}
+                width="250"
+                height="54"
+              />
+            </a>
           </div>
-          <div className="font-mono text-xs">{t.footer}</div>
-          <a
-            href="/admin"
-            className="font-mono text-xs text-muted-foreground/30 hover:text-muted-foreground transition"
-            title="Admin"
-          >
-            ⚙
-          </a>
+          <div className="flex items-center gap-4">
+            <a
+              href="/admin"
+              className="font-mono text-xs text-muted-foreground/30 hover:text-muted-foreground transition"
+              title="Admin"
+            >
+              ⚙
+            </a>
+          </div>
         </div>
       </footer>
     </div>
