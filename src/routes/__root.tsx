@@ -12,7 +12,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { initPaddle } from "../lib/paddle";
-import { SubscriptionPrompt } from "../components/subscription-prompt";
 import { PwaInstallPrompt } from "../components/pwa-install-prompt";
 import { getLangDir, type Lang } from "../lib/i18n";
 import { inject } from "@vercel/analytics";
@@ -237,7 +236,6 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <SpeedInsights />
-      <SubscriptionPrompt />
       <PwaInstallPrompt lang={lang === "ar" ? "ar" : "en"} />
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <Outlet />

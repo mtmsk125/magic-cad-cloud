@@ -145,14 +145,16 @@ export function AdBanner({
       <div className={`ad-banner-fallback rounded-xl border border-border/60 bg-card/30 p-4 text-center ${className}`}>
         <p className="font-mono text-xs text-muted-foreground/50">
           {lang === "ar"
-            ? "🚀 ادعم الأداة — اشترك في Pro لإزالة الإعلانات"
-            : "🚀 Support the tool — Subscribe to Pro to remove ads"}
+            ? "🚀 ادعم الأداة بفنجان قهوة ☕"
+            : "🚀 Support the tool with a coffee ☕"}
         </p>
         <a
-          href="/?redirect=pricing"
-          className="inline-block mt-2 px-4 py-2 rounded-lg bg-accent/20 text-accent font-semibold text-sm hover:bg-accent/30 transition"
+          href="https://www.buymeacoffee.com/dxfix"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-block mt-2 px-4 py-2 rounded-lg bg-amber-500/20 text-amber-400 font-semibold text-sm hover:bg-amber-500/30 transition"
         >
-          {lang === "ar" ? "اشترك الآن" : "Subscribe Now"}
+          {lang === "ar" ? "☕ ادعمنا" : "☕ Support us"}
         </a>
       </div>
     );
@@ -182,11 +184,11 @@ export function AdBanner({
         dangerouslySetInnerHTML={{ __html: adUnit.html }}
       />
 
-      {/* Subtle upgrade CTA */}
+      {/* Subtle support CTA */}
       <p className="font-mono text-[10px] text-muted-foreground/30 mt-2 leading-tight">
         {lang === "ar"
-          ? "اشترك في Pro أو Workshop لإزالة الإعلانات"
-          : "Subscribe to Pro or Workshop to remove ads"}
+          ? "الإعلانات تساعدنا على إبقاء الأداة مجانية"
+          : "Ads help us keep the tool free"}
       </p>
     </div>
   );

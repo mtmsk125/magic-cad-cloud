@@ -1,16 +1,13 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { analyzeDxf, repairDxf, scoreColor, scoreBg, scoreLabel, getDxfBounds, buildSvgPaths, calculateTotalPerimeter, detectOpenLoops, sortInsideFirst } from "@/lib/dxf";
 import type { DxfAnalysis, DxfIssue, FixSummaryItem, DxfBounds, SvgPath } from "@/lib/dxf";
-import { getSubscriptionData, isSubscribed, getFreeUsageCount, incrementFreeUsage, FREE_USAGE_LIMIT } from "@/lib/subscription";
 import { downloadAllAsZip, triggerSelfDestruct, isSelfDestructTriggered } from "@/lib/zip-export";
 import { track } from '@vercel/analytics';
 import { FeedbackModal } from "@/components/feedback-modal";
-import { ViralUnlockModal } from "@/components/viral-unlock-modal";
 import { SafetyBadge } from "@/components/safety-badge";
-import { AdBanner, AdGateModal } from "@/components/AdBanner";
+import { AdBanner } from "@/components/AdBanner";
 import { ShareToolWidget } from "@/components/share-tool-widget";
-import { getUserSubscribed as isViralUnlocked, setUserSubscribed } from "@/lib/viral-launch";
 import { parseSvg, isSvgContent, isSvgFile } from "@/lib/svg-parser";
 import { advancedSimplify, arcToPoints, circleToPoints, ellipseToPoints } from "@/lib/path-simplify";
 import type { Point } from "@/lib/path-simplify";
@@ -18,55 +15,6 @@ import { fullPathCleanup, pathLength } from "@/lib/path-union";
 import type { PathSegment } from "@/lib/path-union";
 import { pathsToCuttingPaths, advancedOptimize, generateOptimizationReport } from "@/lib/toolpath-optimizer";
 import type { CuttingPath } from "@/lib/toolpath-optimizer";
-
-/**
- * Ad slot component — only renders for free/unsubscribed users.
- * Hides completely for Pro/Workshop subscribers.
- * Integrates Google AdSense automatically when ad container is visible.
- */
-function AdSlot({ lang, userIsSubscribed }: { lang: "ar" | "en"; userIsSubscribed: boolean }) {
-  const adRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    // Only load AdSense ads for non-subscribed users
-    if (userIsSubscribed) return;
-
-    // Push a new ad slot to the global AdSense queue
-    try {
-      if ((window as any).adsbygoogle) {
-        (window as any).adsbygoogle.push({});
-      }
-    } catch (e) {
-      console.warn("AdSense push failed:", e);
-    }
-  }, [userIsSubscribed]);
-
-  if (userIsSubscribed) return null;
-
-  return (
-    <div className="my-6 rounded-xl border border-border/60 bg-card/30 p-4 text-center">
-      <div className="font-mono text-[10px] text-muted-foreground/40 uppercase tracking-widest mb-2">
-        {lang === "ar" ? "إعلان" : "Advertisement"}
-      </div>
-      <div ref={adRef} className="flex items-center justify-center gap-4 flex-wrap">
-        {/* Google AdSense responsive ad unit — replace IDs below with your own */}
-        <ins
-          className="adsbygoogle"
-          style={{ display: "block", minWidth: "250px", maxWidth: "300px", width: "100%", height: "100px" }}
-          data-ad-client="ca-pub-XXXXXXXXXXXXXXXX"
-          data-ad-slot="XXXXXXXXXX"
-          data-ad-format="auto"
-          data-full-width-responsive="true"
-        />
-      </div>
-      <p className="font-mono text-[10px] text-muted-foreground/30 mt-2">
-        {lang === "ar"
-          ? "اشترك في Pro أو Workshop لإزالة الإعلانات والحصول على تجربة خالية من المشتتات"
-          : "Subscribe to Pro or Workshop to remove ads and enjoy a distraction-free experience"}
-      </p>
-    </div>
-  );
-}
 
 interface HistoryEntry {
   id: string;
@@ -437,7 +385,6 @@ function ToolPage() {
   const [fixSummary, setFixSummary] = useState<FixSummaryItem[]>([]);
   const [progress, setProgress] = useState(0);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
-  const [freeUsageCount, setFreeUsageCount] = useState(getFreeUsageCount());
   const fileRef = useRef<HTMLInputElement>(null);
   const isRTL = lang === "ar";
 
@@ -452,21 +399,10 @@ function ToolPage() {
   useEffect(() => {
     // Client-only: check self-destruct state from localStorage
     setSelfDestructTriggered(isSelfDestructTriggered());
-    setFreeUsageCount(getFreeUsageCount());
   }, []);
 
   // Trust notice modal
   const [showTrustModal, setShowTrustModal] = useState(false);
-
-  // Subscription prompt modal for download gating
-  const [showSubscribeModal, setShowSubscribeModal] = useState(false);
-
-  // Viral Unlock Modal (Phase 1 - replaces old subscribe modal for free users)
-  const [showViralUnlockModal, setShowViralUnlockModal] = useState(false);
-  const [showAdGateModal, setShowAdGateModal] = useState(false);
-  const [adWatched, setAdWatched] = useState(false);
-  const [adTimer, setAdTimer] = useState(0);
-  const [viralUnlocked, setViralUnlocked] = useState(false);
 
   // Bulk upload state
   const [bulkFiles, setBulkFiles] = useState<BulkFileEntry[]>([]);
@@ -505,9 +441,8 @@ function ToolPage() {
     });
   }, [analysis, fileName, lang]);
 
-  const subscriptionData = getSubscriptionData();
-  const userIsSubscribed = isSubscribed(subscriptionData);
-  const freeRemaining = FREE_USAGE_LIMIT - freeUsageCount;
+  // Tool is 100% free — no subscription checks needed
+  const userIsSubscribed = false;
 
   useEffect(() => {
     try {
@@ -576,9 +511,9 @@ function ToolPage() {
       historyEntities: "عنصر",
       historyLayers: "طبقة",
       historyRepaired: "مُصلَح",
-      freeBanner: (remaining: number) => `استخدام مجاني: ${remaining} من ${FREE_USAGE_LIMIT} متبقية`,
-      freeSubscribe: "اشترك الآن لرفع عدد غير محدود من الملفات",
-      unlimited: "رفع غير محدود ✓",
+      freeBanner: (remaining: number) => `استخدام مجاني: ${remaining} متبقية`,
+      freeSubscribe: "استخدم الأداة بحرية — مجانية 100%",
+      unlimited: "استخدام غير محدود ✓",
       // Fix Summary
       fixSummaryTitle: "تقرير الإصلاحات والتعديلات",
       fixSummarySub: "نظرة تفصيلية على التغييرات التي تم إجراؤها على ملف DXF",
@@ -665,9 +600,9 @@ function ToolPage() {
       historyEntities: "entities",
       historyLayers: "layers",
       historyRepaired: "Repaired",
-      freeBanner: (remaining: number) => `Free usage: ${remaining}/${FREE_USAGE_LIMIT} remaining`,
-      freeSubscribe: "Subscribe now for unlimited uploads",
-      unlimited: "Unlimited uploads ✓",
+      freeBanner: (remaining: number) => `Free usage: ${remaining} remaining`,
+      freeSubscribe: "Use the tool freely — 100% free",
+      unlimited: "Unlimited usage ✓",
       // Fix Summary
       fixSummaryTitle: "Fix Summary Report",
       fixSummarySub: "Detailed overview of changes made to your DXF file",
@@ -736,12 +671,6 @@ function ToolPage() {
     const isAdmin = typeof window !== "undefined" && window.location.search.includes("admin=true");
     if (!isLocalhost && !isAdmin) {
       track('Used DXF Fixer', { timestamp: new Date().toISOString() });
-    }
-
-    // Increment free usage counter for non-subscribed users
-    if (!userIsSubscribed) {
-      const newCount = incrementFreeUsage();
-      setFreeUsageCount(newCount);
     }
 
     setFileName(file.name);
@@ -818,28 +747,6 @@ function ToolPage() {
     setFixSummary(summary);
     saveToHistory(fileName, analysis, true);
     setStage("repaired");
-  };
-
-  const handleDownloadWithAdGate = () => {
-    // If user is subscribed, download directly
-    if (userIsSubscribed) {
-      handleDownloadFixed();
-      return;
-    }
-    // Otherwise, show ad gate modal first
-    setShowAdGateModal(true);
-  };
-
-  const handleAdGateComplete = (email?: string) => {
-    setShowAdGateModal(false);
-    // Download the file after ad gate completion
-    if (repairedContent) {
-      // Save email if provided
-      if (email) {
-        localStorage.setItem("dxfix_waitlist_email", email);
-      }
-      downloadFile(repairedContent, fileName.replace(".dxf", "_fixed.dxf"));
-    }
   };
 
   const handleDownloadFixed = () => {
@@ -1803,59 +1710,6 @@ function ToolPage() {
 
       {/* Feedback Modal */}
       <FeedbackModal lang={lang} />
-
-      {/* Viral Unlock Modal (Phase 1) */}
-      <ViralUnlockModal
-        lang={lang}
-        isOpen={showViralUnlockModal}
-        onClose={() => setShowViralUnlockModal(false)}
-        onUnlocked={() => {
-          setViralUnlocked(true);
-          setUserSubscribed(true);
-          setShowViralUnlockModal(false);
-          // Retry the download if possible
-          if (repairedContent) {
-            downloadFile(repairedContent, fileName.replace(".dxf", "_fixed.dxf"));
-          }
-        }}
-      />
-
-      {/* New Ad Gate Modal from AdBanner component — forces ad watch + email collection */}
-      <AdGateModal
-        lang={lang}
-        isOpen={showAdGateModal}
-        onClose={() => setShowAdGateModal(false)}
-        onComplete={handleAdGateComplete}
-      />
-
-      {/* Subscription Required Modal (Download Gating - fallback) */}
-      {showSubscribeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
-          <div className="relative bg-card border border-accent/40 rounded-2xl p-8 max-w-md w-full shadow-[var(--shadow-spark)] text-center">
-            <button
-              onClick={() => setShowSubscribeModal(false)}
-              className="absolute top-4 end-4 text-muted-foreground hover:text-foreground transition font-mono text-lg"
-            >✕</button>
-            <div className="text-5xl mb-4">🔒</div>
-            <h3 className="font-display text-2xl font-bold mb-3">{t.subscribeRequired}</h3>
-            <p className="text-muted-foreground mb-6">{t.subscribePrompt}</p>
-            <div className="flex flex-col gap-3">
-              <a
-                href="/?redirect=pricing"
-                className="w-full py-3.5 rounded-lg bg-accent text-accent-foreground font-semibold hover:opacity-90 transition shadow-[var(--shadow-spark)] text-center"
-              >
-                {t.subscribeBtn} {isRTL ? "←" : "→"}
-              </a>
-              <button
-                onClick={() => setShowSubscribeModal(false)}
-                className="w-full py-3 rounded-lg border border-border hover:border-primary/60 font-semibold text-sm transition"
-              >
-                {lang === "ar" ? "ربما لاحقاً" : "Maybe later"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

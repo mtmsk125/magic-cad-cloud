@@ -26,50 +26,11 @@ const FEEDBACK_STORAGE_KEY = 'dxfix_feedback';
 const SEED_REVIEWS_KEY = 'dxfix_seed_reviews';
 
 /**
- * Seed reviews for the landing page carousel
+ * Seed reviews are intentionally removed.
+ * We only show real user reviews submitted through the feedback system.
+ * This ensures authentic, verified feedback from actual users.
  */
-const SEED_REVIEWS: ReviewEntry[] = [
-  {
-    id: 'seed-1',
-    name: 'أحمد الحربي',
-    machineType: 'CNC Router',
-    rating: 5,
-    message: 'أداة رائعة! كنت أعاني من ملفات DXF ترفض الماكينة قراءتها. الآن أصلح الملف في ثوانٍ وأحمّله مباشرة. وفّر علي ساعات من إعادة العمل.',
-    workshop: 'ورشة حائل للنجارة',
-  },
-  {
-    id: 'seed-2',
-    name: 'محمد القحطاني',
-    machineType: 'Laser',
-    rating: 5,
-    message: 'من أفضل الأدوات اللي استخدمتها. محاكاة مسار القص ساعدتني أتأكد إن الملف راح يضبط قبل ما أبدأ القطع. أنصح فيها كل مشغّل ليزر.',
-    workshop: 'مصنع جدة للقطع',
-  },
-  {
-    id: 'seed-3',
-    name: 'خالد المنصور',
-    machineType: 'Plasma',
-    rating: 4,
-    message: 'الأداة ممتازة وسريعة. أحب خاصية تقييم الجاهزية اللي تعطيني نسبة مئوية. لو فيه إمكانية تصدير مباشر لـ Mach3 كان يكون رائع.',
-    workshop: 'مصنع الكويت للمعادن',
-  },
-  {
-    id: 'seed-4',
-    name: 'سعد العتيبي',
-    machineType: 'CNC Router',
-    rating: 5,
-    message: 'صراحة أداة خرافية! كنت أدفع لمهندسين يصلحون لي الملفات. الآن سويته بنفسي بضغطة زر. الواجهة العربية سهلة جداً.',
-    workshop: 'ورشة الرياض للخشب',
-  },
-  {
-    id: 'seed-5',
-    name: 'ناصر الدوسري',
-    machineType: 'Laser',
-    rating: 5,
-    message: 'محاكاة المسار ثلاثية الأبعاد شيء رهيب! أقدر أشوف بالضبط كيف راح تتحرك الماكينة قبل القطع. هذا وفّر علينا خسائر مواد كثيرة.',
-    workshop: 'مؤسسة الدمام للقطع',
-  },
-];
+const SEED_REVIEWS: ReviewEntry[] = [];
 
 /**
  * Check if window is available (client-side)
