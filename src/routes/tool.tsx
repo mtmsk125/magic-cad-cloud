@@ -15,6 +15,7 @@ import { fullPathCleanup, pathLength } from "@/lib/path-union";
 import type { PathSegment } from "@/lib/path-union";
 import { pathsToCuttingPaths, advancedOptimize, generateOptimizationReport } from "@/lib/toolpath-optimizer";
 import type { CuttingPath } from "@/lib/toolpath-optimizer";
+import { openBuyCoffeeCheckout } from "@/lib/paddle";
 
 interface HistoryEntry {
   id: string;
@@ -750,8 +751,19 @@ function ToolPage() {
   };
 
   const handleDownloadFixed = () => {
-    // Allow all users (free and subscribed) to download directly
-    downloadFile(repairedContent, fileName.replace(".dxf", "_fixed.dxf"));
+    triggerMonetagAdAndDownload(repairedContent, fileName.replace(/\.dxf$/i, "_fixed.dxf"));
+  };
+
+  const triggerMonetagAdAndDownload = (content: string, name: string) => {
+    const monetagLink = import.meta.env.VITE_MONETAG_DIRECT_LINK;
+    if (monetagLink && typeof window !== "undefined") {
+      try {
+        window.open(monetagLink, "_blank");
+      } catch (e) {
+        console.log("Monetag ad triggered");
+      }
+    }
+    downloadFile(content, name);
   };
 
   const downloadFile = (content: string, name: string) => {
@@ -1652,20 +1664,36 @@ function ToolPage() {
                 </button>
               )}
               {stage === "result" && analysis.issues.length === 0 && (
-                <button
-                  onClick={() => downloadFile(fileContent, fileName)}
-                  className="px-6 py-2.5 rounded-lg bg-accent text-accent-foreground font-semibold text-sm hover:opacity-90 transition shadow-[var(--shadow-spark)]"
-                >
-                  ⬇ {lang === "ar" ? "تحميل الملف" : "Download file"}
-                </button>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    onClick={() => triggerMonetagAdAndDownload(fileContent, fileName)}
+                    className="px-6 py-2.5 rounded-lg bg-accent text-accent-foreground font-bold text-sm hover:opacity-90 transition shadow-[var(--shadow-spark)] flex items-center gap-2"
+                  >
+                    ⬇ {lang === "ar" ? "تحميل الملف" : "Download file"}
+                  </button>
+                  <button
+                    onClick={openBuyCoffeeCheckout}
+                    className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold text-sm hover:opacity-90 transition shadow-[var(--shadow-spark)] flex items-center gap-2"
+                  >
+                    ☕ {lang === "ar" ? "اشترِ لنا قهوة" : "Buy us a coffee"}
+                  </button>
+                </div>
               )}
               {stage === "repaired" && (
-                <button
-                  onClick={handleDownloadFixed}
-                  className="px-6 py-2.5 rounded-lg bg-accent text-accent-foreground font-semibold text-sm hover:opacity-90 transition shadow-[var(--shadow-spark)]"
-                >
-                  ⬇ {t.downloadFixed}
-                </button>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    onClick={handleDownloadFixed}
+                    className="px-6 py-2.5 rounded-lg bg-accent text-accent-foreground font-bold text-sm hover:opacity-90 transition shadow-[var(--shadow-spark)] flex items-center gap-2"
+                  >
+                    ⬇ {t.downloadFixed}
+                  </button>
+                  <button
+                    onClick={openBuyCoffeeCheckout}
+                    className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold text-sm hover:opacity-90 transition shadow-[var(--shadow-spark)] flex items-center gap-2"
+                  >
+                    ☕ {lang === "ar" ? "اشترِ لنا قهوة" : "Buy us a coffee"}
+                  </button>
+                </div>
               )}
             </div>
           </div>

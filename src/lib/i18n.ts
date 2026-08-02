@@ -104,7 +104,7 @@ export const T: Partial<Record<Lang, Translations>> = {
   ar: {
     dir: "rtl",
     nav: { features: "المزايا", how: "كيف يعمل", pricing: "الأسعار", faq: "أسئلة", cta: "جرّبه مجاناً" },
-    badge: "مجاني خلال فترة الإطلاق",
+    badge: "أداة إصلاح ملفات DXF الذكية",
     h1a: "ملفات DXF",
     h1b: "جاهزة للقص",
     h1c: "من أول محاولة.",
@@ -153,7 +153,7 @@ export const T: Partial<Record<Lang, Translations>> = {
     pricingNote: "* الدفع آمن عبر Paddle. المبالغ بالدولار الأمريكي.",
     sectionFaq: "أسئلة شائعة",
     faqs: [
-      { q: "هل فعلاً مجاني؟", a: "نعم، 100% مجاني خلال فترة الإطلاق." },
+      { q: "هل الأداة مجانية للتجربة؟", a: "نعم، يمكنك التجربة فوراً مجاناً وبدون الحاجة لبطاقة ائتمانية." },
       { q: "هل ملفاتي بأمان؟", a: "نعالج الملف ونحذفه فوراً." },
       { q: "أي برامج القص يدعم؟", a: "DXF القياسي يعمل مع معظم برامج القص." },
       { q: "هل أحتاج خبرة؟", a: "لا. الواجهة مصممة للمشغّل." },
@@ -171,7 +171,7 @@ export const T: Partial<Record<Lang, Translations>> = {
   en: {
     dir: "ltr",
     nav: { features: "Features", how: "How it works", pricing: "Pricing", faq: "FAQ", cta: "Try free" },
-    badge: "Free during launch",
+    badge: "Smart DXF Repair Tool",
     h1a: "DXF files",
     h1b: "ready to cut",
     h1c: "on the first try.",

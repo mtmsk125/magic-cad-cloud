@@ -4,6 +4,7 @@ import heroImg from "@/assets/hero-cnc.jpg";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { AdBanner } from "@/components/AdBanner";
 import { getTranslations, getLangDir, type Lang } from "@/lib/i18n";
+import { openBuyCoffeeCheckout } from "@/lib/paddle";
 import { track } from '@vercel/analytics';
 
 export const Route = createFileRoute("/")({
@@ -614,14 +615,12 @@ function Index() {
           <div className="text-6xl mb-4">☕</div>
           <h2 className="font-display text-3xl sm:text-4xl font-bold">{t.supportTitle}</h2>
           <p className="mt-4 text-muted-foreground text-lg max-w-2xl mx-auto">{t.supportDesc}</p>
-          <a
-            href={COFFEE_URL}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            onClick={openBuyCoffeeCheckout}
             className="mt-8 inline-flex items-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold text-lg hover:opacity-90 transition shadow-[var(--shadow-spark)]"
           >
             {t.supportBtn}
-          </a>
+          </button>
           <p className="mt-4 font-mono text-xs text-muted-foreground/60">{t.supportNote}</p>
         </div>
       </section>
@@ -674,14 +673,21 @@ function Index() {
               DXfix
             </div>
             <div className="font-mono text-xs">{t.footer}</div>
-            <a
-              href={COFFEE_URL}
-              target="_blank"
-              rel="noopener noreferrer"
+            <a href="/privacy" className="text-xs hover:text-foreground transition">
+              {lang === "ar" ? "سياسة الخصوصية" : "Privacy Policy"}
+            </a>
+            <a href="/terms" className="text-xs hover:text-foreground transition">
+              {lang === "ar" ? "شروط الخدمة" : "Terms"}
+            </a>
+            <a href="/articles" className="text-xs hover:text-foreground transition">
+              {lang === "ar" ? "المقالات والدروس" : "Articles & Guides"}
+            </a>
+            <button
+              onClick={openBuyCoffeeCheckout}
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/30 font-semibold text-sm hover:bg-amber-500/20 transition"
             >
               ☕ {lang === "ar" ? "ادعمنا" : "Support us"}
-            </a>
+            </button>
           </div>
           <div className="flex items-center gap-4">
             <a

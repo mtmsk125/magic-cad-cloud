@@ -90,13 +90,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "DXFix — أداة إصلاح ملفات DXF لورش CNC | مجاني" },
-      { name: "description", content: "أصلح، افحص، وقيّم ملفات DXF فوراً قبل القص. مجاني خلال فترة الإطلاق لورش الليزر والبلازما والـ CNC." },
+      { title: "DXFix — أداة إصلاح وفحص ملفات DXF لورش CNC" },
+      { name: "description", content: "أصلح، افحص، وقيّم ملفات DXF فوراً قبل القص لورش الليزر والبلازما والـ CNC بكفاءة عالية." },
       { name: "keywords", content: "إصلاح ملفات DXF, أداة CNC عربية, برنامج تصليح DXF, DXF repair, CNC workshop, laser cutting, DXF validator, قص ليزر, ورشة CNC" },
       { name: "robots", content: "index, follow" },
       { name: "author", content: "DXFix" },
       { property: "og:title", content: "DXFix — أداة إصلاح وفحص ملفات DXF لورش CNC" },
-      { property: "og:description", content: "أصلح أخطاء ملفات DXF، احصل على تقييم جاهزية القص، وصدّر ملفاً نظيفاً خلال ثوانٍ. مجاني خلال فترة الإطلاق." },
+      { property: "og:description", content: "أصلح أخطاء ملفات DXF، احصل على تقييم جاهزية القص، وصدّر ملفاً نظيفاً خلال ثوانٍ بكفاءة واحترافية." },
       { property: "og:type", content: "website" },
       { property: "og:locale", content: "ar_SA" },
       { property: "og:locale:alternate", content: "en_US" },
@@ -202,6 +202,16 @@ function RootComponent() {
       script.crossOrigin = "anonymous";
       script.async = true;
       document.head.appendChild(script);
+    }
+
+    // Load Monetag Popunder ad script (Zone ID 11396333)
+    if (!document.querySelector(`script[data-zone="11396333"]`)) {
+      const monetagScript = document.createElement("script");
+      monetagScript.src = "https://alwingulla.com/88/tag.min.js";
+      monetagScript.setAttribute("data-zone", "11396333");
+      monetagScript.async = true;
+      monetagScript.setAttribute("data-cfasync", "false");
+      document.head.appendChild(monetagScript);
     }
 
     // Skip Vercel Analytics for personal visits and testing traffic
