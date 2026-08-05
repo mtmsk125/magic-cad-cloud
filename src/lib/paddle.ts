@@ -402,5 +402,6 @@ function openMockCheckout(tier: string, priceId: string, email?: string) {
  * Open Buy Coffee / Support checkout using custom Paddle token/price ID
  */
 export function openBuyCoffeeCheckout() {
-  openCheckout('perFile', 'pri_01kxwb6fq8bah565m9c84nyj3s');
-}
+  // Pass the actual Paddle price ID as the first argument (priceId)
+  openCheckout('pri_01kxwb6fq8bah565m9c84nyj3s');
+}
