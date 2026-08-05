@@ -131,7 +131,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       // PWA manifest for mobile install
       { rel: "manifest", href: "/manifest.json" },
       // Apple touch icon for iOS home screen
-      { rel: "apple-touch-icon", href: "/icons/icon-192x192.png" },
+      { rel: "apple-touch-icon", href: "/assets/hero-cnc.jpg" },
       { name: "apple-mobile-web-app-capable", content: "yes" } as any,
       { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" } as any,
       { name: "apple-mobile-web-app-title", content: "DXFix" } as any,
