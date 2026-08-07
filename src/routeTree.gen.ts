@@ -11,7 +11,10 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as ArticlesRouteImport } from './routes/articles'
 import { Route as PricingRouteImport } from './routes/pricing'
+import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as ToolRouteImport } from './routes/tool'
 
 const IndexRoute = IndexRouteImport.update({
@@ -24,9 +27,24 @@ const AdminRoute = AdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ArticlesRoute = ArticlesRouteImport.update({
+  id: '/articles',
+  path: '/articles',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PricingRoute = PricingRouteImport.update({
   id: '/pricing',
   path: '/pricing',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ToolRoute = ToolRouteImport.update({
@@ -38,34 +56,56 @@ const ToolRoute = ToolRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/articles': typeof ArticlesRoute
   '/pricing': typeof PricingRoute
+  '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
   '/tool': typeof ToolRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/articles': typeof ArticlesRoute
   '/pricing': typeof PricingRoute
+  '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
   '/tool': typeof ToolRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/articles': typeof ArticlesRoute
   '/pricing': typeof PricingRoute
+  '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
   '/tool': typeof ToolRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/admin' | '/pricing' | '/tool'
+  fullPaths:
+    '/' | '/admin' | '/articles' | '/pricing' | '/privacy' | '/terms' | '/tool'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin' | '/pricing' | '/tool'
-  id: '__root__' | '/' | '/admin' | '/pricing' | '/tool'
+  to:
+    '/' | '/admin' | '/articles' | '/pricing' | '/privacy' | '/terms' | '/tool'
+  id:
+    | '__root__'
+    | '/'
+    | '/admin'
+    | '/articles'
+    | '/pricing'
+    | '/privacy'
+    | '/terms'
+    | '/tool'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
+  ArticlesRoute: typeof ArticlesRoute
   PricingRoute: typeof PricingRoute
+  PrivacyRoute: typeof PrivacyRoute
+  TermsRoute: typeof TermsRoute
   ToolRoute: typeof ToolRoute
 }
 
@@ -85,11 +125,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/articles': {
+      id: '/articles'
+      path: '/articles'
+      fullPath: '/articles'
+      preLoaderRoute: typeof ArticlesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/pricing': {
       id: '/pricing'
       path: '/pricing'
       fullPath: '/pricing'
       preLoaderRoute: typeof PricingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/tool': {
@@ -105,7 +166,10 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
+  ArticlesRoute: ArticlesRoute,
   PricingRoute: PricingRoute,
+  PrivacyRoute: PrivacyRoute,
+  TermsRoute: TermsRoute,
   ToolRoute: ToolRoute,
 }
 export const routeTree = rootRouteImport
