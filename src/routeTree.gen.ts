@@ -16,6 +16,8 @@ import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as ToolRouteImport } from './routes/tool'
+import { Route as ToolsDxfConverterRouteImport } from './routes/tools/dxf-converter'
+import { Route as ToolsFileCompressorRouteImport } from './routes/tools/file-compressor'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -52,6 +54,16 @@ const ToolRoute = ToolRouteImport.update({
   path: '/tool',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ToolsDxfConverterRoute = ToolsDxfConverterRouteImport.update({
+  id: '/tools/dxf-converter',
+  path: '/tools/dxf-converter',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ToolsFileCompressorRoute = ToolsFileCompressorRouteImport.update({
+  id: '/tools/file-compressor',
+  path: '/tools/file-compressor',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -61,6 +73,8 @@ export interface FileRoutesByFullPath {
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/tool': typeof ToolRoute
+  '/tools/dxf-converter': typeof ToolsDxfConverterRoute
+  '/tools/file-compressor': typeof ToolsFileCompressorRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -70,6 +84,8 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/tool': typeof ToolRoute
+  '/tools/dxf-converter': typeof ToolsDxfConverterRoute
+  '/tools/file-compressor': typeof ToolsFileCompressorRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -80,14 +96,32 @@ export interface FileRoutesById {
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/tool': typeof ToolRoute
+  '/tools/dxf-converter': typeof ToolsDxfConverterRoute
+  '/tools/file-compressor': typeof ToolsFileCompressorRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/admin' | '/articles' | '/pricing' | '/privacy' | '/terms' | '/tool'
+    | '/'
+    | '/admin'
+    | '/articles'
+    | '/pricing'
+    | '/privacy'
+    | '/terms'
+    | '/tool'
+    | '/tools/dxf-converter'
+    | '/tools/file-compressor'
   fileRoutesByTo: FileRoutesByTo
   to:
-    '/' | '/admin' | '/articles' | '/pricing' | '/privacy' | '/terms' | '/tool'
+    | '/'
+    | '/admin'
+    | '/articles'
+    | '/pricing'
+    | '/privacy'
+    | '/terms'
+    | '/tool'
+    | '/tools/dxf-converter'
+    | '/tools/file-compressor'
   id:
     | '__root__'
     | '/'
@@ -97,6 +131,8 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/terms'
     | '/tool'
+    | '/tools/dxf-converter'
+    | '/tools/file-compressor'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -107,6 +143,8 @@ export interface RootRouteChildren {
   PrivacyRoute: typeof PrivacyRoute
   TermsRoute: typeof TermsRoute
   ToolRoute: typeof ToolRoute
+  ToolsDxfConverterRoute: typeof ToolsDxfConverterRoute
+  ToolsFileCompressorRoute: typeof ToolsFileCompressorRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -160,6 +198,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ToolRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/tools/dxf-converter': {
+      id: '/tools/dxf-converter'
+      path: '/tools/dxf-converter'
+      fullPath: '/tools/dxf-converter'
+      preLoaderRoute: typeof ToolsDxfConverterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tools/file-compressor': {
+      id: '/tools/file-compressor'
+      path: '/tools/file-compressor'
+      fullPath: '/tools/file-compressor'
+      preLoaderRoute: typeof ToolsFileCompressorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -171,6 +223,8 @@ const rootRouteChildren: RootRouteChildren = {
   PrivacyRoute: PrivacyRoute,
   TermsRoute: TermsRoute,
   ToolRoute: ToolRoute,
+  ToolsDxfConverterRoute: ToolsDxfConverterRoute,
+  ToolsFileCompressorRoute: ToolsFileCompressorRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
