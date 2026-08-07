@@ -123,11 +123,28 @@ export function initPaddle(): Promise<boolean> {
 }
 
 export async function openCheckout(priceId: string, email?: string) {
-  if (!priceId || priceId === 'undefined' || priceId.trim() === '') {
+  // Support passing either a real Paddle priceId (e.g. "pri_...")
+  // or a plan key like 'monthly' | 'perFile' | 'workshop'.
+  const normalized = (priceId || '').trim();
+  let resolvedPriceId = normalized;
+
+  if (["monthly", "perFile", "workshop"].includes(normalized)) {
+    // Map plan key to the first configured priceId for that plan
+    const plan = PLANS[normalized as keyof typeof PLANS];
+    if (plan && Array.isArray(plan.priceIds) && plan.priceIds.length > 0) {
+      resolvedPriceId = plan.priceIds[0];
+      console.log(`ℹ️ openCheckout: resolved plan key "${normalized}" to priceId="${resolvedPriceId}"`);
+    }
+  }
+
+  if (!resolvedPriceId || resolvedPriceId === 'undefined' || resolvedPriceId.trim() === '') {
     console.error("Invalid priceId:", priceId);
     alert("عذراً، معرف السعر غير صحيح.");
     return;
   }
+
+  // Use the resolved priceId from here on
+  priceId = resolvedPriceId;
 
   const tier = detectTier(priceId);
   console.log(`🌊 openCheckout called: tier=${tier}, priceId=${priceId}`);
