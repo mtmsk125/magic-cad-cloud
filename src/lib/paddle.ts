@@ -402,6 +402,7 @@ function openMockCheckout(tier: string, priceId: string, email?: string) {
  * Open Buy Coffee / Support checkout using custom Paddle token/price ID
  */
 export function openBuyCoffeeCheckout() {
-  // Pass the actual Paddle price ID as the first argument (priceId)
-  openCheckout('pri_01kxwb6fq8bah565m9c84nyj3s');
+  // Read the buy-coffee priceId from Vite environment variable VITE_COFEE (set this in Vercel)
+  const priceId = (import.meta.env.VITE_COFEE as string) || 'pri_01kxwb6fq8bah565m9c84nyj3s';
+  openCheckout(priceId);
 }
