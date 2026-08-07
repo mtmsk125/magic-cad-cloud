@@ -196,6 +196,20 @@ function Index() {
   const t = T[lang as keyof typeof T] || T.en;
   const isRTL = t.dir === "rtl";
 
+  // Detect if client-side tools are present so we don't show duplicate "coming soon" cards
+  const [hasDxfTool, setHasDxfTool] = useState(false);
+  const [hasCompressor, setHasCompressor] = useState(false);
+
+  useEffect(() => {
+    // dynamic import — succeeds if the route modules are present in the bundle
+    import("./tools/dxf-converter")
+      .then(() => setHasDxfTool(true))
+      .catch(() => {});
+    import("./tools/file-compressor")
+      .then(() => setHasCompressor(true))
+      .catch(() => {});
+  }, []);
+
   function handleLangChange(newLang: Lang) {
     setLang(newLang);
     localStorage.setItem("dxfix_lang", newLang);
@@ -430,33 +444,35 @@ function Index() {
             </a>
 
             {/* Task 5: Batch Processing */}
-            <a href="/tool"
-              className="group relative bg-background border border-border rounded-2xl p-6 hover:border-accent/50 hover:shadow-[var(--shadow-spark)] transition-all duration-300 flex flex-col items-start text-start"
-            >
-              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-violet-500/20 to-violet-500/5 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
-                📦
-              </div>
-              <h3 className="font-display font-bold text-lg">
-                {lang === "ar" ? "معالجة مجمعة (Batch)" : "Batch File Processing"}
-              </h3>
-              <p className="mt-2 text-sm text-muted-foreground leading-relaxed flex-1">
-                {lang === "ar"
-                  ? "ارفع عدة ملفات DXF دفعة واحدة، نعالجها كلها تلقائياً، وتحمّل النتائج كملف ZIP مضغوط. وفر وقتك."
-                  : "Upload multiple DXF files at once, we process them all automatically, and download the results as a ZIP archive. Save your time."}
-              </p>
-              <div className="mt-4 flex items-center gap-2 text-sm font-semibold text-accent group-hover:gap-3 transition-all">
-                <span>{lang === "ar" ? "معالجة مجمعة" : "Batch process"}</span>
-                <span aria-hidden>{lang === "ar" ? "←" : "→"}</span>
-              </div>
-              <div className="mt-4 flex flex-wrap gap-1.5">
-                <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-400 border border-violet-500/20">
-                  {lang === "ar" ? "ملفات متعددة" : "Multiple files"}
-                </span>
-                <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-fuchsia-500/10 text-fuchsia-400 border border-fuchsia-500/20">
-                  ZIP
-                </span>
-              </div>
-            </a>
+            {!hasCompressor && (
+              <a href="/tool"
+                className="group relative bg-background border border-border rounded-2xl p-6 hover:border-accent/50 hover:shadow-[var(--shadow-spark)] transition-all duration-300 flex flex-col items-start text-start"
+              >
+                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-violet-500/20 to-violet-500/5 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                  📦
+                </div>
+                <h3 className="font-display font-bold text-lg">
+                  {lang === "ar" ? "معالجة مجمعة (Batch)" : "Batch File Processing"}
+                </h3>
+                <p className="mt-2 text-sm text-muted-foreground leading-relaxed flex-1">
+                  {lang === "ar"
+                    ? "ارفع عدة ملفات DXF دفعة واحدة، نعالجها كلها تلقائياً، وتحمّل النتائج كملف ZIP مضغوط. وفر وقتك."
+                    : "Upload multiple DXF files at once, we process them all automatically, and download the results as a ZIP archive. Save your time."}
+                </p>
+                <div className="mt-4 flex items-center gap-2 text-sm font-semibold text-accent group-hover:gap-3 transition-all">
+                  <span>{lang === "ar" ? "معالجة مجمعة" : "Batch process"}</span>
+                  <span aria-hidden>{lang === "ar" ? "←" : "→"}</span>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-1.5">
+                  <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-400 border border-violet-500/20">
+                    {lang === "ar" ? "ملفات متعددة" : "Multiple files"}
+                  </span>
+                  <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-fuchsia-500/10 text-fuchsia-400 border border-fuchsia-500/20">
+                    ZIP
+                  </span>
+                </div>
+              </a>
+            )}
 
             {/* Task 6: SVG to DXF */}
             <a href="/tool"
@@ -558,30 +574,33 @@ function Index() {
           </div>
 
           <div className="mt-14 grid md:grid-cols-3 gap-6">
-            {[
-              {
-                icon: "📊",
-                title: t.roadmapTool1,
-                desc: t.roadmapTool1Desc,
-                badge: t.roadmapBadge,
-              },
-              {
-                icon: "🖼️",
-                title: t.roadmapTool2,
-                desc: t.roadmapTool2Desc,
-                badge: t.roadmapBadge,
-              },
-              {
-                icon: "⚙️",
-                title: t.roadmapTool3,
-                desc: t.roadmapTool3Desc,
-                badge: t.roadmapBadge,
-              },
-            ].map((tool, i) => (
-              <div
-                key={i}
-                className="group relative bg-background border border-border rounded-2xl p-8 flex flex-col hover:border-primary/40 transition duration-300 hover:shadow-[var(--shadow-spark)]"
-              >
+            {(() => {
+              const items = [
+                {
+                  icon: "📊",
+                  title: t.roadmapTool1,
+                  desc: t.roadmapTool1Desc,
+                  badge: t.roadmapBadge,
+                },
+                !hasDxfTool ? {
+                  icon: "🖼️",
+                  title: t.roadmapTool2,
+                  desc: t.roadmapTool2Desc,
+                  badge: t.roadmapBadge,
+                } : null,
+                {
+                  icon: "⚙️",
+                  title: t.roadmapTool3,
+                  desc: t.roadmapTool3Desc,
+                  badge: t.roadmapBadge,
+                },
+              ].filter(Boolean) as any[];
+
+              return items.map((tool, i) => (
+                <div
+                  key={i}
+                  className="group relative bg-background border border-border rounded-2xl p-8 flex flex-col hover:border-primary/40 transition duration-300 hover:shadow-[var(--shadow-spark)]"
+                >
                 <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-primary/[0.02] to-accent/[0.02] opacity-0 group-hover:opacity-100 transition duration-300 pointer-events-none" />
 
                 <div className="relative z-10 flex items-start justify-between mb-5">

@@ -70,19 +70,47 @@ const getPaddleStats = createServerFn({ method: "GET" }).handler(async () => {
   }
 });
 
-// Simulated data generator for admin dashboard
+// Return non-sensitive environment info for admin dashboard (masked)
+const getEnvInfo = createServerFn({ method: "GET" }).handler(async () => {
+  const mask = (s?: string) => {
+    if (!s) return { set: false };
+    const visibleStart = s.slice(0, 4);
+    const visibleEnd = s.length > 8 ? s.slice(-4) : s.slice(-2);
+    return { set: true, masked: `${visibleStart}••••${visibleEnd}` };
+  };
+
+  return {
+    NODE_ENV: process.env.NODE_ENV ?? "undefined",
+    PADDLE_API_KEY: mask(process.env.PADDLE_API_KEY),
+    VITE_COFEE: mask(process.env.VITE_COFEE),
+    VITE_ADSENSE_CLIENT_ID: mask(process.env.VITE_ADSENSE_CLIENT_ID),
+    VERCEL: process.env.VERCEL ?? undefined,
+  };
+});
+
+// Simulated data generator for admin dashboard (uses more realistic contact email mix)
 function getSimulatedStats() {
   const now = Date.now();
   const hours = 24 * 60 * 60 * 1000;
+  const emails = [
+    "mtmsk125@yahoo.com",
+    "support@dxfix.com",
+    "ops@cnc-shop.com",
+    "sales@metalworks.sa",
+    "admin@workshop.local",
+    "info@laser-pro.co",
+    "service@factory.sa",
+    "contact@prototype.io",
+    "orders@cutting.sa",
+    "help@machining.co",
+    "invoices@metal.sa",
+    "qa@fabrication.sa",
+  ];
+
   const files = Array.from({ length: 12 }, (_, i) => ({
     id: `file-${i + 1}`,
     fileName: `part_${String.fromCharCode(65 + (i % 26))}_${String(100 + i).slice(1)}.dxf`,
-    userEmail: [
-      "ahmed@workshop.sa", "mohammed@cnc.sa", "info@laser-sa.com",
-      "saleh@factory.sa", "khalid@metal.sa", "nasser@plasma.sa",
-      "fahad@cutting.sa", "majed@steel.sa", "bandar@cnc-workshop.sa",
-      "youssef@machining.sa", "turki@laser-cut.sa", "saad@workshop.sa",
-    ][i],
+    userEmail: emails[i],
     fileSize: `${(Math.random() * 500 + 50).toFixed(1)} KB`,
     timestamp: new Date(now - i * (hours * 2 + Math.random() * hours)).toISOString(),
     status: ["مكتمل", "مكتمل", "مكتمل", "قيد المعالجة", "مكتمل", "مكتمل", "فشل", "مكتمل", "مكتمل", "قيد المعالجة", "مكتمل", "مكتمل"][i],
@@ -99,6 +127,7 @@ function AdminPage() {
   const [password, setPassword] = useState("");
   const [authed, setAuthed] = useState(false);
   const [stats, setStats] = useState<any>(null);
+  const [envInfo, setEnvInfo] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [recentFiles] = useState(getSimulatedStats);
@@ -124,6 +153,10 @@ function AdminPage() {
     try {
       const data = await getPaddleStats();
       setStats(data);
+      try {
+        const env = await getEnvInfo();
+        setEnvInfo(env);
+      } catch {}
     } catch (e: any) {
       setStats({ error: e.message });
     }
@@ -508,9 +541,22 @@ function AdminPage() {
                 </div>
               </div>
 
+              {/* Environment info (masked) */}
+              {envInfo && (
+                <div className="bg-background border border-border rounded-xl p-4 mb-6">
+                  <h3 className="font-semibold">Environment</h3>
+                  <div className="mt-2 text-sm text-muted-foreground">
+                    <div>NODE_ENV: <span className="font-mono">{envInfo.NODE_ENV}</span></div>
+                    <div>PADDLE_API_KEY: <span className="font-mono">{envInfo.PADDLE_API_KEY?.set ? envInfo.PADDLE_API_KEY.masked : 'not set'}</span></div>
+                    <div>VITE_COFEE: <span className="font-mono">{envInfo.VITE_COFEE?.set ? envInfo.VITE_COFEE.masked : 'not set'}</span></div>
+                    <div>VITE_ADSENSE_CLIENT_ID: <span className="font-mono">{envInfo.VITE_ADSENSE_CLIENT_ID?.set ? envInfo.VITE_ADSENSE_CLIENT_ID.masked : 'not set'}</span></div>
+                    <div>VERCEL: <span className="font-mono">{envInfo.VERCEL ? 'yes' : 'no'}</span></div>
+                  </div>
+                </div>
+              )}
+
               {/* Paddle Stats (if available) */}
-              {stats && !stats.error && (
-                <div className="bg-card border border-border rounded-2xl p-6">
+              {stats && !stats.error && (                <div className="bg-card border border-border rounded-2xl p-6">
                   <h2 className="font-display font-bold text-lg mb-4">بيانات Paddle المباشرة</h2>
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                     <div className="bg-background border border-border/60 rounded-xl p-4 text-center">
