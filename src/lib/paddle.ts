@@ -402,5 +402,16 @@ function openMockCheckout(tier: string, priceId: string, email?: string) {
  * Open Buy Coffee / Support checkout using custom Paddle token/price ID
  */
 export function openBuyCoffeeCheckout() {
-  openCheckout('perFile', 'pri_01kxwb6fq8bah565m9c84nyj3s');
-}
+  // Read coffee priceId from Vite environment variable VITE_COFEE
+  const envPriceId = import.meta.env.VITE_COFEE as string | undefined;
+  const defaultPriceId = 'pri_01kxwb6fq8bah565m9c84nyj3s';
+  const priceId = envPriceId && envPriceId !== 'undefined' && envPriceId.trim() !== ''
+    ? envPriceId
+    : defaultPriceId;
+
+  if (!envPriceId) {
+    console.warn('ℹ️ VITE_COFEE not set — using default coffee priceId');
+  }
+
+  openCheckout(priceId);
+}
