@@ -18,5 +18,9 @@ export default defineConfig({
       port: 5000,
       allowedHosts: true,
     },
+    // Ensure build output directory matches TanStack Start/Nitro expectations
+    build: {
+      outDir: ".output",
+    },
   },
 });
