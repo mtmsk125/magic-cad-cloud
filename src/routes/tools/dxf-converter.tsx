@@ -63,11 +63,13 @@ function DxfConverter() {
 
   const [svgContent, setSvgContent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [processing, setProcessing] = useState(false);
 
   const onFile = async (file: File | null) => {
     setError(null);
     setSvgContent(null);
     if (!file) return;
+    setProcessing(true);
     try {
       const text = await file.text();
       const parser = new (DxfParser as any)();
@@ -77,39 +79,50 @@ function DxfConverter() {
     } catch (err: any) {
       console.error(err);
       setError('Failed to parse DXF: ' + (err?.message || String(err)));
+    } finally {
+      setProcessing(false);
     }
   };
 
   const downloadSvg = () => {
-    if (!svgContent) return;
+    if (!svgContent || processing) return;
     const blob = new Blob([svgContent], { type: 'image/svg+xml' });
     saveAs(blob, 'drawing.svg');
   };
 
   const exportPdf = async () => {
-    if (!svgContent) return;
-    const canvas = document.createElement('canvas');
-    canvas.width = 1200; canvas.height = 800;
-    const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
-    const v = await Canvg.fromString(ctx, svgContent);
-    await v.render();
-    const imgData = canvas.toDataURL('image/png');
-    const pdf = new jsPDF({ unit: 'px', format: [canvas.width, canvas.height] });
-    pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
-    pdf.save('drawing.pdf');
+    if (!svgContent || processing) return;
+    setProcessing(true);
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1200; canvas.height = 800;
+      const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
+      const v = await Canvg.fromString(ctx, svgContent);
+      await v.render();
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({ unit: 'px', format: [canvas.width, canvas.height] });
+      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+      pdf.save('drawing.pdf');
+    } catch (e) {
+      console.error(e);
+      setError('Failed to export PDF');
+    } finally {
+      setProcessing(false);
+    }
   };
 
   return (
     <div style={{ padding: 20 }}>
       <h2>DXF → SVG / PDF Converter</h2>
       <p>Upload a DXF file; this converts it to SVG in the browser and lets you download SVG or PDF.</p>
-      <input type="file" accept=".dxf" onChange={(e) => onFile(e.target.files?.[0] || null)} />
+      <input type="file" accept=".dxf" onChange={(e) => onFile(e.target.files?.[0] || null)} disabled={processing} />
+      {processing && <div style={{ marginTop: 8, fontStyle: 'italic' }}>جاري المعالجة... يرجى الانتظار</div>}
       {error && <div style={{ color: 'red' }}>{error}</div>}
       {svgContent && (
         <div>
           <div style={{ marginTop: 12 }}>
-            <button onClick={downloadSvg}>Download SVG</button>
-            <button onClick={exportPdf} style={{ marginLeft: 8 }}>Export PDF</button>
+            <button onClick={downloadSvg} disabled={processing}>Download SVG</button>
+            <button onClick={exportPdf} style={{ marginLeft: 8 }} disabled={processing}>Export PDF</button>
           </div>
           <div style={{ border: '1px solid #ddd', marginTop: 12 }}>
             <div dangerouslySetInnerHTML={{ __html: svgContent }} />

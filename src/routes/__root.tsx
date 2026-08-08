@@ -196,8 +196,9 @@ function RootComponent() {
     if (!isMounted) return;
     initPaddle();
 
-    // Load AdSense script client-side only (fixes React #419 hydration error)
+  // Defer loading ad scripts until user consents to cookies.
     const adSenseId = import.meta.env.VITE_ADSENSE_CLIENT_ID || "ca-pub-8107638298388341";
+  function loadAdScripts() {
     if (!document.querySelector(`script[src*="adsbygoogle.js"]`)) {
       const script = document.createElement("script");
       script.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adSenseId}`;
@@ -206,7 +207,6 @@ function RootComponent() {
       document.head.appendChild(script);
     }
 
-    // Load Monetag Popunder ad script (Zone ID 11396333)
     if (!document.querySelector(`script[data-zone="11396333"]`)) {
       const monetagScript = document.createElement("script");
       monetagScript.src = "https://alwingulla.com/88/tag.min.js";
@@ -215,22 +215,39 @@ function RootComponent() {
       monetagScript.setAttribute("data-cfasync", "false");
       document.head.appendChild(monetagScript);
     }
+  }
 
-    // Skip Vercel Analytics for personal visits and testing traffic
-    // This prevents inflating analytics with developer/owner page views
-    const shouldSkipAnalytics =
-      typeof window !== 'undefined' && (
-        window.location.hostname === 'localhost' ||
-        window.location.hostname === '127.0.0.1' ||
-        window.location.search.includes('admin=true') ||
-        window.location.search.includes('skip_analytics=1') ||
-        window.location.search.includes('debug=true') ||
-        localStorage.getItem('dxfix_skip_analytics') === 'true'
-      );
-
-    if (!shouldSkipAnalytics) {
-      inject();
+  try {
+    const accepted = localStorage.getItem('dxfix_cookies_accepted') === '1';
+    if (accepted) {
+      loadAdScripts();
+    } else {
+      // Listen for when the cookie banner signals acceptance
+      const onAccept = () => loadAdScripts();
+      window.addEventListener('dxfix-cookies-accepted', onAccept);
+      // clean up
+      return () => window.removeEventListener('dxfix-cookies-accepted', onAccept);
     }
+  } catch (e) {
+    // If access to localStorage fails for any reason, fall back to not loading ads
+    console.warn('cookie consent read failed', e);
+  }
+
+  // Skip Vercel Analytics for personal visits and testing traffic
+  // This prevents inflating analytics with developer/owner page views
+  const shouldSkipAnalytics =
+    typeof window !== 'undefined' && (
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.search.includes('admin=true') ||
+      window.location.search.includes('skip_analytics=1') ||
+      window.location.search.includes('debug=true') ||
+      localStorage.getItem('dxfix_skip_analytics') === 'true'
+    );
+
+  if (!shouldSkipAnalytics) {
+    inject();
+  }
   }, [isMounted]);
 
   // Listen for language changes

@@ -25,7 +25,11 @@ export default function CookieBanner() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => setAccepted(true)} style={{ background: '#10b981', color: 'white', padding: '8px 12px', borderRadius: 8, border: 'none', fontWeight: 600 }}>أوافق</button>
+          <button onClick={() => {
+            setAccepted(true);
+            try { localStorage.setItem('dxfix_cookies_accepted', '1'); } catch {}
+            try { window.dispatchEvent(new Event('dxfix-cookies-accepted')); } catch {}
+          }} style={{ background: '#10b981', color: 'white', padding: '8px 12px', borderRadius: 8, border: 'none', fontWeight: 600 }}>أوافق</button>
           <a href="/privacy" style={{ alignSelf: 'center', color: '#94a3b8', textDecoration: 'underline' }}>إعدادات</a>
         </div>
       </div>
