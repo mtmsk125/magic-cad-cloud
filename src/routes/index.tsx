@@ -216,6 +216,29 @@ function Index() {
     window.dispatchEvent(new CustomEvent("dxfix-lang-change", { detail: newLang }));
   }
 
+  // Prepare roadmap items (computed in component scope to avoid complex JSX IIFEs)
+  const rawRoadmap = [
+    {
+      icon: "📊",
+      title: t.roadmapTool1,
+      desc: t.roadmapTool1Desc,
+      badge: t.roadmapBadge,
+    },
+    !hasDxfTool ? {
+      icon: "🖼️",
+      title: t.roadmapTool2,
+      desc: t.roadmapTool2Desc,
+      badge: t.roadmapBadge,
+    } : null,
+    {
+      icon: "⚙️",
+      title: t.roadmapTool3,
+      desc: t.roadmapTool3Desc,
+      badge: t.roadmapBadge,
+    },
+  ];
+  const roadmapItems = rawRoadmap.filter(Boolean);
+
   return (
     <div dir={t.dir} className="min-h-screen bg-background text-foreground overflow-x-hidden">
 
@@ -574,29 +597,7 @@ function Index() {
           </div>
 
           <div className="mt-14 grid md:grid-cols-3 gap-6">
-            {(() => {
-              const items = [
-                {
-                  icon: "📊",
-                  title: t.roadmapTool1,
-                  desc: t.roadmapTool1Desc,
-                  badge: t.roadmapBadge,
-                },
-                !hasDxfTool ? {
-                  icon: "🖼️",
-                  title: t.roadmapTool2,
-                  desc: t.roadmapTool2Desc,
-                  badge: t.roadmapBadge,
-                } : null,
-                {
-                  icon: "⚙️",
-                  title: t.roadmapTool3,
-                  desc: t.roadmapTool3Desc,
-                  badge: t.roadmapBadge,
-                },
-              ].filter(Boolean) as any[];
-
-              return items.map((tool, i) => (
+            {roadmapItems.map((tool, i) => (
                 <div
                   key={i}
                   className="group relative bg-background border border-border rounded-2xl p-8 flex flex-col hover:border-primary/40 transition duration-300 hover:shadow-[var(--shadow-spark)]"
