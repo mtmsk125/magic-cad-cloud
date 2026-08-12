@@ -16,6 +16,8 @@ import type { PathSegment } from "@/lib/path-union";
 import { pathsToCuttingPaths, advancedOptimize, generateOptimizationReport } from "@/lib/toolpath-optimizer";
 import type { CuttingPath } from "@/lib/toolpath-optimizer";
 import { openBuyCoffeeCheckout } from "@/lib/paddle";
+import { incrementRepairedFilesCount } from "@/lib/subscription";
+
 
 interface HistoryEntry {
   id: string;
@@ -747,6 +749,7 @@ function ToolPage() {
     setRepairedIssues(repaired);
     setFixSummary(summary);
     saveToHistory(fileName, analysis, true);
+    incrementRepairedFilesCount();
     setStage("repaired");
   };
 

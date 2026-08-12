@@ -5,6 +5,7 @@ import { LanguageSwitcher } from "@/components/language-switcher";
 import { AdBanner } from "@/components/AdBanner";
 import { getTranslations, getLangDir, type Lang } from "@/lib/i18n";
 import { openBuyCoffeeCheckout } from "@/lib/paddle";
+import { getRepairedFilesCount } from "@/lib/subscription";
 import { track } from '@vercel/analytics';
 
 export const Route = createFileRoute("/")({
@@ -193,6 +194,12 @@ function Index() {
     }
     return "ar";
   });
+  const [repairedCount, setRepairedCount] = useState<number>(24850);
+
+  useEffect(() => {
+    setRepairedCount(getRepairedFilesCount());
+  }, []);
+
   const t = T[lang as keyof typeof T] || T.en;
   const isRTL = t.dir === "rtl";
 
@@ -564,7 +571,7 @@ function Index() {
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-5xl mx-auto">
             <div className="p-6 rounded-2xl bg-background/80 border border-border/80 shadow-[var(--shadow-elegant)] hover:border-accent/40 transition">
-              <div className="text-4xl font-bold text-gradient-spark">24,850+</div>
+              <div className="text-4xl font-bold text-gradient-spark">{repairedCount.toLocaleString()}+</div>
               <div className="mt-2 text-sm font-semibold text-foreground">{lang === "ar" ? "ملف تم إصلاحه بنجاح" : "Files Repaired"}</div>
               <div className="mt-1 font-mono text-[11px] text-muted-foreground">{lang === "ar" ? "جاهزة للماكينة" : "Machine Ready"}</div>
             </div>

@@ -254,3 +254,38 @@ export function clearPerFilePayment() {
     // ignore
   }
 }
+
+// --- Dynamic File Repair Counter ---
+
+const REPAIRED_COUNT_KEY = 'dxfix_repaired_count';
+const BASE_REPAIRED_COUNT = 24850;
+
+/**
+ * Get current cumulative repaired files count
+ */
+export function getRepairedFilesCount(): number {
+  if (!isClient()) return BASE_REPAIRED_COUNT;
+  try {
+    const stored = localStorage.getItem(REPAIRED_COUNT_KEY);
+    if (!stored) return BASE_REPAIRED_COUNT;
+    const val = parseInt(stored, 10);
+    return isNaN(val) ? BASE_REPAIRED_COUNT : val;
+  } catch {
+    return BASE_REPAIRED_COUNT;
+  }
+}
+
+/**
+ * Increment repaired files count whenever a file is repaired or downloaded
+ */
+export function incrementRepairedFilesCount(): number {
+  if (!isClient()) return BASE_REPAIRED_COUNT;
+  try {
+    const current = getRepairedFilesCount();
+    const updated = current + 1;
+    localStorage.setItem(REPAIRED_COUNT_KEY, String(updated));
+    return updated;
+  } catch {
+    return BASE_REPAIRED_COUNT;
+  }
+}
