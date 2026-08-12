@@ -292,7 +292,7 @@ export function incrementRepairedFilesCount(): number {
 
 // --- Dynamic Visitor Counter ---
 const VISITOR_COUNT_KEY = 'dxfix_visitor_count';
-const BASE_VISITOR_COUNT = 8520;
+const BASE_VISITOR_COUNT = 150;
 
 /**
  * Get current visitor count
