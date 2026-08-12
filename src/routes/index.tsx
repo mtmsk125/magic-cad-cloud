@@ -187,16 +187,14 @@ const WHATSAPP_URL = "https://wa.me/962795156768";
 const COFFEE_URL = "https://www.buymeacoffee.com/dxfix";
 
 function Index() {
-  const [lang, setLang] = useState<Lang>(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("dxfix_lang") as Lang | null;
-      if (stored && ["ar", "en"].includes(stored)) return stored;
-    }
-    return "ar";
-  });
-  const [repairedCount, setRepairedCount] = useState<number>(24850);
+  const [lang, setLang] = useState<Lang>("ar");
+  const [repairedCount, setRepairedCount] = useState<number>(0);
+  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
+    setIsMounted(true);
+    const stored = localStorage.getItem("dxfix_lang") as Lang | null;
+    if (stored && ["ar", "en"].includes(stored)) setLang(stored);
     setRepairedCount(getRepairedFilesCount());
   }, []);
 

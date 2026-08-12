@@ -135,6 +135,14 @@ function AdminPage() {
   const [selectedTab, setSelectedTab] = useState<"overview" | "files" | "api" | "feedback">("overview");
   const [feedbackEntries, setFeedbackEntries] = useState<FeedbackEntry[]>([]);
   const [unapprovedCount, setUnapprovedCount] = useState(0);
+  const [totalVisitors, setTotalVisitors] = useState(0);
+  const [totalFixedFiles, setTotalFixedFiles] = useState(0);
+
+  // Load localStorage-based stats only on client after mount
+  useEffect(() => {
+    setTotalVisitors(getVisitorCount());
+    setTotalFixedFiles(getRepairedFilesCount());
+  }, []);
 
   // Load feedback on mount
   useEffect(() => {
@@ -195,10 +203,8 @@ function AdminPage() {
     );
   }
 
-  const totalVisitors = getVisitorCount();
-  const totalFixedFiles = getRepairedFilesCount();
-  const activeProUsers = stats && !stats.error ? stats.activeSubs : Math.floor(Math.random() * 30 + 15);
-  const totalRevenue = stats && !stats.error ? stats.totalRevenue : Math.floor(Math.random() * 500 + 1200);
+  const activeProUsers = stats && !stats.error ? stats.activeSubs : 0;
+  const totalRevenue = stats && !stats.error ? stats.totalRevenue : 0;
 
   return (
     <div dir="rtl" className="min-h-screen bg-background text-foreground">
