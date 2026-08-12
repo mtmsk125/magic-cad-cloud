@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import heroImg from "@/assets/hero-cnc.jpg";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { AdBanner } from "@/components/AdBanner";
@@ -196,48 +196,11 @@ function Index() {
   const t = T[lang as keyof typeof T] || T.en;
   const isRTL = t.dir === "rtl";
 
-  // Detect if client-side tools are present so we don't show duplicate "coming soon" cards
-  const [hasDxfTool, setHasDxfTool] = useState(false);
-  const [hasCompressor, setHasCompressor] = useState(false);
-
-  useEffect(() => {
-    // dynamic import — succeeds if the route modules are present in the bundle
-    import("./tools/dxf-converter")
-      .then(() => setHasDxfTool(true))
-      .catch(() => {});
-    import("./tools/file-compressor")
-      .then(() => setHasCompressor(true))
-      .catch(() => {});
-  }, []);
-
   function handleLangChange(newLang: Lang) {
     setLang(newLang);
     localStorage.setItem("dxfix_lang", newLang);
     window.dispatchEvent(new CustomEvent("dxfix-lang-change", { detail: newLang }));
   }
-
-  // Prepare roadmap items (computed in component scope to avoid complex JSX IIFEs)
-  const rawRoadmap = [
-    {
-      icon: "📊",
-      title: t.roadmapTool1,
-      desc: t.roadmapTool1Desc,
-      badge: t.roadmapBadge,
-    },
-    !hasDxfTool ? {
-      icon: "🖼️",
-      title: t.roadmapTool2,
-      desc: t.roadmapTool2Desc,
-      badge: t.roadmapBadge,
-    } : null,
-    {
-      icon: "⚙️",
-      title: t.roadmapTool3,
-      desc: t.roadmapTool3Desc,
-      badge: t.roadmapBadge,
-    },
-  ];
-  const roadmapItems = rawRoadmap.filter(Boolean);
 
   return (
     <div dir={t.dir} className="min-h-screen bg-background text-foreground overflow-x-hidden">
@@ -586,43 +549,33 @@ function Index() {
         </div>
       </section>
 
-      {/* ROADMAP */}
-      <section id="roadmap" className="relative border-y border-border/60 bg-card/30">
-        <div className="absolute inset-0 blueprint-grid opacity-20" />
-        <div className="relative max-w-7xl mx-auto px-5 sm:px-8 py-24">
-          <div className="text-center">
-            <p className="font-mono text-xs text-primary uppercase tracking-[0.25em]">{t.sectionRoadmap}</p>
-            <h2 className="font-display mt-3 text-4xl lg:text-5xl font-bold">{t.roadmapTitle}</h2>
-            <p className="mt-4 text-lg text-muted-foreground max-w-2xl mx-auto">{t.roadmapSub}</p>
-          </div>
-
-          <div className="mt-14 grid md:grid-cols-3 gap-6">
-            {roadmapItems.map((tool, i) => (
-                <div
-                  key={i}
-                  className="group relative bg-background border border-border rounded-2xl p-8 flex flex-col hover:border-primary/40 transition duration-300 hover:shadow-[var(--shadow-spark)]"
-                >
-                <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-primary/[0.02] to-accent/[0.02] opacity-0 group-hover:opacity-100 transition duration-300 pointer-events-none" />
-
-                <div className="relative z-10 flex items-start justify-between mb-5">
-                  <span className="text-3xl">{tool.icon}</span>
-                  <span className="inline-flex items-center gap-1.5 font-mono text-[10px] font-semibold px-2.5 py-1 rounded-full bg-accent/10 text-accent border border-accent/30 tracking-wider whitespace-nowrap">
-                    <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-                    {tool.badge}
-                  </span>
-                </div>
-
-                <div className="relative z-10 flex-1 flex flex-col">
-                  <h3 className="font-display text-lg font-bold leading-snug">{tool.title}</h3>
-                  <p className="mt-3 text-sm text-muted-foreground leading-relaxed flex-1">{tool.desc}</p>
-                </div>
-
-                <div className="absolute bottom-0 inset-x-6 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent opacity-0 group-hover:opacity-100 transition duration-300" />
-              </div>
-            ))}
+      {/* STATS */}
+      <section className="py-24 border-y border-border/60 bg-card/30">
+        <div className="max-w-7xl mx-auto px-5 sm:px-8 text-center">
+          <p className="font-mono text-xs text-primary uppercase tracking-[0.25em] mb-4">
+             {lang === "ar" ? "إحصائيات الأداء" : "Platform Stats"}
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+            <div className="p-6 rounded-2xl bg-background border border-border">
+              <div className="text-4xl font-bold text-gradient-spark">500+</div>
+              <div className="mt-2 text-sm text-muted-foreground">{lang === "ar" ? "ملف تم إصلاحه" : "Files Fixed"}</div>
+            </div>
+            <div className="p-6 rounded-2xl bg-background border border-border">
+              <div className="text-4xl font-bold text-gradient-spark">98%</div>
+              <div className="mt-2 text-sm text-muted-foreground">{lang === "ar" ? "نسبة النجاح" : "Success Rate"}</div>
+            </div>
+            <div className="p-6 rounded-2xl bg-background border border-border">
+              <div className="text-4xl font-bold text-gradient-spark">10s</div>
+              <div className="mt-2 text-sm text-muted-foreground">{lang === "ar" ? "متوسط وقت المعالجة" : "Avg. Processing Time"}</div>
+            </div>
+            <div className="p-6 rounded-2xl bg-background border border-border">
+              <div className="text-4xl font-bold text-gradient-spark">24/7</div>
+              <div className="mt-2 text-sm text-muted-foreground">{lang === "ar" ? "جاهز للعمل" : "Ready to use"}</div>
+            </div>
           </div>
         </div>
       </section>
+
 
       {/* 📢 AdBanner */}
       <div className="max-w-6xl mx-auto px-5 sm:px-8 py-8">
