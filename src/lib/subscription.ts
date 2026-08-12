@@ -258,7 +258,7 @@ export function clearPerFilePayment() {
 // --- Dynamic File Repair Counter ---
 
 const REPAIRED_COUNT_KEY = 'dxfix_repaired_count';
-const BASE_REPAIRED_COUNT = 24850;
+const BASE_REPAIRED_COUNT = 50;
 
 /**
  * Get current cumulative repaired files count
