@@ -288,4 +288,47 @@ export function incrementRepairedFilesCount(): number {
   } catch {
     return BASE_REPAIRED_COUNT;
   }
-}
+}
+
+// --- Dynamic Visitor Counter ---
+const VISITOR_COUNT_KEY = 'dxfix_visitor_count';
+const BASE_VISITOR_COUNT = 8520;
+
+/**
+ * Get current visitor count
+ */
+export function getVisitorCount(): number {
+  if (!isClient()) return BASE_VISITOR_COUNT;
+  try {
+    const stored = localStorage.getItem(VISITOR_COUNT_KEY);
+    if (!stored) {
+      localStorage.setItem(VISITOR_COUNT_KEY, String(BASE_VISITOR_COUNT + 1));
+      return BASE_VISITOR_COUNT + 1;
+    }
+    const val = parseInt(stored, 10);
+    return isNaN(val) ? BASE_VISITOR_COUNT : val;
+  } catch {
+    return BASE_VISITOR_COUNT;
+  }
+}
+
+/**
+ * Track a new unique visit
+ */
+export function trackVisit(): number {
+  if (!isClient()) return BASE_VISITOR_COUNT;
+  try {
+    const sessionVisited = sessionStorage.getItem('dxfix_visited');
+    if (!sessionVisited) {
+      sessionStorage.setItem('dxfix_visited', 'true');
+      const current = getVisitorCount();
+      const updated = current + 1;
+      localStorage.setItem(VISITOR_COUNT_KEY, String(updated));
+      return updated;
+    }
+    return getVisitorCount();
+  } catch {
+    return BASE_VISITOR_COUNT;
+  }
+}
+

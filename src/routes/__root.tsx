@@ -12,6 +12,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { initPaddle } from "../lib/paddle";
+import { trackVisit } from "../lib/subscription";
 import { PwaInstallPrompt } from "../components/pwa-install-prompt";
 import { getLangDir, type Lang } from "../lib/i18n";
 import CookieBanner from "../components/cookie-banner";
@@ -195,6 +196,7 @@ function RootComponent() {
   useEffect(() => {
     if (!isMounted) return;
     initPaddle();
+    trackVisit();
 
   // Defer loading ad scripts until user consents to cookies.
     const adSenseId = import.meta.env.VITE_ADSENSE_CLIENT_ID || "ca-pub-8107638298388341";

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { getFeedbackEntries, approveFeedback, deleteFeedback, getUnapprovedCount } from "@/lib/feedback";
 import type { FeedbackEntry } from "@/lib/feedback";
 import { getViralLaunchStats } from "@/lib/viral-launch";
-import { getRepairedFilesCount } from "@/lib/subscription";
+import { getRepairedFilesCount, getVisitorCount } from "@/lib/subscription";
 
 const ADMIN_PASSWORD = "dxfix2026";
 
@@ -195,7 +195,7 @@ function AdminPage() {
     );
   }
 
-  const totalVisitors = Math.floor(Math.random() * 1500 + 8500);
+  const totalVisitors = getVisitorCount();
   const totalFixedFiles = getRepairedFilesCount();
   const activeProUsers = stats && !stats.error ? stats.activeSubs : Math.floor(Math.random() * 30 + 15);
   const totalRevenue = stats && !stats.error ? stats.totalRevenue : Math.floor(Math.random() * 500 + 1200);
