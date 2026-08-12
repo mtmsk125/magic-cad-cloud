@@ -430,10 +430,9 @@ function Index() {
             </a>
 
             {/* Task 5: Batch Processing */}
-            {!hasCompressor && (
-              <a href="/tool"
-                className="group relative bg-background border border-border rounded-2xl p-6 hover:border-accent/50 hover:shadow-[var(--shadow-spark)] transition-all duration-300 flex flex-col items-start text-start"
-              >
+            <a href="/tool"
+              className="group relative bg-background border border-border rounded-2xl p-6 hover:border-accent/50 hover:shadow-[var(--shadow-spark)] transition-all duration-300 flex flex-col items-start text-start"
+            >
                 <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-violet-500/20 to-violet-500/5 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
                   📦
                 </div>
@@ -458,7 +457,6 @@ function Index() {
                   </span>
                 </div>
               </a>
-            )}
 
             {/* Task 6: SVG to DXF */}
             <a href="/tool"
