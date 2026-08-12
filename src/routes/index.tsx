@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import heroImg from "@/assets/hero-cnc.jpg";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { AdBanner } from "@/components/AdBanner";
