@@ -7,9 +7,9 @@ import { AdBanner } from "@/components/AdBanner";
 export const Route = createFileRoute("/articles")({
   head: () => ({
     meta: [
-      { title: "مقالات ودلائل إصلاح ملفات DXF والقص الميكانيكي | DXFix Blog" },
-      { name: "description", content: "مجموعة مقالات ودلائل تعليمية شاملة لمشغلي ماكينات الليزر والبلازما والـ CNC لإصلاح أخطاء DXF وتحسين كفاءة القص." },
-      { name: "keywords", content: "إصلاح ملفات DXF, ماكينات CNC, قص ليزر, خطوط مكررة DXF, تحويل SVG إلى DXF, نصائح ورش التصنيع" },
+      { title: "الدليل الشامل والمقالات | DXFix User Manual & Guides" },
+      { name: "description", content: "دليل الاستخدام الشامل لأداة DXFix ومجموعة مقالات ودلائل تعليمية لورش القص بالليزر والبلازما والـ CNC." },
+      { name: "keywords", content: "دليل استخدام DXFix, إصلاح ملفات DXF, ماكينات CNC, قص ليزر, خطوط مكررة DXF, تحويل SVG إلى DXF, نصائح ورش التصنيع" },
       { name: "robots", content: "index, follow" },
     ],
   }),
@@ -18,6 +18,46 @@ export const Route = createFileRoute("/articles")({
 
 const ARTICLES = [
   {
+    id: "user-guide-full-manual",
+    titleAr: "📖 دليل الاستخدام الشامل: كيفية فحص وإصلاح ملفات DXF لورش الـ CNC والليزر والبلازما",
+    titleEn: "📖 Complete User Guide: How to Inspect & Repair DXF Files for CNC Laser Workshops",
+    summaryAr: "دليل الاستخدام التفصيلي لأداة DXFix: كيفية رفع الملفات، قراءة نتائج الفحص الميكانيكي، إغلاق المسارات، معالجة الملفات المجمعة، واستخراج ملفات قياسية جاهزة للماكينة.",
+    summaryEn: "Comprehensive step-by-step user manual for DXFix: uploading files, reading mechanical diagnostics, closing loops, bulk processing, and exporting clean DXF files.",
+    date: "2026-08-12",
+    readTime: "8 دقائق",
+    isGuide: true,
+    contentAr: `
+      مرحباً بك في الدليل الرسمي والتعليمي المعتمد لأداة **DXFix** المصممة خصيصاً لورش القص بالليزر، البلازما، والراوتر CNC في الوطن العربي.
+
+      ---
+
+      ### 1️⃣ الخطوة الأولى: رفع وإدخال التصميم
+      - قم بفتح أداة **DXFix** واضغط على زر **"ارفع ملف DXF"** أو اسحب الملف مباشرة وإفلاته داخل مربع الرفع.
+      - تدعم الأداة ملفات **DXF** بجميع إصداراتها (AutoCAD R12 إلى R2026) بالإضافة إلى تحويل صيغ **SVG** الرسومية.
+
+      ---
+
+      ### 2️⃣ الخطوة الثانية: التشخيص والتقييم الآلي (CNC Readiness Score)
+      تقوم الخوارزمية بفحص الملف خلال أقل من 5 ثوانٍ وتعرض لك تقريراً من **100 درجة**:
+      - **كشف الخطوط المكررة (Duplicate Lines):** دمج الخطوط المتراكبة لمنع إمرار شعاع الليزر مرتين وحرق الحواف.
+      - **كشف المسارات المفتوحة (Open Loops):** تحديد الفجوات الصغيرة التي تمنع برنامج القص من التعرف على الشكل المغلق.
+      - **الطبقات الفوضوية (Unorganized Layers):** تجميع خطوط القطع الداخلي والقطع الخارجي والنقش تلقائياً.
+      - **حساب الأبعاد الكلية والحجم (Bounds & Perimeter):** حساب الطول الإجمالي للمسار لساعات التشغيل وتكلفة المتر.
+
+      ---
+
+      ### 3️⃣ الخطوة الثالثة: الضغط على زر الإصلاح المباشر 🔧
+      - بنقرة واحدة على زر **"إصلاح الكيانات والأخطاء"**، يتم تطبيق العلاج التلقائي لكافة المشاكل دون التأثير على الأبعاد الهندسية الأصلية.
+      - يمكنك استخدام خيار **"محاكاة مسار القص 3D"** لمشاهدة حركة رأس الماكينة افتراضياً قبل البدء بالقص الفعلي.
+
+      ---
+
+      ### 4️⃣ الخطوة الرابعة: التنزيل المباشر للملف النظيف ⬇️
+      - بعد الإصلاح، اضغط على زر **"تحميل الملف"** للحصول على ملف DXF نظيف ومصقول بنسبة 100%.
+      - الملف الناتج متوافق 100% مع جميع برامج التشغيل الشهيرة مثل: **LaserCAD, RDWorks, Mach3, FastCAM, SheetCAM, ArtCAM**.
+    `,
+  },
+  {
     id: "fix-duplicate-lines-dxf",
     titleAr: "كيفية اكتشاف وإصلاح الخطوط المكررة في ملفات DXF لورش الليزر والـ CNC",
     titleEn: "How to Detect and Fix Duplicate Lines in DXF Files for CNC Laser Cutting",
@@ -25,6 +65,7 @@ const ARTICLES = [
     summaryEn: "Duplicate and overlapping lines are the leading cause of machine stalls and material burn in CNC laser cutting. Learn how to fix them automatically.",
     date: "2026-08-01",
     readTime: "5 دقائق",
+    isGuide: false,
     contentAr: `
       تعتبر مشكلة الخطوط المكررة والمتداخلة في ملفات التصميم الهندسية (DXF) من أكثر المشاكل الشائعة التي تواجه مشغلي ورش القص بالليزر والبلازما والـ CNC.
       
@@ -50,6 +91,7 @@ const ARTICLES = [
     summaryEn: "A complete guide on detecting microscopic gaps in DXF paths and closing open polylines to prevent cutter interruptions.",
     date: "2026-07-28",
     readTime: "6 دقائق",
+    isGuide: false,
     contentAr: `
       من الشروط الأساسية لبدء عملية القص الميكانيكي الصحيحة أن تكون جميع الأشكال المغلقة (الدوائر، المربعات، الأسطح الداخلية) متصلة بنسبة 100%.
 
@@ -60,60 +102,51 @@ const ARTICLES = [
       تقوم أداة DXFix بفحص نقاط الاتصال وتعيين التفاوت المسموح (Tolerance)، حيث يتم سد أي فجوات ميكرونية وإغلاق البوليلاين (Polyline) تلقائياً، ليعطيك الملف تقييم 100/100 لسلامة القص.
     `,
   },
-  {
-    id: "svg-to-dxf-conversion-guide",
-    titleAr: "دليل تحويل تصاميم SVG إلى ملفات DXF لورش الـ CNC والقص",
-    titleEn: "Complete Guide to Converting SVG Designs to Clean DXF for CNC Machines",
-    summaryAr: "تعلم كيفية تحويل تصاميم الفيكتور والشعارات من صيغة SVG إلى صيغة DXF متوافقة مع ماكينات القص مع الحفاظ على الأبعاد والمنحنيات.",
-    summaryEn: "Learn how to convert vector art and logos from SVG to DXF format compatible with CNC cutters while preserving smooth curves.",
-    date: "2026-07-20",
-    readTime: "4 دقائق",
-    contentAr: `
-      تحتاج العديد من الورش إلى تحويل الصور والشعارات المصممة بصيغة SVG إلى صيغة DXF القياسية.
-      
-      في هذا الدليل، نوضح كيف تقوم أداة DXFix بتحويل جميع منحنيات البيزيه (Bezier Curves) والأقواس إلى كيانات DXF صحيحة جاهزة للقص دون الحاجة لتثبيت برامج مثل Illustrator أو AutoCAD.
-    `,
-  },
 ];
 
 function ArticlesPage() {
   const [lang, setLang] = useState<Lang>("ar");
-  const [activeArticle, setActiveArticle] = useState<string | null>(null);
+  const [activeArticle, setActiveArticle] = useState<string | null>("user-guide-full-manual");
   const dir = getLangDir(lang);
 
   const selectedArticle = ARTICLES.find((a) => a.id === activeArticle);
 
   return (
-    <div dir={dir} className="min-h-screen bg-background text-foreground font-sans selection:bg-accent/30 selection:text-accent">
-      <header className="border-b border-border/60 bg-background/80 backdrop-blur-md sticky top-0 z-40">
-        <div className="max-w-6xl mx-auto px-5 py-4 flex items-center justify-between">
-          <a href="/" className="font-display font-bold text-xl flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-sm bg-accent" />
-            DXFix
+    <div dir={dir} className="min-h-screen bg-background text-foreground font-sans selection:bg-accent/30 selection:text-accent relative overflow-x-hidden">
+      {/* Background blueprint grid */}
+      <div className="absolute inset-0 blueprint-grid opacity-30 pointer-events-none" />
+
+      {/* Header */}
+      <header className="sticky top-0 z-40 backdrop-blur-xl bg-background/80 border-b border-border/60">
+        <div className="max-w-7xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
+          <a href="/" className="flex items-center gap-2 font-display font-bold text-lg">
+            <span className="inline-block w-2.5 h-2.5 rounded-sm bg-accent animate-spark" />
+            <span>DX<span className="text-gradient-blueprint">fix</span></span>
           </a>
           <div className="flex items-center gap-4">
-            <a href="/tool" className="text-sm font-semibold hover:text-accent transition">
-              {lang === "ar" ? "الأداة" : "Tool"}
+            <a href="/tool" className="hidden sm:inline-flex px-4 py-2 rounded-md bg-accent text-accent-foreground font-semibold text-sm hover:opacity-90 transition shadow-[var(--shadow-spark)]">
+              {lang === "ar" ? "الأداة المباشرة" : "Tool"}
             </a>
             <LanguageSwitcher currentLang={lang} onLangChange={setLang} />
           </div>
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-5 py-12">
+      {/* Main Container */}
+      <main className="relative z-10 max-w-5xl mx-auto px-5 sm:px-8 py-14">
         {!selectedArticle ? (
           <div>
             <div className="text-center max-w-3xl mx-auto mb-12">
-              <span className="font-mono text-xs text-accent uppercase tracking-widest">
-                {lang === "ar" ? "مدونة ودلائل التصنيع" : "Knowledge Base & Guides"}
+              <span className="inline-flex items-center gap-2 font-mono text-xs px-3 py-1.5 rounded-full border border-accent/40 text-accent bg-accent/5">
+                📚 {lang === "ar" ? "مدونة ودلائل استخدام DXFix" : "User Manual & Guides"}
               </span>
-              <h1 className="font-display text-4xl font-bold mt-2">
-                {lang === "ar" ? "مقالات ودلائل قص وحلول ملفات DXF" : "DXF Repair & CNC Cutting Guides"}
+              <h1 className="font-display text-4xl sm:text-5xl font-bold mt-4">
+                {lang === "ar" ? "الدليل الشامل ومقالات القص الميكانيكي" : "DXF Manual & CNC Cutting Guides"}
               </h1>
-              <p className="mt-4 text-muted-foreground text-lg">
+              <p className="mt-4 text-muted-foreground text-base sm:text-lg leading-relaxed">
                 {lang === "ar"
-                  ? "كل ما تحتاج معرفته عن تحسين ملفات الـ CAD، إصلاح الأخطاء، وحلول تشغيل ماكينات الليزر والبلازما والـ CNC."
-                  : "Everything you need to know about CAD file optimization, error repair, and CNC laser cutting efficiency."}
+                  ? "كل ما تحتاج معرفته عن كيفية استخدام أداة DXFix، إصلاح أخطاء الـ CAD، وحلول تشغيل ماكينات الليزر والبلازما والـ CNC."
+                  : "Everything you need to know about using DXFix, CAD file error repair, and CNC laser cutting efficiency."}
               </p>
             </div>
 
@@ -127,7 +160,9 @@ function ArticlesPage() {
                 <div
                   key={art.id}
                   onClick={() => setActiveArticle(art.id)}
-                  className="group bg-card border border-border rounded-2xl p-6 hover:border-accent/50 cursor-pointer transition flex flex-col justify-between"
+                  className={`group bg-card/70 border rounded-2xl p-6 hover:border-accent/60 cursor-pointer transition flex flex-col justify-between backdrop-blur-sm shadow-[var(--shadow-elegant)] ${
+                    art.isGuide ? "border-accent/50 bg-gradient-to-br from-accent/10 to-card" : "border-border/80"
+                  }`}
                 >
                   <div>
                     <div className="flex items-center justify-between font-mono text-xs text-muted-foreground mb-3">
@@ -142,7 +177,7 @@ function ArticlesPage() {
                     </p>
                   </div>
                   <div className="mt-6 flex items-center gap-2 font-semibold text-accent text-sm">
-                    <span>{lang === "ar" ? "اقرأ المقال الكامل" : "Read full article"}</span>
+                    <span>{lang === "ar" ? "اقرأ الدليل الكامل" : "Read full guide"}</span>
                     <span>{dir === "rtl" ? "←" : "→"}</span>
                   </div>
                 </div>
@@ -153,18 +188,24 @@ function ArticlesPage() {
           <div className="max-w-3xl mx-auto">
             <button
               onClick={() => setActiveArticle(null)}
-              className="mb-6 inline-flex items-center gap-2 text-sm font-semibold text-accent hover:underline"
+              className="mb-6 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent/10 border border-accent/30 text-accent font-semibold text-sm hover:bg-accent/20 transition"
             >
-              {dir === "rtl" ? "→ العودة إلى قائمة المقالات" : "← Back to all articles"}
+              <span>{dir === "rtl" ? "→" : "←"}</span>
+              <span>{lang === "ar" ? "العودة لقائمة المقالات والدليل" : "Back to all guides"}</span>
             </button>
 
-            <article className="bg-card border border-border rounded-3xl p-8 sm:p-10">
+            <article className="bg-card/80 border border-border/80 rounded-3xl p-8 sm:p-10 backdrop-blur-md shadow-[var(--shadow-spark)]">
               <div className="flex items-center gap-4 font-mono text-xs text-muted-foreground mb-4">
                 <span>📅 {selectedArticle.date}</span>
                 <span>⏱️ {selectedArticle.readTime}</span>
+                {selectedArticle.isGuide && (
+                  <span className="px-2 py-0.5 rounded-full bg-accent/20 text-accent border border-accent/40 font-semibold">
+                    {lang === "ar" ? "دليل معتمد" : "Official Guide"}
+                  </span>
+                )}
               </div>
 
-              <h1 className="font-display text-3xl sm:text-4xl font-bold mb-6">
+              <h1 className="font-display text-3xl sm:text-4xl font-bold mb-6 text-foreground">
                 {lang === "ar" ? selectedArticle.titleAr : selectedArticle.titleEn}
               </h1>
 
@@ -180,7 +221,7 @@ function ArticlesPage() {
         )}
       </main>
 
-      <footer className="border-t border-border/60 mt-16 py-8 text-center text-xs text-muted-foreground">
+      <footer className="border-t border-border/60 mt-16 py-8 text-center text-xs text-muted-foreground font-mono">
         © 2026 DXFix. جميع الحقوق محفوظة.
       </footer>
     </div>

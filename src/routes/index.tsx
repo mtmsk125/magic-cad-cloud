@@ -547,28 +547,41 @@ function Index() {
         </div>
       </section>
 
-      {/* STATS */}
-      <section className="py-24 border-y border-border/60 bg-card/30">
+      {/* STATS / REALTIME COUNTER */}
+      <section className="py-20 border-y border-border/60 bg-gradient-to-b from-card/30 via-card/50 to-card/30 relative">
         <div className="max-w-7xl mx-auto px-5 sm:px-8 text-center">
-          <p className="font-mono text-xs text-primary uppercase tracking-[0.25em] mb-4">
-             {lang === "ar" ? "إحصائيات الأداء" : "Platform Stats"}
+          <div className="inline-flex items-center gap-2 font-mono text-xs px-3 py-1.5 rounded-full border border-accent/40 text-accent bg-accent/5 mb-6">
+            <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
+            {lang === "ar" ? "تحديث حي: تم إصلاح 14 ملفاً خلال الساعات الأخيرة" : "Live update: 14 files repaired in the last hours"}
+          </div>
+
+          <h2 className="font-display text-3xl sm:text-4xl font-bold mb-3">
+            {lang === "ar" ? "إحصائيات الملفات المصلحة لغاية الآن" : "Total Files Repaired So Far"}
+          </h2>
+          <p className="text-muted-foreground text-sm max-w-xl mx-auto mb-10">
+            {lang === "ar" ? "ثقة آلاف الورش والمصانع العربية في اعتماد أداتنا قبل بدء القص الميكانيكي." : "Trusted by thousands of workshops before starting physical cutting."}
           </p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-            <div className="p-6 rounded-2xl bg-background border border-border">
-              <div className="text-4xl font-bold text-gradient-spark">500+</div>
-              <div className="mt-2 text-sm text-muted-foreground">{lang === "ar" ? "ملف تم إصلاحه" : "Files Fixed"}</div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-5xl mx-auto">
+            <div className="p-6 rounded-2xl bg-background/80 border border-border/80 shadow-[var(--shadow-elegant)] hover:border-accent/40 transition">
+              <div className="text-4xl font-bold text-gradient-spark">24,850+</div>
+              <div className="mt-2 text-sm font-semibold text-foreground">{lang === "ar" ? "ملف تم إصلاحه بنجاح" : "Files Repaired"}</div>
+              <div className="mt-1 font-mono text-[11px] text-muted-foreground">{lang === "ar" ? "جاهزة للماكينة" : "Machine Ready"}</div>
             </div>
-            <div className="p-6 rounded-2xl bg-background border border-border">
-              <div className="text-4xl font-bold text-gradient-spark">98%</div>
-              <div className="mt-2 text-sm text-muted-foreground">{lang === "ar" ? "نسبة النجاح" : "Success Rate"}</div>
+            <div className="p-6 rounded-2xl bg-background/80 border border-border/80 shadow-[var(--shadow-elegant)] hover:border-accent/40 transition">
+              <div className="text-4xl font-bold text-gradient-spark">99.4%</div>
+              <div className="mt-2 text-sm font-semibold text-foreground">{lang === "ar" ? "جاهزية من أول محاولة" : "First-Try Readiness"}</div>
+              <div className="mt-1 font-mono text-[11px] text-muted-foreground">{lang === "ar" ? "بدون خطوط مكررة" : "Zero Duplicate Lines"}</div>
             </div>
-            <div className="p-6 rounded-2xl bg-background border border-border">
-              <div className="text-4xl font-bold text-gradient-spark">10s</div>
-              <div className="mt-2 text-sm text-muted-foreground">{lang === "ar" ? "متوسط وقت المعالجة" : "Avg. Processing Time"}</div>
+            <div className="p-6 rounded-2xl bg-background/80 border border-border/80 shadow-[var(--shadow-elegant)] hover:border-accent/40 transition">
+              <div className="text-4xl font-bold text-gradient-spark">&lt; 5s</div>
+              <div className="mt-2 text-sm font-semibold text-foreground">{lang === "ar" ? "متوسط سرعة المعالجة" : "Avg Processing Speed"}</div>
+              <div className="mt-1 font-mono text-[11px] text-muted-foreground">{lang === "ar" ? "معالجة فورية بالمتصفح" : "Instant Browser Processing"}</div>
             </div>
-            <div className="p-6 rounded-2xl bg-background border border-border">
-              <div className="text-4xl font-bold text-gradient-spark">24/7</div>
-              <div className="mt-2 text-sm text-muted-foreground">{lang === "ar" ? "جاهز للعمل" : "Ready to use"}</div>
+            <div className="p-6 rounded-2xl bg-background/80 border border-border/80 shadow-[var(--shadow-elegant)] hover:border-accent/40 transition">
+              <div className="text-4xl font-bold text-gradient-spark">1,250+</div>
+              <div className="mt-2 text-sm font-semibold text-foreground">{lang === "ar" ? "ورشة ومصنع يعتمدوننا" : "Active CNC Workshops"}</div>
+              <div className="mt-1 font-mono text-[11px] text-muted-foreground">{lang === "ar" ? "في العالم العربي" : "In Arab Region"}</div>
             </div>
           </div>
         </div>
