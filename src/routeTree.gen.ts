@@ -9,45 +9,20 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as AdminRouteImport } from './routes/admin'
-import { Route as ArticlesRouteImport } from './routes/articles'
-import { Route as ContactRouteImport } from './routes/contact'
-import { Route as PricingRouteImport } from './routes/pricing'
-import { Route as PrivacyRouteImport } from './routes/privacy'
-import { Route as TermsRouteImport } from './routes/terms'
 import { Route as ToolRouteImport } from './routes/tool'
-import { Route as ToolsDxfConverterRouteImport } from './routes/tools/dxf-converter'
+import { Route as TermsRouteImport } from './routes/terms'
+import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as PricingRouteImport } from './routes/pricing'
+import { Route as ContactRouteImport } from './routes/contact'
+import { Route as ArticlesRouteImport } from './routes/articles'
+import { Route as AdminRouteImport } from './routes/admin'
+import { Route as IndexRouteImport } from './routes/index'
 import { Route as ToolsFileCompressorRouteImport } from './routes/tools/file-compressor'
+import { Route as ToolsDxfConverterRouteImport } from './routes/tools/dxf-converter'
 
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminRoute = AdminRouteImport.update({
-  id: '/admin',
-  path: '/admin',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ArticlesRoute = ArticlesRouteImport.update({
-  id: '/articles',
-  path: '/articles',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ContactRoute = ContactRouteImport.update({
-  id: '/contact',
-  path: '/contact',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PricingRoute = PricingRouteImport.update({
-  id: '/pricing',
-  path: '/pricing',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PrivacyRoute = PrivacyRouteImport.update({
-  id: '/privacy',
-  path: '/privacy',
+const ToolRoute = ToolRouteImport.update({
+  id: '/tool',
+  path: '/tool',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TermsRoute = TermsRouteImport.update({
@@ -55,19 +30,44 @@ const TermsRoute = TermsRouteImport.update({
   path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ToolRoute = ToolRouteImport.update({
-  id: '/tool',
-  path: '/tool',
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ToolsDxfConverterRoute = ToolsDxfConverterRouteImport.update({
-  id: '/tools/dxf-converter',
-  path: '/tools/dxf-converter',
+const PricingRoute = PricingRouteImport.update({
+  id: '/pricing',
+  path: '/pricing',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ContactRoute = ContactRouteImport.update({
+  id: '/contact',
+  path: '/contact',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ArticlesRoute = ArticlesRouteImport.update({
+  id: '/articles',
+  path: '/articles',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ToolsFileCompressorRoute = ToolsFileCompressorRouteImport.update({
   id: '/tools/file-compressor',
   path: '/tools/file-compressor',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ToolsDxfConverterRoute = ToolsDxfConverterRouteImport.update({
+  id: '/tools/dxf-converter',
+  path: '/tools/dxf-converter',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -162,46 +162,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin': {
-      id: '/admin'
-      path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof AdminRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/articles': {
-      id: '/articles'
-      path: '/articles'
-      fullPath: '/articles'
-      preLoaderRoute: typeof ArticlesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/contact': {
-      id: '/contact'
-      path: '/contact'
-      fullPath: '/contact'
-      preLoaderRoute: typeof ContactRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/pricing': {
-      id: '/pricing'
-      path: '/pricing'
-      fullPath: '/pricing'
-      preLoaderRoute: typeof PricingRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/privacy': {
-      id: '/privacy'
-      path: '/privacy'
-      fullPath: '/privacy'
-      preLoaderRoute: typeof PrivacyRouteImport
+    '/tool': {
+      id: '/tool'
+      path: '/tool'
+      fullPath: '/tool'
+      preLoaderRoute: typeof ToolRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/terms': {
@@ -211,18 +176,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/tool': {
-      id: '/tool'
-      path: '/tool'
-      fullPath: '/tool'
-      preLoaderRoute: typeof ToolRouteImport
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/tools/dxf-converter': {
-      id: '/tools/dxf-converter'
-      path: '/tools/dxf-converter'
-      fullPath: '/tools/dxf-converter'
-      preLoaderRoute: typeof ToolsDxfConverterRouteImport
+    '/pricing': {
+      id: '/pricing'
+      path: '/pricing'
+      fullPath: '/pricing'
+      preLoaderRoute: typeof PricingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/contact': {
+      id: '/contact'
+      path: '/contact'
+      fullPath: '/contact'
+      preLoaderRoute: typeof ContactRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/articles': {
+      id: '/articles'
+      path: '/articles'
+      fullPath: '/articles'
+      preLoaderRoute: typeof ArticlesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/tools/file-compressor': {
@@ -230,6 +223,13 @@ declare module '@tanstack/react-router' {
       path: '/tools/file-compressor'
       fullPath: '/tools/file-compressor'
       preLoaderRoute: typeof ToolsFileCompressorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tools/dxf-converter': {
+      id: '/tools/dxf-converter'
+      path: '/tools/dxf-converter'
+      fullPath: '/tools/dxf-converter'
+      preLoaderRoute: typeof ToolsDxfConverterRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
