@@ -7,31 +7,138 @@ export const Route = createFileRoute("/terms")({
   head: () => ({
     meta: [
       { title: "شروط الخدمة | Terms of Service — DXFix" },
-      { name: "description", content: "شروط الأحكام والاستخدام لخدمات وموقع DXFix لتقييم وإصلاح ملفات DXF لورش CNC." },
+      {
+        name: "description",
+        content: "شروط الأحكام والاستخدام لخدمات وموقع DXFix لتقييم وإصلاح ملفات DXF لورش CNC.",
+      },
       { name: "robots", content: "index, follow" },
     ],
   }),
   component: TermsPage,
 });
 
+const SECTIONS = [
+  {
+    num: "1",
+    titleAr: "قبول الشروط",
+    titleEn: "Acceptance of Terms",
+    textAr:
+      "باستخدامك لموقع DXFix وأدواته، فإنك توافق على الالتزام بشروط الخدمة هذه وجميع القوانين واللوائح المعمول بها.",
+    textEn:
+      "By accessing and using DXFix services, you agree to be bound by these Terms of Service and applicable laws.",
+  },
+  {
+    num: "2",
+    titleAr: "طبيعة الخدمة والمسؤولية",
+    titleEn: "Service Nature & Disclaimer",
+    textAr:
+      "يوفر موقع DXFix أدوات تحليلية وتلقائية لفحص وإصلاح ملفات DXF. يبذل الموقع قصارى جهده لتقديم أدق نتائج الإصلاح، ولكن يتعين على المشغّل مراجعة وتأكيد أبعاد الملف قبل إجراء عمليات القص الفعلي.",
+    textEn:
+      "DXFix provides automated tools to analyze and repair DXF files. While we strive for maximum accuracy, operators must verify file dimensions prior to physical cutting.",
+  },
+  {
+    num: "3",
+    titleAr: "حقوق الملكية الفكرية",
+    titleEn: "Intellectual Property",
+    textAr:
+      "يحتفظ المستخدم بكامل ملكيته الفكرية والتصميمية للملفات التي يرفعها على الموقع. لا يدعي موقع DXFix أي ملكية لأعمال المستخدمين.",
+    textEn:
+      "Users retain full intellectual property ownership of all files uploaded to DXFix. DXFix claims no ownership over user work.",
+  },
+  {
+    num: "4",
+    titleAr: "الاستخدام المقبول",
+    titleEn: "Acceptable Use",
+    textAr:
+      "يُحظر استخدام الموقع لأغراض غير قانونية أو ضارة أو مخالفة للأنظمة المعمول بها. نحتفظ بالحق في إيقاف الوصول عند الإخلال بهذه الشروط.",
+    textEn:
+      "Using the site for illegal, harmful, or regulatory-violating purposes is prohibited. We reserve the right to suspend access upon breach of these terms.",
+  },
+];
+
 function TermsPage() {
   const [lang, setLang] = useState<Lang>("ar");
   const dir = getLangDir(lang);
 
   return (
-    <div dir={dir} className="min-h-screen bg-background text-foreground font-sans selection:bg-accent/30 selection:text-accent relative overflow-x-hidden">
-      {/* Background blueprint grid */}
-      <div className="absolute inset-0 blueprint-grid opacity-30 pointer-events-none" />
+    <div
+      dir={dir}
+      style={{
+        minHeight: "100vh",
+        backgroundColor: "var(--background)",
+        color: "var(--foreground)",
+        position: "relative",
+        overflowX: "hidden",
+        fontFamily: "'Space Grotesk', 'IBM Plex Sans Arabic', system-ui, sans-serif",
+      }}
+    >
+      <div
+        className="absolute inset-0 blueprint-grid"
+        style={{ opacity: 0.3, pointerEvents: "none" }}
+      />
 
       {/* Header */}
-      <header className="sticky top-0 z-40 backdrop-blur-xl bg-background/80 border-b border-border/60">
-        <div className="max-w-7xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
-          <a href="/" className="flex items-center gap-2 font-display font-bold text-lg">
-            <span className="inline-block w-2.5 h-2.5 rounded-sm bg-accent animate-spark" />
-            <span>DX<span className="text-gradient-blueprint">fix</span></span>
+      <header
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 40,
+          backdropFilter: "blur(20px)",
+          backgroundColor: "rgba(11,14,20,0.85)",
+          borderBottom: "1px solid rgba(30,41,59,0.7)",
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 1200,
+            margin: "0 auto",
+            padding: "0 24px",
+            height: 64,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <a
+            href="/"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              fontWeight: 700,
+              fontSize: 18,
+              color: "var(--foreground)",
+              textDecoration: "none",
+            }}
+          >
+            <span
+              className="animate-spark"
+              style={{
+                display: "inline-block",
+                width: 10,
+                height: 10,
+                borderRadius: 2,
+                backgroundColor: "var(--accent)",
+              }}
+            />
+            <span>
+              DX<span className="text-gradient-blueprint">fix</span>
+            </span>
           </a>
-          <div className="flex items-center gap-4">
-            <a href="/tool" className="hidden sm:inline-flex px-4 py-2 rounded-md bg-accent text-accent-foreground font-semibold text-sm hover:opacity-90 transition shadow-[var(--shadow-spark)]">
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <a
+              href="/tool"
+              style={{
+                display: "inline-flex",
+                padding: "8px 16px",
+                borderRadius: 8,
+                backgroundColor: "var(--accent)",
+                color: "var(--accent-foreground)",
+                fontWeight: 600,
+                fontSize: 14,
+                textDecoration: "none",
+              }}
+            >
               {lang === "ar" ? "جرب الأداة" : "Try Tool"}
             </a>
             <LanguageSwitcher currentLang={lang} onLangChange={setLang} />
@@ -39,69 +146,119 @@ function TermsPage() {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="relative z-10 max-w-4xl mx-auto px-5 sm:px-8 py-16">
-        <div className="text-center mb-12">
-          <span className="inline-flex items-center gap-2 font-mono text-xs px-3 py-1.5 rounded-full border border-accent/40 text-accent bg-accent/5">
+      {/* Main */}
+      <main
+        style={{
+          position: "relative",
+          zIndex: 10,
+          maxWidth: 800,
+          margin: "0 auto",
+          padding: "64px 24px",
+        }}
+      >
+        <div style={{ textAlign: "center", marginBottom: 48 }}>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              fontFamily: "monospace",
+              fontSize: 12,
+              padding: "6px 14px",
+              borderRadius: 999,
+              border: "1px solid rgba(16,185,129,0.4)",
+              color: "var(--accent)",
+              backgroundColor: "rgba(16,185,129,0.05)",
+            }}
+          >
             📜 {lang === "ar" ? "الشروط والتنظيم" : "Terms & Governance"}
           </span>
-          <h1 className="font-display text-4xl sm:text-5xl font-bold mt-4">
+          <h1 style={{ fontWeight: 800, fontSize: 40, marginTop: 16, lineHeight: 1.2 }}>
             {lang === "ar" ? "شروط الخدمة والاستخدام" : "Terms of Service"}
           </h1>
-          <p className="text-sm text-muted-foreground mt-3 font-mono">
+          <p
+            style={{
+              fontSize: 13,
+              color: "var(--muted-foreground)",
+              marginTop: 10,
+              fontFamily: "monospace",
+            }}
+          >
             {lang === "ar" ? "آخر تحديث: 12 أغسطس 2026" : "Last updated: August 12, 2026"}
           </p>
         </div>
 
-        <div className="space-y-8 leading-relaxed">
-          <section className="bg-card/70 border border-border/80 rounded-2xl p-8 backdrop-blur-sm shadow-[var(--shadow-elegant)]">
-            <h2 className="font-display text-xl font-bold mb-3 text-accent flex items-center gap-2">
-              <span>1.</span>
-              <span>{lang === "ar" ? "قبول الشروط" : "Acceptance of Terms"}</span>
-            </h2>
-            <p className="text-muted-foreground text-sm sm:text-base leading-relaxed">
-              {lang === "ar"
-                ? "باستخدامك لموقع DXFix وأدواته، فإنك توافق على الالتزام بشروط الخدمة هذه وجميع القوانين واللوائح المعمول بها."
-                : "By accessing and using DXFix services, you agree to be bound by these Terms of Service and applicable laws."}
-            </p>
-          </section>
-
-          <section className="bg-card/70 border border-border/80 rounded-2xl p-8 backdrop-blur-sm shadow-[var(--shadow-elegant)]">
-            <h2 className="font-display text-xl font-bold mb-3 text-accent flex items-center gap-2">
-              <span>2.</span>
-              <span>{lang === "ar" ? "طبيعة الخدمة والمسؤولية" : "Service Nature & Disclaimer"}</span>
-            </h2>
-            <p className="text-muted-foreground text-sm sm:text-base leading-relaxed">
-              {lang === "ar"
-                ? "يوفر موقع DXFix أدوات تحليلية وتلقائية لفحص وإصلاح ملفات DXF والتصاميم الهندسية. يبذل الموقع قصارى جهده لتقديم أدق نتائج الإصلاح، ولكن يتعين على المشغّل مراجعة وتأكيد أبعاد الملف قبل إجراء عمليات القص الفعلي على الماكينة."
-                : "DXFix provides automated tools to analyze and repair DXF files. While we strive for maximum accuracy, operators must verify file dimensions prior to physical cutting."}
-            </p>
-          </section>
-
-          <section className="bg-card/70 border border-border/80 rounded-2xl p-8 backdrop-blur-sm shadow-[var(--shadow-elegant)]">
-            <h2 className="font-display text-xl font-bold mb-3 text-accent flex items-center gap-2">
-              <span>3.</span>
-              <span>{lang === "ar" ? "حقوق الملكية الفكرية" : "Intellectual Property"}</span>
-            </h2>
-            <p className="text-muted-foreground text-sm sm:text-base leading-relaxed">
-              {lang === "ar"
-                ? "يحتفظ المستخدم بكامل ملكيته الفكرية والتصميمية للملفات التي يرفعها على الموقع. لا يدعي موقع DXFix أي ملكية لأعمال المستخدمين."
-                : "Users retain full intellectual property ownership of all files uploaded to DXFix."}
-            </p>
-          </section>
+        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+          {SECTIONS.map((sec) => (
+            <section
+              key={sec.num}
+              style={{
+                backgroundColor: "rgba(17,22,30,0.7)",
+                border: "1px solid rgba(30,41,59,0.8)",
+                borderRadius: 16,
+                padding: 32,
+                backdropFilter: "blur(12px)",
+                boxShadow: "var(--shadow-elegant)",
+              }}
+            >
+              <h2
+                style={{
+                  fontWeight: 700,
+                  fontSize: 18,
+                  marginBottom: 12,
+                  color: "var(--accent)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <span>{sec.num}.</span>
+                <span>{lang === "ar" ? sec.titleAr : sec.titleEn}</span>
+              </h2>
+              <p style={{ color: "var(--muted-foreground)", fontSize: 15, lineHeight: 1.8 }}>
+                {lang === "ar" ? sec.textAr : sec.textEn}
+              </p>
+            </section>
+          ))}
         </div>
 
-        <div className="mt-12 text-center">
-          <a href="/" className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-accent/10 border border-accent/30 text-accent font-semibold hover:bg-accent/20 transition">
+        <div style={{ marginTop: 48, textAlign: "center" }}>
+          <a
+            href="/"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "12px 24px",
+              borderRadius: 12,
+              backgroundColor: "rgba(16,185,129,0.1)",
+              border: "1px solid rgba(16,185,129,0.3)",
+              color: "var(--accent)",
+              fontWeight: 600,
+              textDecoration: "none",
+            }}
+          >
             <span>{dir === "rtl" ? "←" : "→"}</span>
             <span>{lang === "ar" ? "العودة إلى الصفحة الرئيسية" : "Back to Home"}</span>
           </a>
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-border/60 py-8 text-center text-xs text-muted-foreground font-mono">
+      <footer
+        style={{
+          borderTop: "1px solid rgba(30,41,59,0.6)",
+          padding: "32px 24px",
+          textAlign: "center",
+          fontSize: 12,
+          color: "var(--muted-foreground)",
+          fontFamily: "monospace",
+        }}
+      >
         © 2026 DXFix. جميع الحقوق محفوظة.
+        {" | "}
+        <a href="/privacy" style={{ color: "var(--accent)", textDecoration: "none" }}>
+          {lang === "ar" ? "سياسة الخصوصية" : "Privacy Policy"}
+        </a>
       </footer>
     </div>
   );
