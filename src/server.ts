@@ -381,6 +381,81 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
     });
   }
 
+  // ─── Site Statistics (real, server-persisted) ──────────────────────
+  // Replaces the old fake localStorage counters with real file-based stats.
+  const STATS_FILE = join(process.cwd(), 'stats.json');
+
+  interface SiteStats {
+    filesRepaired: number;
+    visitors: number;
+    updatedAt: number;
+  }
+
+  function loadStats(): SiteStats {
+    try {
+      if (existsSync(STATS_FILE)) {
+        const data = readFileSync(STATS_FILE, 'utf-8');
+        const parsed = JSON.parse(data);
+        return {
+          filesRepaired: Number(parsed.filesRepaired) || 0,
+          visitors: Number(parsed.visitors) || 0,
+          updatedAt: Number(parsed.updatedAt) || Date.now(),
+        };
+      }
+    } catch (e) {
+      console.error('Failed to load stats:', e);
+    }
+    return { filesRepaired: 0, visitors: 0, updatedAt: Date.now() };
+  }
+
+  function saveStats(stats: SiteStats): void {
+    try {
+      writeFileSync(STATS_FILE, JSON.stringify(stats, null, 2), 'utf-8');
+    } catch (e) {
+      console.error('Failed to save stats:', e);
+    }
+  }
+
+  // GET /api/stats — public real site-wide statistics
+  if (url.pathname === '/api/stats' && request.method === 'GET') {
+    const stats = loadStats();
+    return new Response(JSON.stringify(stats), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
+  }
+
+  // POST /api/stats — record a real event (repair/visit) from the client
+  if (url.pathname === '/api/stats' && request.method === 'POST') {
+    try {
+      const body = await request.json();
+      const action = body.action;
+      const stats = loadStats();
+      if (action === 'repair') {
+        stats.filesRepaired += 1;
+      } else if (action === 'visit') {
+        stats.visitors += 1;
+      } else {
+        return new Response(JSON.stringify({ error: 'Invalid action' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      stats.updatedAt = Date.now();
+      saveStats(stats);
+      return new Response(JSON.stringify(stats), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    } catch (e) {
+      console.error('❌ Stats API error:', e);
+      return new Response(JSON.stringify({ error: 'Internal server error' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+  }
+
   // GET /api/admin - List all subscriptions (admin only)
   if (url.pathname === '/api/admin' && request.method === 'GET') {
     const adminKey = url.searchParams.get('key');

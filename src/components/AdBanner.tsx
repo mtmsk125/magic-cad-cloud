@@ -139,23 +139,15 @@ export function AdBanner({
     return null;
   }
 
-  // If ad error or no network, show fallback CTA
+  // If ad error or no network, show a neutral fallback CTA (no external links)
   if (adError || !currentNetwork) {
     return (
       <div className={`ad-banner-fallback rounded-xl border border-border/60 bg-card/30 p-4 text-center ${className}`}>
         <p className="font-mono text-xs text-muted-foreground/50">
           {lang === "ar"
-            ? "🚀 ادعم الأداة بفنجان قهوة ☕"
-            : "🚀 Support the tool with a coffee ☕"}
+            ? "🚀 الأداة مجانية 100% — لا إعلانات حالياً"
+            : "🚀 The tool is 100% free — no ads right now"}
         </p>
-        <a
-          href="https://www.buymeacoffee.com/dxfix"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-block mt-2 px-4 py-2 rounded-lg bg-amber-500/20 text-amber-400 font-semibold text-sm hover:bg-amber-500/30 transition"
-        >
-          {lang === "ar" ? "☕ ادعمنا" : "☕ Support us"}
-        </a>
       </div>
     );
   }

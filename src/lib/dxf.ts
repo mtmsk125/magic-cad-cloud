@@ -74,8 +74,13 @@ export interface FixSummaryItem {
   detail: string;
 }
 
+import { cleanupEntities, DEFAULT_CLEANUP_OPTIONS } from "./dxf-cleanup";
+
 function parseGroups(content: string): DxfGroup[] {
-  const lines = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  // Trim leading/trailing blank lines first. A leftover "\n" before the first
+  // code line (e.g. the newline right after the "ENTITIES" header) would shift
+  // the (code, value) pairing by one line and mis-decode every entity.
+  const lines = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim().split("\n");
   const groups: DxfGroup[] = [];
   for (let i = 0; i < lines.length - 1; i += 2) {
     const code = parseInt(lines[i].trim(), 10);
@@ -104,7 +109,7 @@ function lineKey(e: DxfEntity, tol = 1e-6): string {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
-export function snapOpenEndpoints(entities: DxfEntity[], tolerance: number = 0.1): DxfEntity[] {
+export function snapOpenEndpoints(entities: DxfEntity[], tolerance: number = 0.001): DxfEntity[] {
   // Collect all endpoint positions
   const endpoints: { x: number; y: number; entityIndex: number; isStart: boolean }[] = [];
 
@@ -358,7 +363,7 @@ function getEntityBounds(e: DxfEntity): { width: number; height: number } | null
   return { width: maxX - minX, height: maxY - minY };
 }
 
-export function analyzeDxf(content: string, snapTolerance: number = 0.1): DxfAnalysis {
+export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfAnalysis {
   const startTime = performance.now();
   const originalFileSize = new Blob([content]).size;
 
@@ -370,10 +375,25 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.1): DxfAna
   const tailStart = entitiesMatch ? normalized.indexOf(entitiesMatch[0]) + entitiesMatch[0].length : normalized.length;
   const tailSection = normalized.slice(tailStart);
 
-  const entitiesRaw = entitiesMatch ? entitiesMatch[1] : "";
+    const entitiesRaw = (entitiesMatch ? entitiesMatch[1] : "").trim();
   const entities: DxfEntity[] = [];
 
-  const entityBlocks = entitiesRaw.split(/(?=\s*0\s*\n(?!ENDSEC))/i).filter(b => b.trim());
+  // Split the ENTITIES section into entity blocks using the parsed group
+  // pairs (code/value). Splitting by raw lines is WRONG: a value line that
+  // happens to be "0" (layer "0", coordinate 0, ...) would otherwise be
+  // mistaken for a new entity start, fragmenting every LINE/ARC/etc. into
+  // bogus "62"/"11"/"21" pseudo-entities and corrupting the whole analysis.
+  const allGroups = parseGroups(entitiesRaw);
+  const entityBlocks: string[] = [];
+  let current: string[] = [];
+  for (const g of allGroups) {
+    if (g.code === 0 && current.length > 0) {
+      entityBlocks.push(current.join("\n"));
+      current = [];
+    }
+    current.push(`${g.code}\n${g.value}`);
+  }
+  if (current.length) entityBlocks.push(current.join("\n"));
 
   for (const block of entityBlocks) {
     const groups = parseGroups(block.trim());
@@ -1095,7 +1115,6 @@ function optimizeCutOrder(entities: DxfEntity[]): DxfEntity[] {
 export function repairDxf(content: string, analysis: DxfAnalysis): { fixed: string; repaired: DxfIssue[]; fixSummary: FixSummaryItem[] } {
   const startTime = performance.now();
   const repairedIssues: DxfIssue[] = [];
-  const toRemove = new Set<number>();
   const fixSummary: FixSummaryItem[] = [];
   const originalSize = analysis.originalFileSize ?? new Blob([content]).size;
 
@@ -1152,8 +1171,9 @@ export function repairDxf(content: string, analysis: DxfAnalysis): { fixed: stri
   }
   entities = converted;
 
-  // ─── STEP 5: Snap open endpoints ───
-  const snappedEntities = snapOpenEndpoints(entities, 0.1);
+  // ─── STEP 5: Snap open endpoints (conservative tolerance — never destroy
+  // nearby-but-distinct geometry) ───
+  const snappedEntities = snapOpenEndpoints(entities, 0.001);
 
   // ─── STEP 6: Join connected paths ───
   const { joined, joinCount } = joinConnectedEntities(snappedEntities);
@@ -1181,40 +1201,40 @@ export function repairDxf(content: string, analysis: DxfAnalysis): { fixed: stri
   }
   entities = closedEntities;
 
-  // ─── STEP 8: Remove duplicates (keep original logic) ───
-  const dupIssue = analysis.issues.find(i => i.type === "duplicate_line");
-  if (dupIssue) {
-    const seenKeys = new Set<string>();
-    for (const idx of dupIssue.entityIndices) {
-      const e = entities[idx];
-      if (!e || e.type !== "LINE") continue;
-      const key = lineKey(e);
-      if (seenKeys.has(key)) {
-        toRemove.add(idx);
-      } else {
-        seenKeys.add(key);
-      }
-    }
-    repairedIssues.push({ ...dupIssue, fixed: true });
+  // ─── STEP 8: REAL OVERKILL-STYLE CLEANUP (deterministic geometry engine) ───
+  // This actually MODIFIES the geometry: removes duplicates (both directions),
+  // zero-length entities, duplicate vertices, contained segments, and merges
+  // collinear overlaps. The numbers in the report come from the real result.
+  const cleanupResult = cleanupEntities(entities, DEFAULT_CLEANUP_OPTIONS);
+  entities = cleanupResult.entities;
+
+  const cr = cleanupResult.report;
+  if (cr.totalChanges > 0) {
+    const parts: string[] = [];
+    if (cr.duplicateEntitiesRemoved > 0) parts.push(`${cr.duplicateEntitiesRemoved} مكرر`);
+    if (cr.zeroLengthRemoved > 0) parts.push(`${cr.zeroLengthRemoved} صفري الطول`);
+    if (cr.duplicateVerticesRemoved > 0) parts.push(`${cr.duplicateVerticesRemoved} رأس مكرر`);
+    if (cr.containedSegmentsRemoved > 0) parts.push(`${cr.containedSegmentsRemoved} قطعة محتواة`);
+    if (cr.overlappingSegmentsMerged > 0) parts.push(`${cr.overlappingSegmentsMerged} قطعة متداخلة`);
     fixSummary.push({
-      id: 'merged_duplicates',
-      icon: '🔀',
-      ar: 'تم دمج الخطوط المتكررة وإزالة المكرر منها',
-      en: 'Merged duplicate lines and removed redundant ones',
-      detail: `${Math.floor(dupIssue.entityIndices.length / 2)} خط مكرر تم دمجها`,
+      id: 'real_cleanup',
+      icon: '🔧',
+      ar: `تم تنظيف الهندسة فعلياً: ${parts.join('، ')} — الكيانات (قبل: ${cr.before.totalEntities} → بعد: ${cr.after.totalEntities})`,
+      en: `Real geometry cleanup applied: ${parts.join(', ')} — entities (before: ${cr.before.totalEntities} → after: ${cr.after.totalEntities})`,
+      detail: `إزالة ${cr.duplicateEntitiesRemoved} مكرر · ${cr.zeroLengthRemoved} صفري الطول · ${cr.duplicateVerticesRemoved} رأس مكرر · دمج ${cr.overlappingSegmentsMerged} تداخل`,
+    });
+  } else {
+    fixSummary.push({
+      id: 'real_cleanup',
+      icon: '✅',
+      ar: 'لا توجد تكرارات أو تداخلات تحتاج تنظيفاً — لم يتم تغيير أي هندسة (لا تغييرات كاذبة)',
+      en: 'No duplicates or overlaps needed cleanup — no geometry was changed (no false changes)',
+      detail: 'نتيجة فحص هندسي حقيقي حتمي',
     });
   }
 
-  // ─── STEP 9: Remove zero-length entities ───
-  for (const issue of analysis.issues) {
-    if (issue.type === "zero_length") {
-      toRemove.add(issue.entityIndices[0]);
-      repairedIssues.push({ ...issue, fixed: true });
-    }
-  }
-
-  // ─── STEP 10: Optimize cut order ───
-  const finalEntities = optimizeCutOrder(entities.filter((_, i) => !toRemove.has(i)));
+  // ─── STEP 9: Optimize cut order ───
+  const finalEntities = optimizeCutOrder(entities);
   
   fixSummary.push({
     id: 'optimized_cut_order',
@@ -1299,6 +1319,30 @@ function generateEntityText(e: DxfEntity): string {
         lines.push(" 42", v.bulge.toFixed(6));
       }
     }
+    return lines.join("\n");
+  }
+  // LINE: regenerate the entity fully from its current (possibly cleaned/
+  // merged) fields so the downloaded DXF always reflects the real geometry.
+  // Layer + handle are always written; color (62/420), linetype (6) and
+  // lineweight (370) are preserved when present in the raw data.
+  if (e.type === "LINE") {
+    const lines: string[] = ["  0", "LINE", "  8", e.layer];
+    if (e.handle) lines.push("  5", e.handle);
+    if (e.rawLines && e.rawLines.length >= 2) {
+      for (let i = 0; i + 1 < e.rawLines.length; i += 2) {
+        const c = parseInt(e.rawLines[i].trim(), 10);
+        if (c === 62 || c === 6 || c === 370 || c === 420) {
+          const v = e.rawLines[i + 1];
+          if (v !== undefined) lines.push(e.rawLines[i], v);
+        }
+      }
+    }
+    lines.push(" 10", (e.x1 ?? 0).toFixed(6));
+    lines.push(" 20", (e.y1 ?? 0).toFixed(6));
+    if (e.z1 !== undefined) lines.push(" 30", e.z1.toFixed(6));
+    lines.push(" 11", (e.x2 ?? 0).toFixed(6));
+    lines.push(" 21", (e.y2 ?? 0).toFixed(6));
+    if (e.z2 !== undefined) lines.push(" 31", e.z2.toFixed(6));
     return lines.join("\n");
   }
   return e.rawLines.join("\n");

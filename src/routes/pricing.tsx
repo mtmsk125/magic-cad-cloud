@@ -7,15 +7,13 @@ import { getLangDir, type Lang } from "@/lib/i18n";
 export const Route = createFileRoute("/pricing")({
   head: () => ({
     meta: [
-      { title: "DXFix — الأداة مجانية 100% | ادعمنا بفنجان قهوة" },
-      { name: "description", content: "DXFix أداة مجانية 100% لإصلاح ملفات DXF. ادعم استمرار الأداة بفنجان قهوة." },
+      { title: "DXFix — الأداة مجانية 100%" },
+      { name: "description", content: "DXFix أداة مجانية 100% لإصلاح ملفات DXF." },
       { name: "robots", content: "index, follow" },
     ],
   }),
   component: SupportPage,
 });
-
-const COFFEE_URL = "https://www.buymeacoffee.com/dxfix";
 
 function SupportPage() {
   const [lang, setLang] = useState<Lang>(() => {
@@ -70,30 +68,6 @@ function SupportPage() {
 
         {/* 📢 AdBanner */}
         <AdBanner format="horizontal" lang={lang} />
-
-        {/* SUPPORT SECTION */}
-        <div className="mt-12 bg-gradient-to-br from-amber-500/10 via-card to-amber-500/5 border border-amber-500/30 rounded-3xl p-10 text-center">
-          <div className="text-7xl mb-6">☕</div>
-          <h2 className="font-display text-3xl sm:text-4xl font-bold">
-            {lang === "ar" ? "ادعم الأداة بفنجان قهوة" : "Support us with a coffee"}
-          </h2>
-          <p className="mt-4 text-muted-foreground text-lg max-w-2xl mx-auto">
-            {lang === "ar"
-              ? "الأداة مجانية 100% ومستمرة بفضل دعم المستخدمين. إذا أفادتك في عملك، يمكنك دعمنا بفنجان قهوة — هذا يساعدنا على إبقاء الأداة مجانية وتطوير ميزات جديدة."
-              : "The tool is 100% free and stays that way thanks to user support. If it helped you in your work, consider buying us a coffee — this helps us keep the tool free and build new features."}
-          </p>
-          <a
-            href={COFFEE_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-8 inline-flex items-center gap-2 px-10 py-4 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold text-lg hover:opacity-90 transition shadow-[var(--shadow-spark)]"
-          >
-            ☕ {lang === "ar" ? "اشترِ لي فنجان قهوة" : "Buy me a coffee"}
-          </a>
-          <p className="mt-4 font-mono text-xs text-muted-foreground/60">
-            {lang === "ar" ? "دعمك اختياري وليس شرطاً للاستخدام" : "Your support is optional, not a requirement"}
-          </p>
-        </div>
 
         {/* FEATURES FREE */}
         <div className="mt-12 bg-card border border-border rounded-2xl p-8">

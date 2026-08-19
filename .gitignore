@@ -20,7 +20,12 @@ dist-ssr
 .wrangler/
 .dev.vars
 
+scripts/debug-input-analysis.json
+scripts/debug-fixed-analysis.json
+scripts/verify-result.json
+
 # Editor directories and files
+
 .vscode/*
 !.vscode/extensions.json
 .idea

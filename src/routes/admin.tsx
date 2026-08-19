@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { getFeedbackEntries, approveFeedback, deleteFeedback, getUnapprovedCount } from "@/lib/feedback";
 import type { FeedbackEntry } from "@/lib/feedback";
 import { getViralLaunchStats } from "@/lib/viral-launch";
-import { getRepairedFilesCount, getVisitorCount } from "@/lib/subscription";
+import { fetchSiteStats } from "@/lib/stats";
 
 const ADMIN_PASSWORD = "dxfix2026";
 
@@ -138,10 +138,14 @@ function AdminPage() {
   const [totalVisitors, setTotalVisitors] = useState(0);
   const [totalFixedFiles, setTotalFixedFiles] = useState(0);
 
-  // Load localStorage-based stats only on client after mount
+  // Load REAL server-side statistics (not fake localStorage counters)
   useEffect(() => {
-    setTotalVisitors(getVisitorCount());
-    setTotalFixedFiles(getRepairedFilesCount());
+    fetchSiteStats().then((s) => {
+      if (s) {
+        setTotalVisitors(s.visitors);
+        setTotalFixedFiles(s.filesRepaired);
+      }
+    });
   }, []);
 
   // Load feedback on mount

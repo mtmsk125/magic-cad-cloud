@@ -15,8 +15,7 @@ import { fullPathCleanup, pathLength } from "@/lib/path-union";
 import type { PathSegment } from "@/lib/path-union";
 import { pathsToCuttingPaths, advancedOptimize, generateOptimizationReport } from "@/lib/toolpath-optimizer";
 import type { CuttingPath } from "@/lib/toolpath-optimizer";
-import { openBuyCoffeeCheckout } from "@/lib/paddle";
-import { incrementRepairedFilesCount } from "@/lib/subscription";
+import { recordRepair } from "@/lib/stats";
 
 
 interface HistoryEntry {
@@ -749,7 +748,7 @@ function ToolPage() {
     setRepairedIssues(repaired);
     setFixSummary(summary);
     saveToHistory(fileName, analysis, true);
-    incrementRepairedFilesCount();
+    recordRepair();
     setStage("repaired");
   };
 
@@ -1674,12 +1673,6 @@ function ToolPage() {
                   >
                     ⬇ {lang === "ar" ? "تحميل الملف" : "Download file"}
                   </button>
-                  <button
-                    onClick={openBuyCoffeeCheckout}
-                    className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold text-sm hover:opacity-90 transition shadow-[var(--shadow-spark)] flex items-center gap-2"
-                  >
-                    ☕ {lang === "ar" ? "اشترِ لنا قهوة" : "Buy us a coffee"}
-                  </button>
                 </div>
               )}
               {stage === "repaired" && (
@@ -1689,12 +1682,6 @@ function ToolPage() {
                     className="px-6 py-2.5 rounded-lg bg-accent text-accent-foreground font-bold text-sm hover:opacity-90 transition shadow-[var(--shadow-spark)] flex items-center gap-2"
                   >
                     ⬇ {t.downloadFixed}
-                  </button>
-                  <button
-                    onClick={openBuyCoffeeCheckout}
-                    className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold text-sm hover:opacity-90 transition shadow-[var(--shadow-spark)] flex items-center gap-2"
-                  >
-                    ☕ {lang === "ar" ? "اشترِ لنا قهوة" : "Buy us a coffee"}
                   </button>
                 </div>
               )}

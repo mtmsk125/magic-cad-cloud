@@ -4,8 +4,7 @@ import heroImg from "@/assets/hero-cnc.jpg";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { AdBanner } from "@/components/AdBanner";
 import { getTranslations, getLangDir, type Lang } from "@/lib/i18n";
-import { openBuyCoffeeCheckout } from "@/lib/paddle";
-import { getRepairedFilesCount } from "@/lib/subscription";
+import { fetchSiteStats, recordVisit } from "@/lib/stats";
 import { track } from '@vercel/analytics';
 
 export const Route = createFileRoute("/")({
@@ -108,10 +107,6 @@ const T = {
       { q: "أي برامج القص يدعم الملف الناتج؟", a: "ملف DXF القياسي (R12/R2013) يعمل مع LaserCAD, RDWorks, Mach3, FastCAM، وأغلب البرامج التجارية." },
       { q: "هل أحتاج خبرة AutoCAD؟", a: "لا. الواجهة مصممة للمشغّل، ليس للمهندس. اضغط زر واحد." },
     ],
-    supportTitle: "ادعم الأداة",
-    supportDesc: "الأداة مجانية 100% ومستمرة بفضل دعم المستخدمين. إذا أفادتك، يمكنك دعمنا بفنجان قهوة ☕",
-    supportBtn: "☕ اشترِ لي فنجان قهوة",
-    supportNote: "دعمك يساعدنا على إبقاء الأداة مجانية وتطوير ميزات جديدة.",
     ctaTitle: "جاهز توفّر ساعات من إعادة العمل؟",
     ctaSub: "الأداة مجانية بالكامل — ارفع ملفك الأول الآن.",
     ctaBtn: "ابدأ مجاناً",
@@ -170,10 +165,6 @@ const T = {
       { q: "Which cutters does the output work with?", a: "Standard DXF (R12/R2013) — works with LaserCAD, RDWorks, Mach3, FastCAM and most commercial software." },
       { q: "Do I need AutoCAD experience?", a: "No. The UI is built for operators, not engineers. One button does it." },
     ],
-    supportTitle: "Support the tool",
-    supportDesc: "The tool is 100% free and stays that way thanks to user support. If it helped you, consider buying us a coffee ☕",
-    supportBtn: "☕ Buy me a coffee",
-    supportNote: "Your support helps us keep the tool free and build new features.",
     ctaTitle: "Ready to save hours of rework?",
     ctaSub: "The tool is completely free — upload your first file now.",
     ctaBtn: "Start free",
@@ -184,18 +175,28 @@ const T = {
 
 const APP_URL = "/tool";
 const WHATSAPP_URL = "https://wa.me/962795156768";
-const COFFEE_URL = "https://www.buymeacoffee.com/dxfix";
 
 function Index() {
   const [lang, setLang] = useState<Lang>("ar");
   const [repairedCount, setRepairedCount] = useState<number>(0);
+  const [visitorCount, setVisitorCount] = useState<number>(0);
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
     const stored = localStorage.getItem("dxfix_lang") as Lang | null;
     if (stored && ["ar", "en"].includes(stored)) setLang(stored);
-    setRepairedCount(getRepairedFilesCount());
+    // Record this session as a real visit (once per browser session)
+    recordVisit().catch(() => {});
+    // Real site-wide statistics from the backend server (not fake localStorage)
+    fetchSiteStats()
+      .then((s) => {
+        if (s) {
+          setRepairedCount(s.filesRepaired);
+          setVisitorCount(s.visitors);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const t = T[lang as keyof typeof T] || T.en;
@@ -557,36 +558,31 @@ function Index() {
         <div className="max-w-7xl mx-auto px-5 sm:px-8 text-center">
           <div className="inline-flex items-center gap-2 font-mono text-xs px-3 py-1.5 rounded-full border border-accent/40 text-accent bg-accent/5 mb-6">
             <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-            {lang === "ar" ? "تحديث حي: تم إصلاح 14 ملفاً خلال الساعات الأخيرة" : "Live update: 14 files repaired in the last hours"}
+            {lang === "ar" ? "إحصائيات حقيقية من خادم DXFix" : "Real statistics from the DXFix server"}
           </div>
 
           <h2 className="font-display text-3xl sm:text-4xl font-bold mb-3">
             {lang === "ar" ? "إحصائيات الملفات المصلحة لغاية الآن" : "Total Files Repaired So Far"}
           </h2>
           <p className="text-muted-foreground text-sm max-w-xl mx-auto mb-10">
-            {lang === "ar" ? "ثقة آلاف الورش والمصانع العربية في اعتماد أداتنا قبل بدء القص الميكانيكي." : "Trusted by thousands of workshops before starting physical cutting."}
+            {lang === "ar" ? "كل ملف DXF يتم إصلاحه على منصتنا يُحتسب تلقائياً في هذه الأرقام الحيّة." : "Every DXF file repaired on our platform is counted automatically in these live numbers."}
           </p>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-5xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
             <div className="p-6 rounded-2xl bg-background/80 border border-border/80 shadow-[var(--shadow-elegant)] hover:border-accent/40 transition">
-              <div className="text-4xl font-bold text-gradient-spark">{repairedCount.toLocaleString()}+</div>
+              <div className="text-4xl font-bold text-gradient-spark">{repairedCount.toLocaleString()}</div>
               <div className="mt-2 text-sm font-semibold text-foreground">{lang === "ar" ? "ملف تم إصلاحه بنجاح" : "Files Repaired"}</div>
               <div className="mt-1 font-mono text-[11px] text-muted-foreground">{lang === "ar" ? "جاهزة للماكينة" : "Machine Ready"}</div>
             </div>
             <div className="p-6 rounded-2xl bg-background/80 border border-border/80 shadow-[var(--shadow-elegant)] hover:border-accent/40 transition">
-              <div className="text-4xl font-bold text-gradient-spark">99.4%</div>
-              <div className="mt-2 text-sm font-semibold text-foreground">{lang === "ar" ? "جاهزية من أول محاولة" : "First-Try Readiness"}</div>
-              <div className="mt-1 font-mono text-[11px] text-muted-foreground">{lang === "ar" ? "بدون خطوط مكررة" : "Zero Duplicate Lines"}</div>
+              <div className="text-4xl font-bold text-gradient-spark">{visitorCount.toLocaleString()}</div>
+              <div className="mt-2 text-sm font-semibold text-foreground">{lang === "ar" ? "زيارة للموقع" : "Site Visits"}</div>
+              <div className="mt-1 font-mono text-[11px] text-muted-foreground">{lang === "ar" ? "احصائيات حية" : "Live Count"}</div>
             </div>
             <div className="p-6 rounded-2xl bg-background/80 border border-border/80 shadow-[var(--shadow-elegant)] hover:border-accent/40 transition">
               <div className="text-4xl font-bold text-gradient-spark">&lt; 5s</div>
               <div className="mt-2 text-sm font-semibold text-foreground">{lang === "ar" ? "متوسط سرعة المعالجة" : "Avg Processing Speed"}</div>
               <div className="mt-1 font-mono text-[11px] text-muted-foreground">{lang === "ar" ? "معالجة فورية بالمتصفح" : "Instant Browser Processing"}</div>
-            </div>
-            <div className="p-6 rounded-2xl bg-background/80 border border-border/80 shadow-[var(--shadow-elegant)] hover:border-accent/40 transition">
-              <div className="text-4xl font-bold text-gradient-spark">1,250+</div>
-              <div className="mt-2 text-sm font-semibold text-foreground">{lang === "ar" ? "ورشة ومصنع يعتمدوننا" : "Active CNC Workshops"}</div>
-              <div className="mt-1 font-mono text-[11px] text-muted-foreground">{lang === "ar" ? "في العالم العربي" : "In Arab Region"}</div>
             </div>
           </div>
         </div>
@@ -597,22 +593,6 @@ function Index() {
       <div className="max-w-6xl mx-auto px-5 sm:px-8 py-8">
         <AdBanner format="horizontal" lang={lang} />
       </div>
-
-      {/* SUPPORT / BUY ME A COFFEE */}
-      <section id="support" className="max-w-4xl mx-auto px-5 sm:px-8 py-16 text-center">
-        <div className="bg-gradient-to-br from-amber-500/10 via-card to-amber-500/5 border border-amber-500/30 rounded-3xl p-10">
-          <div className="text-6xl mb-4">☕</div>
-          <h2 className="font-display text-3xl sm:text-4xl font-bold">{t.supportTitle}</h2>
-          <p className="mt-4 text-muted-foreground text-lg max-w-2xl mx-auto">{t.supportDesc}</p>
-          <button
-            onClick={openBuyCoffeeCheckout}
-            className="mt-8 inline-flex items-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold text-lg hover:opacity-90 transition shadow-[var(--shadow-spark)]"
-          >
-            {t.supportBtn}
-          </button>
-          <p className="mt-4 font-mono text-xs text-muted-foreground/60">{t.supportNote}</p>
-        </div>
-      </section>
 
       {/* FAQ */}
       <section id="faq" className="border-t border-border/60 bg-card/30">
@@ -671,12 +651,6 @@ function Index() {
             <a href="/articles" className="text-xs hover:text-foreground transition">
               {lang === "ar" ? "المقالات والدروس" : "Articles & Guides"}
             </a>
-            <button
-              onClick={openBuyCoffeeCheckout}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/30 font-semibold text-sm hover:bg-amber-500/20 transition"
-            >
-              ☕ {lang === "ar" ? "ادعمنا" : "Support us"}
-            </button>
           </div>
           <div className="flex items-center gap-4">
             <a
