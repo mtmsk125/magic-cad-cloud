@@ -750,3 +750,156 @@ export function smoothEntities(
 
   return { entities: out, verticesRemoved, polylinesTouched };
 }
+/* ------------------------------------------------------------------ */
+/* Duplicate / Zero-Length / Collinear / Open-Loop Fix                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Remove duplicate lines (exact duplicates and reverse direction duplicates)
+ */
+export function removeDuplicateLines(
+  entities: DxfEntity[],
+  opts: CleanupOptions = DEFAULT_CLEANUP_OPTIONS
+): CleanupReport {
+  const tolerance = opts.tolerance || 0.01;
+
+  const getLineKey = (e: DxfEntity): string => {
+    const x1 = Math.round((e.x1 ?? 0) / tolerance) * tolerance;
+    const y1 = Math.round((e.y1 ?? 0) / tolerance) * tolerance;
+    const x2 = Math.round((e.x2 ?? 0) / tolerance) * tolerance;
+    const y2 = Math.round((e.y2 ?? 0) / tolerance) * tolerance;
+
+    const points = [
+      { x: x1, y: y1 },
+      { x: x2, y: y2 }
+    ].sort((a, b) => a.x - b.x || a.y - b.y);
+
+    return `${points[0].x}:${points[0].y}|${points[1].x}:${points[1].y}`;
+  };
+
+  const seen = new Map<string, number>();
+  const kept: DxfEntity[] = [];
+  const removed = new Set<number>();
+
+  for (let i = 0; i < entities.length; i++) {
+    const e = entities[i];
+    if (e.type === 'LINE') {
+      const key = getLineKey(e);
+      if (seen.has(key)) removed.add(i);
+      else { seen.set(key, i); kept.push(e); }
+    } else {
+      kept.push(e);
+    }
+  }
+
+  return buildFullReport(entities, kept, removed);
+}
+
+/**
+ * Remove zero-length entities
+ */
+export function removeZeroLengthEntities(
+  entities: DxfEntity[],
+  opts: CleanupOptions = DEFAULT_CLEANUP_OPTIONS
+): CleanupReport {
+  const tolerance = opts.tolerance || 0.01;
+  const kept: DxfEntity[] = [];
+  const removed = new Set<number>();
+
+  for (let i = 0; i < entities.length; i++) {
+    const e = entities[i];
+    if (e.type === 'LINE') {
+      const dx = (e.x2 ?? 0) - (e.x1 ?? 0);
+      const dy = (e.y2 ?? 0) - (e.y1 ?? 0);
+      const lengthSquared = dx * dx + dy * dy;
+
+      if (lengthSquared < tolerance * tolerance) {
+        removed.add(i);
+      } else {
+        kept.push(e);
+      }
+    } else {
+      kept.push(e);
+    }
+  }
+
+  return buildFullReport(entities, kept, removed);
+}
+
+/**
+ * Resolve collinear overlaps
+ */
+export function resolveCollinearOverlaps(
+  entities: DxfEntity[],
+  opts: CleanupOptions = DEFAULT_CLEANUP_OPTIONS
+): CleanupReport {
+  const tolerance = opts.tolerance || 0.01;
+  const angleTol = opts.angleTolerance || 0.0017;
+
+  const groups = mapEntitiesIntoCollinearGroups(entities);
+  const kept: DxfEntity[] = [];
+  const removed = new Set<number>();
+
+  for (const group of groups) {
+    if (group.length < 2) {
+      kept.push(...group);
+      continue;
+    }
+
+    const mergedSegments = mergeSegmentGroups(group);
+    kept.push(...mergedSegments);
+
+    for (const point of group) {
+      const idx = entities.indexOf(point);
+      if (idx >= 0) removed.add(idx);
+    }
+  }
+
+  return buildFullReport(entities, kept, removed);
+}
+
+/**
+ * Fix open loops by closing paths when endpoints are close enough
+ */
+export function fixOpenLoops(
+  entities: DxfEntity[],
+  opts: CleanupOptions = DEFAULT_CLEANUP_OPTIONS
+): CleanupReport {
+  const gapTolerance = opts.gapTolerance || 0.05;
+  const kept: DxfEntity[] = [];
+  const closed = new Set<number>();
+
+  for (let i = 0; i < entities.length; i++) {
+    const e = entities[i];
+    if (e.type === 'LWPOLYLINE' && !e.closed && e.vertices && e.vertices.length > 2) {
+      const vertices = e.vertices;
+      const gap = Math.hypot(
+        vertices[vertices.length - 1].x - vertices[0].x,
+        vertices[vertices.length - 1].y - vertices[0].y
+      );
+
+      if (gap <= gapTolerance) {
+        kept.push(e);
+        closed.add(i);
+
+        const start = vertices[0];
+        const end = vertices[vertices.length - 1];
+
+        const closingSegment: DxfEntity = {
+          type: 'LINE',
+          layer: e.layer,
+          x1: end.x, y1: end.y,
+          x2: start.x, y2: start.y,
+          rawLines: []
+        };
+        kept.push(closingSegment);
+      } else {
+        kept.push(e);
+      }
+    } else {
+      kept.push(e);
+    }
+  }
+
+  return buildFullReport(entities, kept, closed);
+}
