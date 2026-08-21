@@ -385,6 +385,10 @@ function ToolPage() {
   const [repairedContent, setRepairedContent] = useState("");
   const [repairedIssues, setRepairedIssues] = useState<DxfIssue[]>([]);
   const [fixSummary, setFixSummary] = useState<FixSummaryItem[]>([]);
+  // Re-scan result of the ACTUAL repaired DXF — the verified source of truth
+  // after repair. Never substitute a hard-coded 100 for this.
+  const [repairedAnalysis, setRepairedAnalysis] = useState<DxfAnalysis | null>(null);
+  const [reScanFailed, setReScanFailed] = useState(false);
   const [progress, setProgress] = useState(0);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -394,9 +398,12 @@ function ToolPage() {
   const [pricePerMeter, setPricePerMeter] = useState(5);
   const [showCostEstimator, setShowCostEstimator] = useState(false);
 
-  // Self-destruct state
+    // Self-destruct state
   const [selfDestructEnabled, setSelfDestructEnabled] = useState(false);
   const [selfDestructTriggered, setSelfDestructTriggered] = useState(false);
+
+  // Phase 2: optional curve→polyline conversion (OFF by default).
+  const [convertCurves, setConvertCurves] = useState(false);
 
   useEffect(() => {
     // Client-only: check self-destruct state from localStorage
@@ -743,12 +750,35 @@ function ToolPage() {
 
   const handleRepair = () => {
     if (!analysis) return;
-    const { fixed, repaired, fixSummary: summary } = repairDxf(fileContent, analysis);
+    // 1) Repair using the real engine.
+        const { fixed, repaired, fixSummary: summary } = repairDxf(
+      fileContent,
+      analysis,
+      convertCurves ? { convertCurvesToPolylines: true } : undefined
+    );
     setRepairedContent(fixed);
     setRepairedIssues(repaired);
     setFixSummary(summary);
     saveToHistory(fileName, analysis, true);
-    recordRepair();
+
+    // 2) RE-SCAN: re-parse and re-analyze the ACTUAL repaired DXF.
+    //    The final score must come from this NEW analysis, never from a
+    //    hard-coded 100. "Repair succeeded" does not mean "DXF is perfect".
+    try {
+      const re = analyzeDxf(fixed);
+      setRepairedAnalysis(re);
+      setReScanFailed(false);
+      // Verification gate: only count the repair if the repaired file is
+      // still readable and produces a non-degenerate analysis.
+      if (re.stats.totalEntities > 0) {
+        recordRepair();
+      }
+    } catch (e) {
+      // Re-scan failed → never claim the file is verified.
+      console.error("Re-scan of repaired DXF failed:", e);
+      setRepairedAnalysis(null);
+      setReScanFailed(true);
+    }
     setStage("repaired");
   };
 
@@ -817,6 +847,8 @@ function ToolPage() {
     setRepairedContent("");
     setRepairedIssues([]);
     setFixSummary([]);
+    setRepairedAnalysis(null);
+    setReScanFailed(false);
     setProgress(0);
     setShowCostEstimator(false);
     if (fileRef.current) fileRef.current.value = "";
@@ -1386,22 +1418,41 @@ function ToolPage() {
         {/* RESULT */}
         {(stage === "result" || stage === "repaired") && analysis && (
           <div className="space-y-6">
-            {/* Score card */}
-            <div className={`rounded-2xl border p-8 flex flex-col sm:flex-row items-center gap-6 ${scoreBg(stage === "repaired" ? 100 : analysis.score)}`}>
+            {/* Score card — driven by the REAL re-scan of the repaired DXF */}
+            {(() => {
+              // Final verified score from re-analyzing the repaired file.
+              const finalScore = stage === "repaired"
+                ? (repairedAnalysis ? repairedAnalysis.score : analysis.score)
+                : analysis.score;
+              const finalLabel = stage === "repaired"
+                ? (repairedAnalysis ? scoreLabel(repairedAnalysis.score, lang) : scoreLabel(analysis.score, lang))
+                : scoreLabel(analysis.score, lang);
+              return (
+            <div className={`rounded-2xl border p-8 flex flex-col sm:flex-row items-center gap-6 ${scoreBg(finalScore)}`}>
               <div className="text-center">
-                <div className={`font-display text-7xl font-bold ${scoreColor(stage === "repaired" ? 100 : analysis.score)}`}>
-                  {stage === "repaired" ? 100 : analysis.score}
+                <div className={`font-display text-7xl font-bold ${scoreColor(finalScore)}`}>
+                  {finalScore}
                 </div>
                 <div className="font-mono text-xs text-muted-foreground mt-1">/ 100</div>
+                {stage === "repaired" && reScanFailed && (
+                  <div className="mt-2 text-xs font-bold text-red-400">⚠️ {lang === "ar" ? "فشل إعادة التحقق" : "Verification failed"}</div>
+                )}
               </div>
               <div className="flex-1 text-center sm:text-start">
                 <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider">{t.score}</p>
                 <h2 className="font-display text-2xl font-bold mt-1">
-                  {stage === "repaired"
-                    ? (lang === "ar" ? "جاهز للقص ✓" : "Ready to cut ✓")
-                    : scoreLabel(analysis.score, lang)}
+                  {stage === "repaired" && reScanFailed
+                    ? (lang === "ar" ? "تعذر التحقق من الملف المُصلّح" : "Repaired file not verifiable")
+                    : finalLabel}
                 </h2>
                 <p className="text-sm text-muted-foreground mt-1 font-mono">{fileName}</p>
+                {stage === "repaired" && !reScanFailed && repairedAnalysis && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {lang === "ar"
+                      ? `أعيد فحص الملف المُصلّح: ${repairedAnalysis.stats.totalEntities} كيان · ${repairedAnalysis.issues.length} مشكلة متبقية`
+                      : `Repaired file re-scanned: ${repairedAnalysis.stats.totalEntities} entities · ${repairedAnalysis.issues.length} remaining issues`}
+                  </p>
+                )}
               </div>
               {stage === "repaired" && (
                 <button
@@ -1412,6 +1463,8 @@ function ToolPage() {
                 </button>
               )}
             </div>
+              );
+            })()}
 
             {/* SVG Preview */}
             {(() => {
@@ -1449,8 +1502,8 @@ function ToolPage() {
             {/* Machine Safety & G-Code Verification Badge */}
             <SafetyBadge
               lang={lang}
-              totalEntities={analysis.stats.totalEntities}
-              score={stage === "repaired" ? 100 : analysis.score}
+              totalEntities={(stage === "repaired" && repairedAnalysis ? repairedAnalysis : analysis).stats.totalEntities}
+              score={stage === "repaired" ? (repairedAnalysis ? repairedAnalysis.score : analysis.score) : analysis.score}
             />
 
             {/* Fix Summary Widget */}
@@ -1478,6 +1531,56 @@ function ToolPage() {
                 </div>
               </div>
             )}
+
+            {/* Verified Before/After comparison (based on re-scan) */}
+            {stage === "repaired" && !reScanFailed && repairedAnalysis && (
+              <div className="rounded-2xl border border-border bg-card p-6">
+                <div className="flex items-center gap-3 mb-5">
+                  <span className="text-xl">🔍</span>
+                  <h3 className="font-display font-bold text-lg">
+                    {lang === "ar" ? "المقارنة قبل/بعد (إعادة فحص حقيقية)" : "Before / After (verified re-scan)"}
+                  </h3>
+                </div>
+                {(() => {
+                  const beforeIssues = analysis.issues;
+                  const afterIssues = repairedAnalysis.issues;
+                  const beforeErrors = beforeIssues.filter(i => i.severity === "error").length;
+                  const beforeWarnings = beforeIssues.filter(i => i.severity === "warning").length;
+                  const afterErrors = afterIssues.filter(i => i.severity === "error").length;
+                  const afterWarnings = afterIssues.filter(i => i.severity === "warning").length;
+                  const fixed = Math.max(0, beforeIssues.length - afterIssues.length);
+                  const rows = [
+                    { label: lang === "ar" ? "مشاكل مكتشفة قبل الإصلاح" : "Issues detected before", before: beforeIssues.length, after: null },
+                    { label: lang === "ar" ? "حرجة قبل" : "Critical before", before: beforeErrors, after: null },
+                    { label: lang === "ar" ? "تحذيرات قبل" : "Warnings before", before: beforeWarnings, after: null },
+                    { label: lang === "ar" ? "مشاكل متبقية بعد" : "Issues remaining after", before: null, after: afterIssues.length },
+                    { label: lang === "ar" ? "حرجة متبقية" : "Critical remaining", before: null, after: afterErrors },
+                    { label: lang === "ar" ? "تحذيرات متبقية" : "Warnings remaining", before: null, after: afterWarnings },
+                  ];
+                  return (
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      <div className="p-4 rounded-xl border border-border/60">
+                        <p className="text-xs text-muted-foreground font-mono mb-2">{lang === "ar" ? "المشاكل المُصلّحة" : "Issues fixed"}</p>
+                        <p className="font-display text-3xl font-bold text-accent">{fixed}</p>
+                      </div>
+                      {rows.map((r, i) => (
+                        <div key={i} className="p-4 rounded-xl border border-border/60">
+                          <p className="text-xs text-muted-foreground font-mono mb-2">{r.label}</p>
+                          <p className="font-display text-3xl font-bold">{r.after !== null ? r.after : r.before}</p>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+                <p className="text-xs text-muted-foreground mt-4">
+                  {lang === "ar"
+                    ? "النتيجة النهائية مأخوذة من إعادة فحص الملف المُصلّح فعلياً، وليست قيمة مُتخيّلة."
+                    : "Final score is computed by re-scanning the repaired file itself — never a hard-coded value."}
+                </p>
+              </div>
+            )}
+
+
 
             {/* Cost Estimator */}
             <div className="rounded-2xl border border-border bg-card overflow-hidden">
@@ -1657,13 +1760,29 @@ function ToolPage() {
               >
                 📄 {t.downloadReport}
               </button>
-              {stage === "result" && analysis.issues.some(i => i.severity === "error") && (
-                <button
-                  onClick={handleRepair}
-                  className="px-6 py-2.5 rounded-lg bg-accent text-accent-foreground font-semibold text-sm hover:opacity-90 transition shadow-[var(--shadow-spark)]"
-                >
-                  🔧 {t.repairBtn}
-                </button>
+                            {stage === "result" && analysis.issues.some(i => i.severity === "error") && (
+                <>
+                  {/* Phase 2: optional curve→polyline conversion toggle */}
+                  <label className="flex items-center gap-2 pr-4 border-r border-border/60">
+                    <input
+                      type="checkbox"
+                      checked={convertCurves}
+                      onChange={(e) => setConvertCurves(e.target.checked)}
+                      className="w-4 h-4 rounded border-border text-primary focus:ring-primary/50"
+                    />
+                    <span className={`text-xs ${lang === "ar" ? "font-arabic" : ""} text-muted-foreground`}>
+                      {lang === "ar"
+                        ? "تحويل المنحنيات (قوس/دائرة/منحنى/قلب نجمة) إلى بوليلاين"
+                        : "Convert curves (arc/circle/spline/ellipse) to polylines"}
+                    </span>
+                  </label>
+                  <button
+                    onClick={handleRepair}
+                    className="px-6 py-2.5 rounded-lg bg-accent text-accent-foreground font-semibold text-sm hover:opacity-90 transition shadow-[var(--shadow-spark)]"
+                  >
+                    🔧 {t.repairBtn}
+                  </button>
+                </>
               )}
               {stage === "result" && analysis.issues.length === 0 && (
                 <div className="flex flex-wrap items-center gap-3">

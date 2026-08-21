@@ -1109,10 +1109,20 @@ function optimizeCutOrder(entities: DxfEntity[]): DxfEntity[] {
   return [...ordered, ...otherEntities];
 }
 
+export interface RepairOptions {
+  /**
+   * Convert ARC/CIRCLE/SPLINE/ELLIPSE entities into POLYLINES.
+   * Default: OFF — original geometry is PRESERVED (§19 of the master prompt).
+   * The user must explicitly opt in for a manufacturing workflow that
+   * requires every entity to be a polyline path.
+   */
+  convertCurvesToPolylines?: boolean;
+}
+
 /**
  * pipeline المعالجة الكامل
  */
-export function repairDxf(content: string, analysis: DxfAnalysis): { fixed: string; repaired: DxfIssue[]; fixSummary: FixSummaryItem[] } {
+export function repairDxf(content: string, analysis: DxfAnalysis, options: RepairOptions = {}): { fixed: string; repaired: DxfIssue[]; fixSummary: FixSummaryItem[] } {
   const startTime = performance.now();
   const repairedIssues: DxfIssue[] = [];
   const fixSummary: FixSummaryItem[] = [];
@@ -1158,18 +1168,23 @@ export function repairDxf(content: string, analysis: DxfAnalysis): { fixed: stri
   }
   entities = noDangling;
 
-  // ─── STEP 4: Convert ARCS/CIRCLES/SPLINES/ELLIPSES to POLYLINES ───
-  const { converted, convertCount } = convertAllToPolylines(entities);
-  if (convertCount > 0) {
-    fixSummary.push({
-      id: 'converted_to_polylines',
-      icon: '🔄',
-      ar: `تم تحويل ${convertCount} عنصر (أقواس، دوائر، منحنيات) إلى POLYLINES`,
-      en: `Converted ${convertCount} entities (arcs, circles, curves) to POLYLINES`,
-      detail: 'تحويل جميع الكيانات إلى مسارات متعددة الخطوط',
-    });
+  // ─── STEP 4: Optional ARCS/CIRCLES/SPLINES/ELLIPSES → POLYLINES ───
+  // Default behavior PRESERVES original geometry (§19). Converting valid
+  // SPLINE/ELLIPSE/ARC/CIRCLE to polylines would silently modify the design,
+  // so it is OFF by default and only runs when the caller explicitly opts in.
+  if (options.convertCurvesToPolylines === true) {
+    const { converted, convertCount } = convertAllToPolylines(entities);
+    if (convertCount > 0) {
+      fixSummary.push({
+        id: 'converted_to_polylines',
+        icon: '🔄',
+        ar: `تم تحويل ${convertCount} عنصر (أقواس، دوائر، منحنيات) إلى POLYLINES`,
+        en: `Converted ${convertCount} entities (arcs, circles, curves) to POLYLINES`,
+        detail: 'تحويل جميع الكيانات إلى مسارات متعددة الخطوط',
+      });
+    }
+    entities = converted;
   }
-  entities = converted;
 
   // ─── STEP 5: Snap open endpoints (conservative tolerance — never destroy
   // nearby-but-distinct geometry) ───

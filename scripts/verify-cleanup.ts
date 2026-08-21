@@ -5,7 +5,7 @@
  */
 import { writeFileSync } from "fs";
 import { join } from "path";
-import { analyzeDxf, repairDxf } from "../src/lib/dxf";
+import { analyzeDxf, repairDxf, snapOpenEndpoints } from "../src/lib/dxf";
 import { cleanupEntities, DEFAULT_CLEANUP_OPTIONS } from "../src/lib/dxf-cleanup";
 
 function makeDxf(entitiesText: string): string {
@@ -264,6 +264,135 @@ run("Test_ellipse_preserved", () => {
     detail: "final=" + result.entities.length + " type=" + result.entities[0].type,
   };
 });
+
+// passed is computed at EOF (see below)
+
+// ===============================================================
+// PHASE 2 — Expanded repair tests (§17–§19 of the master prompt)
+// ===============================================================
+
+// --- §19: Geometry preservation (STEP 4 conversion is OFF by default) ---
+
+run("Test_default_preserves_arc", () => {
+  const dxf = makeDxf(dxfArc(1, 5, 5, 3, 0, 90));
+  const analysis = analyzeDxf(dxf);
+  const { fixed } = repairDxf(dxf, analysis); // no options → preserve
+  const re = analyzeDxf(fixed);
+  const arcs = re.entities.filter(e => e.type === "ARC");
+  return {
+    pass: arcs.length === 1 && re.entities.length === 1,
+    detail: "after=" + re.entities.map(e => e.type).join(",") + " arcs=" + arcs.length,
+  };
+});
+
+run("Test_default_preserves_circle", () => {
+  const dxf = makeDxf(dxfCircle(1, 5, 5, 3));
+  const analysis = analyzeDxf(dxf);
+  const { fixed } = repairDxf(dxf, analysis);
+  const re = analyzeDxf(fixed);
+  const circles = re.entities.filter(e => e.type === "CIRCLE");
+  return {
+    pass: circles.length === 1 && re.entities.length === 1,
+    detail: "after=" + re.entities.map(e => e.type).join(",") + " circles=" + circles.length,
+  };
+});
+
+run("Test_default_preserves_spline", () => {
+  const dxf = makeDxf(dxfSpline(1, [[0,0],[5,5],[10,0]]));
+  const analysis = analyzeDxf(dxf);
+  const { fixed } = repairDxf(dxf, analysis);
+  const re = analyzeDxf(fixed);
+  const splines = re.entities.filter(e => e.type === "SPLINE");
+  return {
+    pass: splines.length === 1,
+    detail: "after=" + re.entities.map(e => e.type).join(",") + " splines=" + splines.length,
+  };
+});
+
+run("Test_default_preserves_ellipse", () => {
+  const dxf = makeDxf(dxfEllipse(1, 10, 10, 5, 0, 0.5));
+  const analysis = analyzeDxf(dxf);
+  const { fixed } = repairDxf(dxf, analysis);
+  const re = analyzeDxf(fixed);
+  const ellipses = re.entities.filter(e => e.type === "ELLIPSE");
+  return {
+    pass: ellipses.length === 1,
+    detail: "after=" + re.entities.map(e => e.type).join(",") + " ellipses=" + ellipses.length,
+  };
+});
+
+// --- §19: Explicit opt-in does convert curves to polylines ---
+
+run("Test_optin_converts_circle_to_polyline", () => {
+  const dxf = makeDxf(dxfCircle(1, 5, 5, 3));
+  const analysis = analyzeDxf(dxf);
+  const { fixed, fixSummary } = repairDxf(dxf, analysis, { convertCurvesToPolylines: true });
+  const re = analyzeDxf(fixed);
+  const hasConvertMarker = fixSummary.some(f => f.id === "converted_to_polylines");
+  return {
+    pass: re.entities.length === 1 && re.entities.every(e => e.type === "LWPOLYLINE" || e.type === "POLYLINE") && hasConvertMarker,
+    detail: "after=" + re.entities.map(e => e.type).join(",") + " converted=" + hasConvertMarker,
+  };
+});
+
+// --- §10 + §11: Open contours — tolerance-respecting snap ---
+
+run("Test_snap_tiny_gap_joins", () => {
+  // Two lines whose endpoints are 0.0005 apart (< 0.001 tolerance) → snap joins them.
+  const a = { type: "LINE", layer: "0", handle: "1", x1: 0, y1: 0, x2: 10, y2: 0 } as any;
+  const b = { type: "LINE", layer: "0", handle: "2", x1: 10.0005, y1: 0, x2: 20, y2: 0 } as any;
+  const out = snapOpenEndpoints([a, b], 0.001);
+  const bSnapped = out[1];
+  const moved = Math.abs((bSnapped.x1 ?? 0) - 10.0) < 0.001;
+  return { pass: moved, detail: "b.x1=" + (bSnapped.x1 ?? 0).toFixed(5) };
+});
+
+run("Test_snap_medium_gap_not_joined", () => {
+  // Two lines 0.5 apart (> 0.001) → snap must NOT move them.
+  const a = { type: "LINE", layer: "0", handle: "1", x1: 0, y1: 0, x2: 10, y2: 0 } as any;
+  const b = { type: "LINE", layer: "0", handle: "2", x1: 10.5, y1: 0, x2: 20, y2: 0 } as any;
+  const out = snapOpenEndpoints([a, b], 0.001);
+  const bSnapped = out[1];
+  const unchanged = Math.abs((bSnapped.x1 ?? 0) - 10.5) < 1e-9;
+  return { pass: unchanged, detail: "b.x1=" + (bSnapped.x1 ?? 0).toFixed(5) };
+});
+
+run("Test_snap_large_gap_not_joined", () => {
+  // Two lines 5.0 apart → snap must NOT move them.
+  const a = { type: "LINE", layer: "0", handle: "1", x1: 0, y1: 0, x2: 10, y2: 0 } as any;
+  const b = { type: "LINE", layer: "0", handle: "2", x1: 15, y1: 0, x2: 20, y2: 0 } as any;
+  const out = snapOpenEndpoints([a, b], 0.001);
+  const bSnapped = out[1];
+  const unchanged = Math.abs((bSnapped.x1 ?? 0) - 15.0) < 1e-9;
+  return { pass: unchanged, detail: "b.x1=" + (bSnapped.x1 ?? 0).toFixed(5) };
+});
+
+run("Test_opencontour_distinct_lines_preserved", () => {
+  // Two clearly separated parallel lines at y=0 and y=0.5 (large separation)
+  // must NOT be joined by the repair pipeline (no geometry destruction).
+  const dxf = makeDxf([line(1, 0, 0, 100, 0), line(2, 0, 0.5, 100, 0.5)].join("\n"));
+  const analysis = analyzeDxf(dxf);
+  const { fixed } = repairDxf(dxf, analysis);
+  const re = analyzeDxf(fixed);
+  return {
+    pass: re.stats.totalEntities === 2,
+    detail: "after=" + re.stats.totalEntities,
+  };
+});
+
+// --- §18/§16: Exact / reverse / zero-length coverage for more types ---
+run("Test_lwpolyline_zero_length_removed", () => {
+  // LWPOLYLINE with a single vertex (degenerate) must be removed as zero-length.
+  const result = cleanupEntities(
+    [ent({ type: "LWPOLYLINE", handle: "1", vertices: [{ x: 5, y: 5 }] }),
+     ent({ type: "LINE", handle: "2", x1: 0, y1: 0, x2: 10, y2: 0 })],
+    DEFAULT_CLEANUP_OPTIONS);
+  return {
+    pass: result.report.zeroLengthRemoved === 1 && result.entities.length === 1,
+    detail: "zeroRemoved=" + result.report.zeroLengthRemoved + " final=" + result.entities.length,
+  };
+});
+
 
 const passed = Object.values(results).filter((r) => r.pass).length;
 const failed = Object.values(results).length - passed;
