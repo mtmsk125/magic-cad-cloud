@@ -962,6 +962,72 @@ run("Test_p6a_E_us_states_coastline_not_deleted", () => {
   };
 });
 
+// --- Phase 8: legacy POLYLINE closure (real-world 266.dxf regression) ---
+
+run("Test_p8_legacy_polyline_small_gap_closed", () => {
+  // Legacy POLYLINE with a 0.026 endpoint gap (< gapTolerance 0.05) must be
+  // detected AND actually repaired: closed flag set, serialized, and the
+  // re-parsed output must contain zero open polylines.
+  // Contour (0,0)→(10,0)→(0,0.026): first/last endpoints are 0.026 apart.
+  const dxf = makeDxf(dxfPolyline(1, [[0, 0], [10, 0], [0, 0.026]], false));
+  const before = analyzeDxf(dxf);
+  const openBefore = before.issues.filter(i => i.type === "open_polyline").length;
+  const { fixed } = repairDxf(dxf, before);
+  // Re-parse the OUTPUT file — not in-memory objects.
+  const after = analyzeDxf(fixed);
+  const poly = after.entities.find(e => e.type === "POLYLINE") as any;
+  const openAfter = after.issues.filter(i => i.type === "open_polyline").length;
+  return {
+    pass: openBefore === 1 && !!poly && poly.closed === true && openAfter === 0,
+    detail: `openBefore=${openBefore} closed=${poly ? poly.closed : "missing"} openAfter=${openAfter}`,
+  };
+});
+
+run("Test_p8_legacy_polyline_large_gap_stays_open", () => {
+  // A legacy POLYLINE with a genuinely large gap must NOT be force-closed.
+  const dxf = makeDxf(dxfPolyline(1, [[0, 0], [10, 5]], false));
+  const before = analyzeDxf(dxf);
+  const { fixed } = repairDxf(dxf, before);
+  const after = analyzeDxf(fixed);
+  const poly = after.entities.find(e => e.type === "POLYLINE") as any;
+  return {
+    pass: !!poly && poly.closed === false,
+    detail: "closed=" + (poly ? String(poly.closed) : "missing"),
+  };
+});
+
+run("Test_p8_real_customer_266dxf_regression", () => {
+  // Full regression on the real customer file (git-ignored fixture):
+  // before = 1780 polylines / 1776 closed / 4 open (gap ≈ 0.026)
+  // after repair + re-parse = 1780 closed / 0 open / 0 remaining issues.
+  const fixture = join(process.cwd(), "test-fixtures", "266.dxf");
+  if (!existsSync(fixture)) {
+    return { pass: true, detail: "fixture 266.dxf not present — skipped" };
+  }
+  const content = readFileSync(fixture, "latin1");
+  const before = analyzeDxf(content);
+  const polysBefore = before.entities.filter(e => e.type === "LWPOLYLINE" || e.type === "POLYLINE");
+  const closedBefore = polysBefore.filter((e: any) => e.closed).length;
+  const openIssuesBefore = before.issues.filter(i => i.type === "open_polyline").length;
+  const { fixed } = repairDxf(content, before);
+  const after = analyzeDxf(fixed); // real re-parse of the repaired file
+  const polysAfter = after.entities.filter(e => e.type === "LWPOLYLINE" || e.type === "POLYLINE");
+  const closedAfter = polysAfter.filter((e: any) => e.closed).length;
+  return {
+    pass:
+      polysBefore.length === 1780 &&
+      closedBefore === 1776 &&
+      openIssuesBefore === 4 &&
+      polysAfter.length === 1780 &&
+      closedAfter === 1780 &&
+      after.issues.length === 0 &&
+      after.issues.filter(i => i.severity === "error").length === 0,
+    detail:
+      `before ${closedBefore}/${polysBefore.length} closed, open=${openIssuesBefore}` +
+      ` → after ${closedAfter}/${polysAfter.length} closed, issues=${after.issues.length}`,
+  };
+});
+
 
 const passed = Object.values(results).filter((r) => r.pass).length;
 const failed = Object.values(results).length - passed;

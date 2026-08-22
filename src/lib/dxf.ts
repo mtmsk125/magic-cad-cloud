@@ -711,7 +711,11 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
     if (e.closed) continue;
     const first = e.vertices[0];
     const last = e.vertices[e.vertices.length - 1];
-    const gap = dist(first.x, last.y, last.x, last.y);
+    // Phase 8 (Bug: gap under-report): measure the TRUE Euclidean endpoint
+    // gap. The previous call passed `last.y` as the first point's y, which
+    // reduced the "gap" to the horizontal component only and under-reported
+    // real open contours (real-world 266.dxf: reported 0.023 vs actual 0.026).
+    const gap = dist(first.x, first.y, last.x, last.y);
     if (gap > TINY) {
       issues.push({
         id: `open_poly_${i}`,
@@ -1107,7 +1111,11 @@ function closeAllPolylines(entities: DxfEntity[]): { closed: DxfEntity[]; closeC
   const gapTol = DEFAULT_CLEANUP_OPTIONS.gapTolerance;
   const snapTol = DEFAULT_CLEANUP_OPTIONS.tolerance;
   const result = entities.map(e => {
-    if (e.type !== "LWPOLYLINE" || e.closed || !e.vertices || e.vertices.length < 2) return e;
+    // Phase 8 (real-world 266.dxf): legacy POLYLINE entities were silently
+    // skipped here, so open legacy polylines were detected but never closed
+    // (Fixed: 0). Both LWPOLYLINE and legacy POLYLINE are now closable under
+    // the same conservative rule.
+    if ((e.type !== "LWPOLYLINE" && e.type !== "POLYLINE") || e.closed || !e.vertices || e.vertices.length < 2) return e;
     // Ignore trailing vertex RECORDS that merely duplicate the first vertex:
     // they are a serialization style (explicit closing point on an unflagged
     // polyline), NOT proof of geometric closure. Measure the REAL contour gap
