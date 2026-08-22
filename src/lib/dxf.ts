@@ -64,6 +64,38 @@ export interface DxfAnalysis {
   originalFileSize?: number;
   processedFileSize?: number;
   sizeReductionPercent?: number;
+    manufacturing?: ManufacturingScan;
+}
+export type ManufacturingCategory = "confirmed" | "potential" | "safe";
+
+/** Phase 3: manufacturing classification types — detection/classification only. */
+export type ManufacturingType =
+  | "near_gap"
+  | "isolated_open_geometry"
+  | "duplicate"
+  | "overlap"
+  | "tiny_geometry"
+  | "stray_geometry"
+  | "self_intersection";
+
+export interface ManufacturingFinding {
+  id: string;
+  category: ManufacturingCategory;
+  type: ManufacturingType;
+  severity: "error" | "warning";
+  confidence: number; // 0..1
+  repairable: boolean; // whether an existing safe repair can handle it
+  reason: string; // human-readable (en) classification rationale
+  entityIndices: number[];
+  detail?: string;
+}
+
+export interface ManufacturingScan {
+  findings: ManufacturingFinding[];
+  confirmedCount: number;
+  potentialCount: number;
+  safeCount: number;
+  summary: string[];
 }
 
 export interface FixSummaryItem {
@@ -74,7 +106,8 @@ export interface FixSummaryItem {
   detail: string;
 }
 
-import { cleanupEntities, DEFAULT_CLEANUP_OPTIONS } from "./dxf-cleanup";
+import { cleanupEntities, DEFAULT_CLEANUP_OPTIONS, effectiveTinyTolerance } from "./dxf-cleanup";
+import { classifyManufacturing } from "./manufacturing";
 
 function parseGroups(content: string): DxfGroup[] {
   // Trim leading/trailing blank lines first. A leftover "\n" before the first
@@ -118,7 +151,7 @@ export function snapOpenEndpoints(entities: DxfEntity[], tolerance: number = 0.0
     if (e.type === "LINE") {
       endpoints.push({ x: e.x1 ?? 0, y: e.y1 ?? 0, entityIndex: i, isStart: true });
       endpoints.push({ x: e.x2 ?? 0, y: e.y2 ?? 0, entityIndex: i, isStart: false });
-    } else if (e.type === "LWPOLYLINE" && e.vertices && e.vertices.length > 0) {
+    } else if ((e.type === "LWPOLYLINE" || e.type === "POLYLINE") && e.vertices && e.vertices.length > 0) {
       endpoints.push({ x: e.vertices[0].x, y: e.vertices[0].y, entityIndex: i, isStart: true });
       const last = e.vertices[e.vertices.length - 1];
       if (!e.closed) {
@@ -168,7 +201,7 @@ export function snapOpenEndpoints(entities: DxfEntity[], tolerance: number = 0.0
       if (snapped.has(endKey)) {
         entity = { ...entity, x2: snapped.get(endKey)!.x, y2: snapped.get(endKey)!.y };
       }
-    } else if (entity.type === "LWPOLYLINE" && entity.vertices) {
+    } else if ((entity.type === "LWPOLYLINE" || entity.type === "POLYLINE") && entity.vertices) {
       const startKey = `${idx}-start`;
       const endKey = `${idx}-end`;
       let verts = [...entity.vertices];
@@ -257,7 +290,7 @@ export function calculateTotalPerimeter(entities: DxfEntity[]): number {
       let sweep = end - start;
       if (sweep < 0) sweep += 2 * Math.PI;
       total += r * sweep;
-    } else if (e.type === "LWPOLYLINE" && e.vertices && e.vertices.length > 1) {
+    } else if ((e.type === "LWPOLYLINE" || e.type === "POLYLINE") && e.vertices && e.vertices.length > 1) {
       for (let i = 0; i < e.vertices.length - 1; i++) {
         total += dist(e.vertices[i].x, e.vertices[i].y, e.vertices[i + 1].x, e.vertices[i + 1].y);
       }
@@ -285,7 +318,7 @@ export function detectOpenLoops(entities: DxfEntity[]): { count: number; openPoi
     if (e.type === "LINE") {
       endpoints.push({ x: e.x1 ?? 0, y: e.y1 ?? 0 });
       endpoints.push({ x: e.x2 ?? 0, y: e.y2 ?? 0 });
-    } else if (e.type === "LWPOLYLINE" && e.vertices) {
+    } else if ((e.type === "LWPOLYLINE" || e.type === "POLYLINE") && e.vertices) {
       if (e.vertices.length > 0) {
         endpoints.push({ x: e.vertices[0].x, y: e.vertices[0].y });
         const last = e.vertices[e.vertices.length - 1];
@@ -386,14 +419,46 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
   const allGroups = parseGroups(entitiesRaw);
   const entityBlocks: string[] = [];
   let current: string[] = [];
-  for (const g of allGroups) {
-    if (g.code === 0 && current.length > 0) {
+  // Legacy (AC1009) POLYLINE structures span multiple records
+  // (POLYLINE -> VERTEX ... -> SEQEND). Fold the VERTEX / SEQEND records into
+  // the one logical POLYLINE block so the parser can attach its vertices.
+  let inLegacyPolyline = false;
+
+  const flushBlock = () => {
+    if (current.length > 0) {
       entityBlocks.push(current.join("\n"));
       current = [];
     }
+    inLegacyPolyline = false;
+  };
+
+  for (const g of allGroups) {
+    if (g.code !== 0) {
+      current.push(`${g.code}\n${g.value}`);
+      continue;
+    }
+    const t = (g.value || "").toUpperCase();
+    if (t === "POLYLINE") {
+      flushBlock();
+      inLegacyPolyline = true;
+      current.push(`${g.code}\n${g.value}`);
+      continue;
+    }
+    if (t === "VERTEX" && inLegacyPolyline) {
+      // VERTEX sub-record belongs to the open legacy POLYLINE — fold it in
+      current.push(`${g.code}\n${g.value}`);
+      continue;
+    }
+    if (t === "SEQEND" && inLegacyPolyline) {
+      // Legacy POLYLINE terminator — closes the block
+      current.push(`${g.code}\n${g.value}`);
+      flushBlock();
+      continue;
+    }
+    flushBlock();
     current.push(`${g.code}\n${g.value}`);
   }
-  if (current.length) entityBlocks.push(current.join("\n"));
+  flushBlock();
 
   for (const block of entityBlocks) {
     const groups = parseGroups(block.trim());
@@ -444,12 +509,38 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
         });
       }
     } else if (type === "POLYLINE") {
-      // POLYLINE (old-style) — vertices follow as VERTEX entities, but we parse inline
+      // Legacy (AC1009) POLYLINE — the block splitter folded the VERTEX /
+      // SEQEND sub-records into this block. Rebuild vertices from them so a
+      // valid legacy POLYLINE never reports an empty vertex list.
       const flagGroup = groups.find(g => g.code === 70);
       const flags = parseInt(flagGroup?.value ?? "0", 10);
       entity.closed = (flags & 1) === 1;
       entity.vertices = [];
-      // Also store layer if not already set
+      const raw = entity.rawLines ?? [];
+      for (let r = 0; r + 1 < raw.length; r += 2) {
+        const c = parseInt(raw[r].trim(), 10);
+        const v = (raw[r + 1] || "").trim();
+        if (c === 0 && v.toUpperCase() === "VERTEX") {
+          let vx: number | undefined;
+          let vy: number | undefined;
+          let vBulge = 0;
+          let k = r + 2;
+          while (k + 1 < raw.length && parseInt(raw[k].trim(), 10) !== 0) {
+            const cc = parseInt(raw[k].trim(), 10);
+            const vv = raw[k + 1]?.trim() ?? "";
+            if (cc === 10) vx = parseFloat(vv);
+            else if (cc === 20) vy = parseFloat(vv);
+            else if (cc === 42) vBulge = parseFloat(vv);
+            k += 2;
+          }
+          if (vx !== undefined && vy !== undefined) {
+            entity.vertices.push({ x: vx, y: vy, bulge: vBulge });
+          }
+        } else if (c === 0 && v.toUpperCase() === "SEQEND") {
+          break;
+        }
+      }
+      entity.vertexCount = entity.vertices.length;
     } else if (type === "VERTEX") {
       // VERTEX entity for POLYLINE — coordinates in codes 10,20,30; bulge in 42
       const x = parseFloat(groups.find(g => g.code === 10)?.value ?? "NaN");
@@ -616,7 +707,7 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
 
   for (let i = 0; i < snappedEntities.length; i++) {
     const e = snappedEntities[i];
-    if (e.type !== "LWPOLYLINE" || !e.vertices || e.vertices.length < 2) continue;
+    if ((e.type !== "LWPOLYLINE" && e.type !== "POLYLINE") || !e.vertices || e.vertices.length < 2) continue;
     if (e.closed) continue;
     const first = e.vertices[0];
     const last = e.vertices[e.vertices.length - 1];
@@ -665,13 +756,17 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
   const layerSet = new Set(snappedEntities.map(e => e.layer));
   const layers = [...layerSet];
 
+  // VERTEX / SEQEND are bookkeeping records of legacy POLYLINEs, not standalone
+  // geometry — they must not be counted as entities or reported as geometry.
+  const geometryEntities = snappedEntities.filter(e => e.type !== "VERTEX" && e.type !== "SEQEND");
+
   const stats: DxfStats = {
-    totalEntities: snappedEntities.length,
-    lines: snappedEntities.filter(e => e.type === "LINE").length,
-    polylines: snappedEntities.filter(e => e.type === "LWPOLYLINE" || e.type === "POLYLINE").length,
-    arcs: snappedEntities.filter(e => e.type === "ARC").length,
-    circles: snappedEntities.filter(e => e.type === "CIRCLE").length,
-    others: snappedEntities.filter(e => !["LINE","LWPOLYLINE","POLYLINE","ARC","CIRCLE"].includes(e.type)).length,
+    totalEntities: geometryEntities.length,
+    lines: geometryEntities.filter(e => e.type === "LINE").length,
+    polylines: geometryEntities.filter(e => e.type === "LWPOLYLINE" || e.type === "POLYLINE").length,
+    arcs: geometryEntities.filter(e => e.type === "ARC").length,
+    circles: geometryEntities.filter(e => e.type === "CIRCLE").length,
+    others: geometryEntities.filter(e => !["LINE","LWPOLYLINE","POLYLINE","ARC","CIRCLE"].includes(e.type)).length,
     layers,
     originalFileSize,
     processingTimeMs: 0,
@@ -706,7 +801,10 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
     totalPerimeter,
     openLoopCount,
   };
-  const { sizeReductionPercent } = structuralPurge(tempAnalysis);
+    const { sizeReductionPercent } = structuralPurge(tempAnalysis);
+
+  // Phase 3: manufacturing classification layer (detect/classify only — no repair).
+  const mfg = classifyManufacturing(snappedEntities);
 
   return {
     entities: snappedEntities,
@@ -724,6 +822,7 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
     processingTimeMs,
     originalFileSize,
     sizeReductionPercent,
+     manufacturing: mfg,
   };
 }
 
@@ -999,8 +1098,25 @@ function joinConnectedEntities(entities: DxfEntity[]): { joined: DxfEntity[]; jo
  * إغلاق جميع المسارات المفتوحة
  */
 function closeAllPolylines(entities: DxfEntity[]): { closed: DxfEntity[]; closeCount: number } {
+  // Phase 6A (Bug 1): an open polyline may ONLY become closed when the
+  // geometry is ACTUALLY closed — i.e. the distance between the first and
+  // last meaningful vertex is within the existing gap tolerance. A repeated
+  // first/last vertex record alone is NOT proof of closure (real-world case:
+  // an open contour whose last vertex duplicates the first, with a huge real
+  // endpoint gap). Explicit DXF closed flags are untouched either way.
+  const gapTol = DEFAULT_CLEANUP_OPTIONS.gapTolerance;
+  const snapTol = DEFAULT_CLEANUP_OPTIONS.tolerance;
   const result = entities.map(e => {
     if (e.type !== "LWPOLYLINE" || e.closed || !e.vertices || e.vertices.length < 2) return e;
+    // Ignore trailing vertex RECORDS that merely duplicate the first vertex:
+    // they are a serialization style (explicit closing point on an unflagged
+    // polyline), NOT proof of geometric closure. Measure the REAL contour gap
+    // from the last DISTINCT vertex instead (Phase 6A Bug 1).
+    let n = e.vertices.length - 1;
+    while (n > 0 && dist(e.vertices[n].x, e.vertices[n].y, e.vertices[0].x, e.vertices[0].y) <= snapTol) n--;
+    const lastMeaningful = e.vertices[n];
+    if (dist(e.vertices[0].x, e.vertices[0].y, lastMeaningful.x, lastMeaningful.y) > gapTol)
+      return e; // genuinely open → PRESERVE open state
     return { ...e, closed: true };
   });
 
@@ -1012,14 +1128,29 @@ function closeAllPolylines(entities: DxfEntity[]): { closed: DxfEntity[]; closeC
  * إزالة النقاط المعلقة (Dangling Nodes) — نقاط منفردة لا تنتمي لأي مسار
  */
 function removeDanglingNodes(entities: DxfEntity[]): { cleaned: DxfEntity[]; removedCount: number } {
+  // Phase 6A (Bug 2): scale-aware tiny threshold — a LINE shorter than the
+  // drawing-relative tolerance is dangling; legitimate small geometry in
+  // small-scale drawings is preserved. Unknown scale → 0 → only exact zeros.
+  const tinyTol = effectiveTinyTolerance(entities);
   const result = entities.filter(e => {
     if (e.type === "POINT") return false;
     if (e.type === "LINE") {
       const len = dist(e.x1 ?? 0, e.y1 ?? 0, e.x2 ?? 0, e.y2 ?? 0);
-      return len > 0.001;
+      return len > tinyTol;
     }
-    if ((e.type === "LWPOLYLINE" || e.type === "POLYLINE") && e.vertices) {
+    if (e.type === "LWPOLYLINE") {
+      // Only drop a lightweight polyline when the vertex list is positively
+      // present and degenerate (fewer than 2 vertices). Unknown/absent vertex
+      // representation is preserved (§7 safety).
+      if (!e.vertices) return true;
       return e.vertices.length >= 2;
+    }
+    if (e.type === "POLYLINE") {
+      // SAFETY (§7): NEVER delete a legacy POLYLINE merely because its vertex
+      // list is unpopulated/uncertain — a valid legacy POLYLINE always carries
+      // its VERTEX sub-records which the parser now reconstructs. If we cannot
+      // positively establish it is empty geometry, PRESERVE it.
+      return true;
     }
     return true;
   });
@@ -1334,6 +1465,31 @@ function generateEntityText(e: DxfEntity): string {
         lines.push(" 42", v.bulge.toFixed(6));
       }
     }
+    return lines.join("\n");
+  }
+  if (e.type === "POLYLINE") {
+    // Legacy (AC1009) POLYLINE: serialise as old-style POLYLINE → VERTEX →
+    // SEQEND rebuilt from the (possibly cleaned) vertex list.
+    const lines: string[] = ["  0", "POLYLINE", "  8", e.layer];
+    if (e.handle) lines.push("  5", e.handle);
+    lines.push(" 66", "1");
+    // Preserve original header attributes (color, linetype, lineweight,
+    // thickness, extrusion) but not geometry that we regenerate (8/5/66/70).
+    const raw = e.rawLines ?? [];
+    const preservedCodes = new Set<number>([6, 39, 48, 62, 370, 420]);
+    for (let r = 0; r + 1 < raw.length; r += 2) {
+      const c = parseInt(raw[r].trim(), 10);
+      const v = (raw[r + 1] || "").trim();
+      if (c === 0 && v.toUpperCase() === "VERTEX") break; // stop at the VERTEX body
+      if (preservedCodes.has(c)) lines.push(raw[r].trim(), v);
+    }
+    lines.push(" 70", e.closed ? "1" : "0");
+    const verts = e.vertices ?? [];
+    for (const v of verts) {
+      lines.push("  0", "VERTEX", "  8", "0", " 10", v.x.toFixed(6), " 20", v.y.toFixed(6));
+      if (v.bulge && v.bulge !== 0) lines.push(" 42", v.bulge.toFixed(6));
+    }
+    lines.push("  0", "SEQEND");
     return lines.join("\n");
   }
   // LINE: regenerate the entity fully from its current (possibly cleaned/

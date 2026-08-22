@@ -24,6 +24,9 @@ scripts/debug-input-analysis.json
 scripts/debug-fixed-analysis.json
 scripts/verify-result.json
 
+# Local test fixtures — include private customer data, never pushed
+test-fixtures/
+
 # Editor directories and files
 
 .vscode/*

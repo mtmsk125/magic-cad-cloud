@@ -33,6 +33,66 @@ export const DEFAULT_CLEANUP_OPTIONS: CleanupOptions = {
   respectLayers: true,
 };
 
+/* ------------------------------------------------------------------ */
+/* Phase 6A (Bug 2): scale-aware tiny-geometry tolerance               */
+/* ------------------------------------------------------------------ */
+/**
+ * Bounding-box diagonal of all measurable geometry (the drawing "scale").
+ * Returns null when no measurable geometry exists — in that case callers
+ * must PRESERVE geometry rather than delete it (uncertain scale = preserve).
+ */
+export function computeDrawingScale(entities: DxfEntity[]): number | null {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let any = false;
+  const acc = (x?: number, y?: number) => {
+    if (typeof x !== "number" || typeof y !== "number" || !isFinite(x) || !isFinite(y)) return;
+    any = true;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  };
+  for (const e of entities) {
+    if (e.type === "VERTEX" || e.type === "SEQEND") continue; // bookkeeping, not geometry
+    acc(e.x1, e.y1);
+    acc(e.x2, e.y2);
+    if (e.type === "CIRCLE" || e.type === "ARC") {
+      const r = Math.abs(e.radius ?? 0);
+      acc((e.cx ?? 0) - r, (e.cy ?? 0) - r);
+      acc((e.cx ?? 0) + r, (e.cy ?? 0) + r);
+      continue;
+    }
+    acc(e.cx, e.cy);
+    for (const v of e.vertices ?? []) acc(v.x, v.y);
+  }
+  if (!any) return null;
+  return Math.hypot(maxX - minX, maxY - minY);
+}
+
+/**
+ * Effective tiny-geometry removal threshold, SCALE-AWARE (Phase 6A Bug 2).
+ *
+ * Formula:
+ *   diagonal = bounding-box diagonal of the drawing's geometry
+ *   tinyTol  = clamp(diagonal * 1e-4, 1e-6, 0.01)
+ *
+ * Rationale:
+ *  - An entity shorter than 0.01% of the drawing diagonal is invisible at
+ *    drawing scale → genuine micro-junk → removable.
+ *  - Small-scale drawings (e.g. a map whose whole bbox is ~0.5 units) get a
+ *    proportionally small threshold, so legitimate coastline-like segments
+ *    are NEVER deleted merely because their absolute length is < 0.01.
+ *  - Normal/large-scale drawings clamp at the historical absolute 0.01,
+ *    preserving existing behavior.
+ *  - If scale cannot be determined (no measurable geometry), returns 0 →
+ *    only exactly-zero-length entities qualify (§9: uncertain = preserve).
+ */
+export function effectiveTinyTolerance(entities: DxfEntity[]): number {
+  const diag = computeDrawingScale(entities);
+  if (diag === null || !isFinite(diag) || diag <= 0) return 0;
+  return Math.min(Math.max(diag * 1e-4, 1e-6), 0.01);
+}
+
 export interface OpenPathInfo {
   entityIndex: number;
   entityType: string;
@@ -463,6 +523,11 @@ export function cleanupEntities(
 ): { entities: DxfEntity[]; report: CleanupReport } {
   const opts: CleanupOptions = { ...DEFAULT_CLEANUP_OPTIONS, ...options };
   const tol = opts.tolerance;
+  // Phase 6A (Bug 2): zero/tiny-length removal is SCALE-AWARE. The fixed
+  // absolute tolerance previously deleted legitimate small geometry in
+  // small-scale drawings (e.g. 04-us-states.dxf). Duplicate-matching and
+  // vertex-dedup tolerances below are intentionally UNCHANGED.
+  const tinyTol = effectiveTinyTolerance(input);
   const before = analyzeGeometry(input, opts);
 
   let zeroLengthRemoved = 0;
@@ -477,7 +542,7 @@ export function cleanupEntities(
   /* --- stage 1: zero-length + duplicate vertices ------------------ */
   let stage: DxfEntity[] = [];
   for (const e of input) {
-    if (opts.removeZeroLength && e.type === "LINE" && lineLength(e) <= tol) {
+    if (opts.removeZeroLength && e.type === "LINE" && lineLength(e) <= Math.max(tinyTol, 1e-12)) {
       zeroLengthRemoved++;
       continue;
     }
@@ -507,14 +572,21 @@ export function cleanupEntities(
         }
         verts = kept;
       }
-      if (opts.removeZeroLength && (verts.length < 2 || polyLength({ ...e, vertices: verts }) <= tol)) {
+      // SAFETY (§7): a legacy POLYLINE with an empty vertex list is an
+      // uncertain representation — preserve it rather than deleting it as
+      // zero-length. Only positively-known degenerate geometry is removable.
+      if (e.type === "POLYLINE" && verts.length === 0) {
+        stage.push(e);
+        continue;
+      }
+      if (opts.removeZeroLength && (verts.length < 2 || polyLength({ ...e, vertices: verts }) <= Math.max(tinyTol, 1e-12))) {
         zeroLengthRemoved++;
         continue;
       }
       stage.push(verts === e.vertices ? e : { ...e, vertices: verts, vertexCount: verts.length });
       continue;
     }
-    if (opts.removeZeroLength && (e.type === "CIRCLE" || e.type === "ARC") && (e.radius ?? 0) <= tol) {
+    if (opts.removeZeroLength && (e.type === "CIRCLE" || e.type === "ARC") && (e.radius ?? 0) <= tinyTol) {
       zeroLengthRemoved++;
       continue;
     }
