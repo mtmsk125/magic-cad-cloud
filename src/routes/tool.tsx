@@ -1035,12 +1035,165 @@ function ToolPage() {
         {/* UPLOAD */}
         {stage === "upload" && (
           <>
+            <div
+              onDrop={onDrop}
+              onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+              onDragLeave={() => setDragging(false)}
+              onClick={() => fileRef.current?.click()}
+              className={`
+                cursor-pointer rounded-2xl border-2 border-dashed transition-all p-16 text-center
+                ${dragging
+                  ? "border-accent bg-accent/10 scale-[1.01]"
+                  : "border-border hover:border-primary/50 hover:bg-card/60"}
+              `}
+            >
+              <div className="text-6xl mb-5">📁</div>
+              <p className="font-display text-xl font-semibold">{t.dropZone}</p>
+              <p className="mt-3 text-muted-foreground text-sm">{t.dropOr}</p>
+              <div className="mt-4 inline-flex px-6 py-3 rounded-lg bg-accent text-accent-foreground font-semibold shadow-[var(--shadow-spark)] hover:opacity-90 transition">
+                {t.dropBtn}
+              </div>
+              <p className="mt-5 font-mono text-xs text-muted-foreground/60">{t.dropNote}</p>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".dxf,.svg"
+                className="hidden"
+                onChange={onFileChange}
+              />
+            </div>
+
+            {/* Self-Destruct Toggle */}
+            <div className="mt-4 flex items-center justify-center">
+              <label className="flex items-center gap-3 cursor-pointer group">
+                <div
+                  onClick={() => setSelfDestructEnabled(!selfDestructEnabled)}
+                  className={`relative w-12 h-6 rounded-full transition-colors ${
+                    selfDestructEnabled ? "bg-red-500" : "bg-border"
+                  }`}
+                >
+                  <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+                    selfDestructEnabled ? "translate-x-6" : "translate-x-0.5"
+                  }`} />
+                </div>
+                <span className="text-sm text-muted-foreground group-hover:text-foreground transition">
+                  🔒 {t.selfDestructToggle}
+                </span>
+              </label>
+            </div>
+            {selfDestructEnabled && (
+              <div className="mt-2 text-center">
+                <span className="font-mono text-xs text-red-400 bg-red-500/10 px-3 py-1 rounded-full border border-red-500/30">
+                  ⚠ {t.selfDestructNotice}
+                </span>
+              </div>
+            )}
+            {selfDestructTriggered && (
+              <div className="mt-2 text-center">
+                <span className="font-mono text-xs text-green-400 bg-green-500/10 px-3 py-1 rounded-full border border-green-500/30">
+                  {t.selfDestructTriggered}
+                </span>
+              </div>
+            )}
+
+            {/* Bulk Upload Section */}
+            <div className="mt-6">
+              <button
+                onClick={() => setShowBulkUpload(!showBulkUpload)}
+                className="w-full py-3 rounded-xl border border-dashed border-border hover:border-primary/50 hover:bg-card/60 transition text-sm text-muted-foreground hover:text-foreground font-medium"
+              >
+                📦 {t.bulkUpload} {showBulkUpload ? "▲" : "▼"}
+              </button>
+
+              {showBulkUpload && (
+                <div className="mt-4 rounded-2xl border border-border bg-card p-6">
+                  <div
+                    onDrop={(e) => { e.preventDefault(); handleBulkFiles(e.dataTransfer.files); }}
+                    onDragOver={(e) => e.preventDefault()}
+                    className="border-2 border-dashed border-border rounded-xl p-8 text-center hover:border-primary/50 transition cursor-pointer"
+                    onClick={() => {
+                      const input = document.createElement('input');
+                      input.type = 'file';
+                      input.accept = '.dxf,.zip';
+                      input.multiple = true;
+                      input.onchange = (e) => {
+                        const files = (e.target as HTMLInputElement).files;
+                        if (files) handleBulkFiles(files);
+                      };
+                      input.click();
+                    }}
+                  >
+                    <div className="text-4xl mb-3">📦</div>
+                    <p className="font-display font-semibold">{t.bulkDropZone}</p>
+                    <p className="mt-2 font-mono text-xs text-muted-foreground">{t.bulkNote}</p>
+                  </div>
+
+                  {bulkFiles.length > 0 && (
+                    <div className="mt-6">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-display font-semibold">{t.bulkTableTitle} ({bulkFiles.length})</h3>
+                        <div className="flex gap-2">
+                          {bulkFiles.some(f => f.status === "pending") && (
+                            <button
+                              onClick={processBulkFiles}
+                              disabled={bulkProcessing}
+                              className="px-4 py-2 rounded-lg bg-accent text-accent-foreground font-semibold text-sm hover:opacity-90 transition disabled:opacity-50"
+                            >
+                              {bulkProcessing ? "⏳ ..." : "🔧 معالجة"}
+                            </button>
+                          )}
+                          {bulkFiles.some(f => f.status === "done") && (
+                            <button
+                              onClick={downloadAllBulk}
+                              className="px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition"
+                            >
+                              ⬇ {t.bulkDownloadAll}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div className="space-y-2 max-h-60 overflow-y-auto">
+                        {bulkFiles.map((entry) => (
+                          <div key={entry.id} className="flex items-center gap-3 p-3 rounded-xl border border-border/60 bg-background">
+                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                              entry.status === "done" ? "bg-green-400" :
+                              entry.status === "analyzing" ? "bg-yellow-400 animate-pulse" :
+                              entry.status === "error" ? "bg-red-400" : "bg-muted-foreground/30"
+                            }`} />
+                            <span className="flex-1 font-mono text-sm truncate">{entry.file.name}</span>
+                            <span className={`font-mono text-xs px-2 py-0.5 rounded ${
+                              entry.status === "done" ? "bg-green-500/10 text-green-400" :
+                              entry.status === "analyzing" ? "bg-yellow-500/10 text-yellow-400" :
+                              entry.status === "error" ? "bg-red-500/10 text-red-400" :
+                              "bg-muted/30 text-muted-foreground"
+                            }`}>
+                              {entry.status === "done" ? t.bulkStatusDone :
+                               entry.status === "analyzing" ? t.bulkStatusAnalyzing :
+                               entry.status === "error" ? t.bulkStatusError :
+                               t.bulkStatusPending}
+                            </span>
+                            {entry.analysis && (
+                              <span className={`font-mono text-xs ${
+                                entry.analysis.score >= 80 ? "text-green-400" :
+                                entry.analysis.score >= 50 ? "text-yellow-400" : "text-red-400"
+                              }`}>
+                                {entry.analysis.score}/100
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 📢 Smart AdBanner — Upload stage (automatically hidden for premium users) */}
+            <AdBanner format="horizontal" lang={lang} />
             {/* ✨ FEATURES SHOWCASE — إمكانيات الأداة */}
             <div className="mb-10 rounded-2xl border border-accent/20 bg-gradient-to-br from-accent/5 via-card to-primary/5 p-6 sm:p-8">
               <div className="text-center mb-6">
-                <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-accent/10 border border-accent/30 text-accent text-xs font-mono mb-3">
-                  ⚡ {lang === "ar" ? "10 خطوات معالجة تلقائية" : "10 Automatic Processing Steps"}
-                </div>
                 <h2 className="font-display text-2xl sm:text-3xl font-bold">
                   {lang === "ar" ? "ماذا تفعل الأداة؟" : "What does the tool do?"}
                 </h2>
@@ -1075,7 +1228,7 @@ function ToolPage() {
                   <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500/20 to-purple-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">⭕</div>
                   <div>
                     <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "إغلاق المسارات" : "Close Paths"}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "إغلاق جميع المسارات المفتوحة تلقائياً — 100%" : "Automatically close all open paths — 100%"}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "إغلاق المسارات المفتوحة عند الحاجة — قبل القطع" : "Close open paths where needed — before cutting"}</p>
                   </div>
                 </div>
 
@@ -1241,162 +1394,6 @@ function ToolPage() {
                 </p>
               </div>
             </div>
-            <div
-              onDrop={onDrop}
-              onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-              onDragLeave={() => setDragging(false)}
-              onClick={() => fileRef.current?.click()}
-              className={`
-                cursor-pointer rounded-2xl border-2 border-dashed transition-all p-16 text-center
-                ${dragging
-                  ? "border-accent bg-accent/10 scale-[1.01]"
-                  : "border-border hover:border-primary/50 hover:bg-card/60"}
-              `}
-            >
-              <div className="text-6xl mb-5">📁</div>
-              <p className="font-display text-xl font-semibold">{t.dropZone}</p>
-              <p className="mt-3 text-muted-foreground text-sm">{t.dropOr}</p>
-              <div className="mt-4 inline-flex px-6 py-3 rounded-lg bg-accent text-accent-foreground font-semibold shadow-[var(--shadow-spark)] hover:opacity-90 transition">
-                {t.dropBtn}
-              </div>
-              <p className="mt-5 font-mono text-xs text-muted-foreground/60">{t.dropNote}</p>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".dxf,.svg"
-                className="hidden"
-                onChange={onFileChange}
-              />
-            </div>
-
-            {/* Self-Destruct Toggle */}
-            <div className="mt-4 flex items-center justify-center">
-              <label className="flex items-center gap-3 cursor-pointer group">
-                <div
-                  onClick={() => setSelfDestructEnabled(!selfDestructEnabled)}
-                  className={`relative w-12 h-6 rounded-full transition-colors ${
-                    selfDestructEnabled ? "bg-red-500" : "bg-border"
-                  }`}
-                >
-                  <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
-                    selfDestructEnabled ? "translate-x-6" : "translate-x-0.5"
-                  }`} />
-                </div>
-                <span className="text-sm text-muted-foreground group-hover:text-foreground transition">
-                  🔒 {t.selfDestructToggle}
-                </span>
-              </label>
-            </div>
-            {selfDestructEnabled && (
-              <div className="mt-2 text-center">
-                <span className="font-mono text-xs text-red-400 bg-red-500/10 px-3 py-1 rounded-full border border-red-500/30">
-                  ⚠ {t.selfDestructNotice}
-                </span>
-              </div>
-            )}
-            {selfDestructTriggered && (
-              <div className="mt-2 text-center">
-                <span className="font-mono text-xs text-green-400 bg-green-500/10 px-3 py-1 rounded-full border border-green-500/30">
-                  {t.selfDestructTriggered}
-                </span>
-              </div>
-            )}
-
-            {/* Bulk Upload Section */}
-            <div className="mt-6">
-              <button
-                onClick={() => setShowBulkUpload(!showBulkUpload)}
-                className="w-full py-3 rounded-xl border border-dashed border-border hover:border-primary/50 hover:bg-card/60 transition text-sm text-muted-foreground hover:text-foreground font-medium"
-              >
-                📦 {t.bulkUpload} {showBulkUpload ? "▲" : "▼"}
-              </button>
-
-              {showBulkUpload && (
-                <div className="mt-4 rounded-2xl border border-border bg-card p-6">
-                  <div
-                    onDrop={(e) => { e.preventDefault(); handleBulkFiles(e.dataTransfer.files); }}
-                    onDragOver={(e) => e.preventDefault()}
-                    className="border-2 border-dashed border-border rounded-xl p-8 text-center hover:border-primary/50 transition cursor-pointer"
-                    onClick={() => {
-                      const input = document.createElement('input');
-                      input.type = 'file';
-                      input.accept = '.dxf,.zip';
-                      input.multiple = true;
-                      input.onchange = (e) => {
-                        const files = (e.target as HTMLInputElement).files;
-                        if (files) handleBulkFiles(files);
-                      };
-                      input.click();
-                    }}
-                  >
-                    <div className="text-4xl mb-3">📦</div>
-                    <p className="font-display font-semibold">{t.bulkDropZone}</p>
-                    <p className="mt-2 font-mono text-xs text-muted-foreground">{t.bulkNote}</p>
-                  </div>
-
-                  {bulkFiles.length > 0 && (
-                    <div className="mt-6">
-                      <div className="flex items-center justify-between mb-3">
-                        <h3 className="font-display font-semibold">{t.bulkTableTitle} ({bulkFiles.length})</h3>
-                        <div className="flex gap-2">
-                          {bulkFiles.some(f => f.status === "pending") && (
-                            <button
-                              onClick={processBulkFiles}
-                              disabled={bulkProcessing}
-                              className="px-4 py-2 rounded-lg bg-accent text-accent-foreground font-semibold text-sm hover:opacity-90 transition disabled:opacity-50"
-                            >
-                              {bulkProcessing ? "⏳ ..." : "🔧 معالجة"}
-                            </button>
-                          )}
-                          {bulkFiles.some(f => f.status === "done") && (
-                            <button
-                              onClick={downloadAllBulk}
-                              className="px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition"
-                            >
-                              ⬇ {t.bulkDownloadAll}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                      <div className="space-y-2 max-h-60 overflow-y-auto">
-                        {bulkFiles.map((entry) => (
-                          <div key={entry.id} className="flex items-center gap-3 p-3 rounded-xl border border-border/60 bg-background">
-                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                              entry.status === "done" ? "bg-green-400" :
-                              entry.status === "analyzing" ? "bg-yellow-400 animate-pulse" :
-                              entry.status === "error" ? "bg-red-400" : "bg-muted-foreground/30"
-                            }`} />
-                            <span className="flex-1 font-mono text-sm truncate">{entry.file.name}</span>
-                            <span className={`font-mono text-xs px-2 py-0.5 rounded ${
-                              entry.status === "done" ? "bg-green-500/10 text-green-400" :
-                              entry.status === "analyzing" ? "bg-yellow-500/10 text-yellow-400" :
-                              entry.status === "error" ? "bg-red-500/10 text-red-400" :
-                              "bg-muted/30 text-muted-foreground"
-                            }`}>
-                              {entry.status === "done" ? t.bulkStatusDone :
-                               entry.status === "analyzing" ? t.bulkStatusAnalyzing :
-                               entry.status === "error" ? t.bulkStatusError :
-                               t.bulkStatusPending}
-                            </span>
-                            {entry.analysis && (
-                              <span className={`font-mono text-xs ${
-                                entry.analysis.score >= 80 ? "text-green-400" :
-                                entry.analysis.score >= 50 ? "text-yellow-400" : "text-red-400"
-                              }`}>
-                                {entry.analysis.score}/100
-                              </span>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* 📢 Smart AdBanner — Upload stage (automatically hidden for premium users) */}
-            <AdBanner format="horizontal" lang={lang} />
 
             {/* Share Tool Widget — upload stage */}
             <div className="mt-6">
