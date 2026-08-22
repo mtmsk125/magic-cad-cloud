@@ -375,6 +375,60 @@ type Lang = "ar" | "en";
 
 type Stage = "upload" | "analyzing" | "result" | "repaired";
 
+/** Phase 7 (UI only): step indicator 01–04 mapped onto the existing Stage machine. */
+function StepIndicator({ stage, lang }: { stage: Stage; lang: "ar" | "en" }) {
+  const ar = lang === "ar";
+  const steps = ar
+    ? ["رفع الملف", "فحص DXF", "مراجعة النتائج", "تنزيل الملف"]
+    : ["Upload", "Scan DXF", "Review results", "Download"];
+  const current =
+    stage === "upload" ? 0 :
+    stage === "analyzing" ? 1 :
+    stage === "result" ? 2 : 3;
+  return (
+    <div className="max-w-3xl mx-auto mb-10 px-2" dir={ar ? "rtl" : "ltr"}>
+      <ol className="flex items-center justify-between gap-1 select-none">
+        {steps.map((label, i) => {
+          const done = i < current;
+          const active = i === current;
+          return (
+            <li key={i} className="flex-1 flex items-center gap-1 min-w-0">
+              <div className="flex flex-col items-center gap-1.5 shrink-0">
+                <span
+                  className={[
+                    "w-8 h-8 rounded-full grid place-items-center font-mono text-xs border transition",
+                    done ? "bg-primary text-primary-foreground border-primary"
+                      : active ? "border-accent text-accent bg-accent/10 ring-2 ring-accent/30"
+                      : "border-border text-muted-foreground",
+                  ].join(" ")}
+                >
+                  {done ? "✓" : `0${i + 1}`}
+                </span>
+                <span
+                  className={[
+                    "text-[11px] leading-tight text-center whitespace-nowrap",
+                    active ? "text-accent font-semibold" : done ? "text-foreground" : "text-muted-foreground",
+                  ].join(" ")}
+                >
+                  {label}
+                </span>
+              </div>
+              {i < steps.length - 1 && (
+                <span
+                  className={[
+                    "flex-1 h-px mx-1 mt-[-18px]",
+                    i < current ? "bg-primary" : "bg-border",
+                  ].join(" ")}
+                />
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
 function ToolPage() {
   const [lang, setLang] = useState<Lang>("ar");
   const [stage, setStage] = useState<Stage>("upload");
@@ -401,6 +455,10 @@ function ToolPage() {
     // Self-destruct state
   const [selfDestructEnabled, setSelfDestructEnabled] = useState(false);
   const [selfDestructTriggered, setSelfDestructTriggered] = useState(false);
+
+  // Phase 7 (UI only): presentation state — no engine changes.
+  const [showScanDetails, setShowScanDetails] = useState(false);
+  const [repairHadChanges, setRepairHadChanges] = useState(false);
 
   // Phase 2: optional curve→polyline conversion (OFF by default).
   const [convertCurves, setConvertCurves] = useState(false);
@@ -486,8 +544,8 @@ function ToolPage() {
   const T = {
     ar: {
       nav: "العودة للموقع",
-      title: "أداة إصلاح DXF",
-      sub: "ارفع ملفك — نحلله ونصلحه تلقائياً",
+      title: "إصلاح ملف DXF",
+      sub: "نظّف ملفك قبل إرساله إلى الليزر أو CNC",
       dropZone: "اسحب وأفلت ملف DXF هنا",
       dropOr: "أو",
       dropBtn: "اختر ملف من الجهاز",
@@ -497,12 +555,14 @@ function ToolPage() {
       stats: "إحصائيات الملف",
       issues: "المشاكل المكتشفة",
       noIssues: "✓ لم تُكتشف أي مشاكل — الملف جاهز للقص!",
-      repairBtn: "إصلاح تلقائي",
-      downloadFixed: "تحميل الملف المُصلَح",
+      repairBtn: "إصلاح المشاكل الآمنة ←",
+      downloadFixed: "تنزيل ملف DXF المُصلح",
       downloadReport: "تحميل التقرير",
       reset: "تحليل ملف آخر",
-      repaired: "تم الإصلاح التلقائي",
+      repaired: "✓ تم تجهيز نسخة DXF",
       repairedSub: "المشاكل التالية تم إصلاحها:",
+      fixedSection: "ما تم إصلاحه",
+      reviewSection: "تم اكتشافه — يحتاج مراجعة (لم يتم تغييره)",
       statTotal: "إجمالي العناصر",
       statLines: "خطوط",
       statPoly: "بوليلاينات",
@@ -759,6 +819,7 @@ function ToolPage() {
     setRepairedContent(fixed);
     setRepairedIssues(repaired);
     setFixSummary(summary);
+    setRepairHadChanges(repaired && summary.some(s => s.id === "real_cleanup"));
     saveToHistory(fileName, analysis, true);
 
     // 2) RE-SCAN: re-parse and re-analyze the ACTUAL repaired DXF.
@@ -849,6 +910,8 @@ function ToolPage() {
     setFixSummary([]);
     setRepairedAnalysis(null);
     setReScanFailed(false);
+    setShowScanDetails(false);
+    setRepairHadChanges(false);
     setProgress(0);
     setShowCostEstimator(false);
     if (fileRef.current) fileRef.current.value = "";
@@ -964,6 +1027,10 @@ function ToolPage() {
           <h1 className="font-display text-4xl sm:text-5xl font-bold">{t.title}</h1>
           <p className="mt-3 text-muted-foreground text-lg">{t.sub}</p>
         </div>
+
+        {/* Phase 7 (UI only): 4-step progress indicator — reflects the real
+            stage state machine, no fake percentages. */}
+        <StepIndicator stage={stage} lang={lang} />
 
         {/* UPLOAD */}
         {stage === "upload" && (
@@ -1532,6 +1599,51 @@ function ToolPage() {
               </div>
             )}
 
+            {/* Phase 7 (UI only): three primary summary cards — numbers come
+                ONLY from existing engine output (repairedIssues / analysis.issues /
+                repairedAnalysis). No frontend recomputation of findings. */}
+            {stage === "repaired" && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="rounded-2xl border border-green-500/30 bg-green-500/5 p-5 text-center">
+                  <p className="font-mono text-3xl font-bold text-green-400">{repairedIssues.length}</p>
+                  <p className="text-sm font-semibold mt-1">{lang === "ar" ? "تم الإصلاح" : "Repaired"}</p>
+                </div>
+                <div className={`rounded-2xl border p-5 text-center ${analysis.issues.filter(i => !repairedIssues.find(r => r.id === i.id)).length > 0 ? "border-yellow-500/30 bg-yellow-500/5" : "border-border bg-card"}`}>
+                  <p className={`font-mono text-3xl font-bold ${analysis.issues.filter(i => !repairedIssues.find(r => r.id === i.id)).length > 0 ? "text-yellow-400" : "text-muted-foreground"}`}>
+                    {analysis.issues.filter(i => !repairedIssues.find(r => r.id === i.id)).length}
+                  </p>
+                  <p className="text-sm font-semibold mt-1">{lang === "ar" ? "يحتاج مراجعة" : "Needs review"}</p>
+                </div>
+                <div className="rounded-2xl border border-border bg-card p-5 text-center">
+                  <p className="font-mono text-3xl font-bold text-accent">
+                    {(repairedAnalysis ?? analysis).stats.totalEntities}
+                  </p>
+                  <p className="text-sm font-semibold mt-1">{lang === "ar" ? "عنصر في الملف الناتج" : "Entities in output"}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Phase 7 (UI only): zero safe repairs message */}
+            {stage === "repaired" && repairedIssues.length === 0 && (
+              <div className="rounded-2xl border border-border bg-card p-5 text-center">
+                <p className="text-sm text-muted-foreground">
+                  {lang === "ar"
+                    ? "لم يتم العثور على إصلاحات آمنة مطلوبة — يمكنك متابعة التنزيل حسب السير الحالي."
+                    : "No safe repairs were required — you can continue to download as usual."}
+                </p>
+              </div>
+            )}
+
+            {/* Phase 7 (UI only): conservative-behavior trust box */}
+            <div className="rounded-2xl border border-accent/20 bg-accent/5 p-5">
+              <p className="text-sm font-bold mb-1">🔒 {lang === "ar" ? "مهم" : "Important"}</p>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                {lang === "ar"
+                  ? "الأداة لا تغيّر المشاكل التي لا تستطيع إصلاحها بأمان. إذا تم اكتشاف عنصر يحتاج مراجعة، سيظهر لك في التقرير بدل تعديله تلقائيًا."
+                  : "The tool does not alter problems it cannot safely fix. Anything needing review appears in the report instead of being changed automatically."}
+              </p>
+            </div>
+
             {/* Verified Before/After comparison (based on re-scan) */}
             {stage === "repaired" && !reScanFailed && repairedAnalysis && (
               <div className="rounded-2xl border border-border bg-card p-6">
@@ -1677,6 +1789,9 @@ function ToolPage() {
 
               {stage === "repaired" && repairedIssues.length > 0 && (
                 <div className="space-y-3 mb-4">
+                  <p className="text-xs font-semibold text-green-400 font-mono uppercase tracking-wide">
+                    ✓ {lang === "ar" ? "ما تم إصلاحه" : "Fixed"}
+                  </p>
                   {repairedIssues.map(issue => (
                     <div key={issue.id} className="flex items-start gap-3 p-4 rounded-xl border border-green-500/30 bg-green-500/5">
                       <span className="text-green-400 text-lg flex-shrink-0">✓</span>
@@ -1730,6 +1845,9 @@ function ToolPage() {
               {/* Unrepaired issues in repaired stage */}
               {stage === "repaired" && analysis.issues.filter(i => !repairedIssues.find(r => r.id === i.id)).length > 0 && (
                 <div className="space-y-3 mt-3">
+                  <p className="text-xs font-semibold text-yellow-400 font-mono uppercase tracking-wide">
+                    ⚠ {lang === "ar" ? "تم اكتشافه — يحتاج مراجعة (لم يتم تغييره)" : "Detected — needs review (unchanged)"}
+                  </p>
                   {analysis.issues.filter(i => !repairedIssues.find(r => r.id === i.id)).map(issue => (
                     <div key={issue.id} className="flex items-start gap-3 p-4 rounded-xl border border-yellow-500/30 bg-yellow-500/5">
                       <span className="text-yellow-400 text-lg flex-shrink-0">⚠</span>
@@ -1804,6 +1922,61 @@ function ToolPage() {
                   </button>
                 </div>
               )}
+
+              {/* Phase 7 (UI only): conservative download advisory */}
+              {stage === "repaired" && (
+                <p className="text-xs text-muted-foreground mt-3">
+                  {lang === "ar"
+                    ? "⚠ ننصح بمراجعة التقرير والملف الناتج قبل إرساله إلى ماكينة الليزر أو CNC."
+                    : "⚠ We recommend reviewing the report and output file before sending it to a laser or CNC machine."}
+                </p>
+              )}
+
+              {/* Phase 7 (UI only): expandable scan-details panel — all values
+                  come from the existing engine results, human-readable labels. */}
+              {stage === "result" || stage === "repaired" ? (
+                <div className="mt-5 rounded-xl border border-border/60 overflow-hidden">
+                  <button
+                    onClick={() => setShowScanDetails(v => !v)}
+                    className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold hover:bg-muted/40 transition"
+                  >
+                    <span>{lang === "ar" ? "تفاصيل الفحص" : "Scan details"}</span>
+                    <span className="font-mono text-xs">{showScanDetails ? "▲" : "▼"}</span>
+                  </button>
+                  {showScanDetails && (() => {
+                    const src = stage === "repaired" && repairedAnalysis ? repairedAnalysis : analysis;
+                    const needsReview = analysis.issues.filter(i => !repairedIssues.find(r => r.id === i.id)).length;
+                    const rows: Array<[string, string]> = [
+                      [lang === "ar" ? "عدد العناصر" : "Total entities", String(src.stats.totalEntities)],
+                      [lang === "ar" ? "المشاكل المكتشفة" : "Issues detected", String(analysis.issues.length)],
+                      ...(stage === "repaired" ? [[
+                        lang === "ar" ? "المشاكل المُصلحة" : "Issues repaired",
+                        String(repairedIssues.length),
+                      ] as [string, string]] : []),
+                      ...(stage === "repaired" ? [[
+                        lang === "ar" ? "تحتاج مراجعة (لم تُغيَّر)" : "Needs review (unchanged)",
+                        String(needsReview),
+                      ] as [string, string]] : []),
+                      [lang === "ar" ? "أنواع المشاكل" : "Issue types",
+                        analysis.issues.length > 0
+                          ? [...new Set(analysis.issues.map(i => lang === "ar" ? i.ar : i.en))].join("، ")
+                          : lang === "ar" ? "لا يوجد" : "none"],
+                      [lang === "ar" ? "حالة الملف قبل/بعد" : "File state before/after",
+                        `${analysis.score} → ${stage === "repaired" && repairedAnalysis ? repairedAnalysis.score : analysis.score} ${lang === "ar" ? "(من 100)" : "/100"}`],
+                    ];
+                    return (
+                      <div className="px-4 pb-4 space-y-2">
+                        {rows.map(([k, v]) => (
+                          <div key={k} className="flex items-start justify-between gap-4 text-xs border-b border-border/40 pb-2 last:border-0 last:pb-0">
+                            <span className="text-muted-foreground">{k}</span>
+                            <span className="font-medium text-end">{v}</span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+              ) : null}
             </div>
           </div>
         )}

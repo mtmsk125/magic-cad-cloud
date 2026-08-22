@@ -313,23 +313,29 @@ function Index() {
           </div>
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* Task 1: Fix DXF */}
+            {/* Task 1: Fix DXF — primary tool (Phase 7: visually strongest, honest copy) */}
             <a href="/tool"
-              className="group relative bg-background border border-border rounded-2xl p-6 hover:border-accent/50 hover:shadow-[var(--shadow-spark)] transition-all duration-300 flex flex-col items-start text-start"
+              className="group relative bg-background border-2 border-accent/40 rounded-2xl p-6 hover:border-accent/70 hover:shadow-[var(--shadow-spark)] transition-all duration-300 flex flex-col items-start text-start ring-1 ring-accent/10"
             >
+              <span className="absolute top-4 end-4 font-mono text-[10px] px-2 py-0.5 rounded-full bg-accent text-accent-foreground font-bold">
+                {lang === "ar" ? "الأداة الأساسية" : "PRIMARY TOOL"}
+              </span>
               <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-green-500/20 to-green-500/5 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
                 🔧
               </div>
               <h3 className="font-display font-bold text-lg">
                 {lang === "ar" ? "إصلاح ملف DXF" : "Repair a DXF File"}
               </h3>
+              <p className="mt-1 text-xs font-semibold text-accent">
+                {lang === "ar" ? "نظّف ملفك قبل إرساله إلى الليزر أو CNC" : "Clean your file before sending it to laser or CNC"}
+              </p>
               <p className="mt-2 text-sm text-muted-foreground leading-relaxed flex-1">
                 {lang === "ar"
-                  ? "يكتشف ويصلح تلقائياً: الخطوط المكررة، الفجوات، الأشكال المفتوحة، الطبقات الفوضوية. يخرج لك ملفاً نظيفاً جاهزاً للماكينة."
-                  : "Auto-detects and fixes: duplicate lines, gaps, open shapes, messy layers. Outputs a clean file ready for your machine."}
+                  ? "يفحص ملف DXF بحثًا عن المشاكل الشائعة مثل الخطوط المكررة، الفجوات، الأشكال المفتوحة والهندسة المشبوهة، ثم يعرض لك النتائج بوضوح قبل تنزيل الملف."
+                  : "Scans your DXF for common problems like duplicate lines, gaps, open shapes and suspicious geometry, then shows you the results clearly before download."}
               </p>
               <div className="mt-4 flex items-center gap-2 text-sm font-semibold text-accent group-hover:gap-3 transition-all">
-                <span>{lang === "ar" ? "إصلاح ملف الآن" : "Repair file now"}</span>
+                <span>{lang === "ar" ? "إصلاح ملف DXF الآن" : "Repair DXF file now"}</span>
                 <span aria-hidden>{lang === "ar" ? "←" : "→"}</span>
               </div>
               <div className="mt-4 flex flex-wrap gap-1.5">
