@@ -388,6 +388,7 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
   interface SiteStats {
     filesRepaired: number;
     visitors: number;
+    filesUploaded: number;
     updatedAt: number;
   }
 
@@ -399,13 +400,14 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
         return {
           filesRepaired: Number(parsed.filesRepaired) || 0,
           visitors: Number(parsed.visitors) || 0,
+          filesUploaded: Number(parsed.filesUploaded) || 0,
           updatedAt: Number(parsed.updatedAt) || Date.now(),
         };
       }
     } catch (e) {
       console.error('Failed to load stats:', e);
     }
-    return { filesRepaired: 0, visitors: 0, updatedAt: Date.now() };
+    return { filesRepaired: 0, visitors: 0, filesUploaded: 0, updatedAt: Date.now() };
   }
 
   function saveStats(stats: SiteStats): void {
@@ -435,6 +437,8 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
         stats.filesRepaired += 1;
       } else if (action === 'visit') {
         stats.visitors += 1;
+      } else if (action === 'upload') {
+        stats.filesUploaded += 1;
       } else {
         return new Response(JSON.stringify({ error: 'Invalid action' }), {
           status: 400,

@@ -15,7 +15,7 @@ import { fullPathCleanup, pathLength } from "@/lib/path-union";
 import type { PathSegment } from "@/lib/path-union";
 import { pathsToCuttingPaths, advancedOptimize, generateOptimizationReport } from "@/lib/toolpath-optimizer";
 import type { CuttingPath } from "@/lib/toolpath-optimizer";
-import { recordRepair } from "@/lib/stats";
+import { recordRepair, recordUpload } from "@/lib/stats";
 
 
 interface HistoryEntry {
@@ -800,12 +800,12 @@ function ToolPage() {
     e.preventDefault();
     setDragging(false);
     const file = e.dataTransfer.files[0];
-    if (file) processFile(file);
+    if (file) { recordUpload(); processFile(file); }
   }, [processFile]);
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) processFile(file);
+    if (file) { recordUpload(); processFile(file); }
   };
 
   const handleRepair = () => {

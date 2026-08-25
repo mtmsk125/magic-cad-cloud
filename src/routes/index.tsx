@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import heroImg from "@/assets/hero-cnc.jpg";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { AdBanner } from "@/components/AdBanner";
+import AdvertiseWithUs from "@/components/AdvertiseWithUs";
 import { getTranslations, getLangDir, type Lang } from "@/lib/i18n";
 import { fetchSiteStats, recordVisit } from "@/lib/stats";
 import { track } from '@vercel/analytics';
@@ -180,6 +181,7 @@ function Index() {
   const [lang, setLang] = useState<Lang>("ar");
   const [repairedCount, setRepairedCount] = useState<number>(0);
   const [visitorCount, setVisitorCount] = useState<number>(0);
+  const [uploadCount, setUploadCount] = useState<number>(0);
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
@@ -194,6 +196,7 @@ function Index() {
         if (s) {
           setRepairedCount(s.filesRepaired);
           setVisitorCount(s.visitors);
+          setUploadCount(s.filesUploaded);
         }
       })
       .catch(() => {});
@@ -574,7 +577,7 @@ function Index() {
             {lang === "ar" ? "كل ملف DXF يتم إصلاحه على منصتنا يُحتسب تلقائياً في هذه الأرقام الحيّة." : "Every DXF file repaired on our platform is counted automatically in these live numbers."}
           </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
             <div className="p-6 rounded-2xl bg-background/80 border border-border/80 shadow-[var(--shadow-elegant)] hover:border-accent/40 transition">
               <div className="text-4xl font-bold text-gradient-spark">{repairedCount.toLocaleString()}</div>
               <div className="mt-2 text-sm font-semibold text-foreground">{lang === "ar" ? "ملف تم إصلاحه بنجاح" : "Files Repaired"}</div>
@@ -584,6 +587,11 @@ function Index() {
               <div className="text-4xl font-bold text-gradient-spark">{visitorCount.toLocaleString()}</div>
               <div className="mt-2 text-sm font-semibold text-foreground">{lang === "ar" ? "زيارة للموقع" : "Site Visits"}</div>
               <div className="mt-1 font-mono text-[11px] text-muted-foreground">{lang === "ar" ? "احصائيات حية" : "Live Count"}</div>
+            </div>
+            <div className="p-6 rounded-2xl bg-background/80 border border-border/80 shadow-[var(--shadow-elegant)] hover:border-accent/40 transition">
+              <div className="text-4xl font-bold text-gradient-spark">{uploadCount.toLocaleString()}</div>
+              <div className="mt-2 text-sm font-semibold text-foreground">{lang === "ar" ? "ملف تم رفعه" : "Files Uploaded"}</div>
+              <div className="mt-1 font-mono text-[11px] text-muted-foreground">{lang === "ar" ? "ملفات تمت معالجتها" : "Processed Files"}</div>
             </div>
             <div className="p-6 rounded-2xl bg-background/80 border border-border/80 shadow-[var(--shadow-elegant)] hover:border-accent/40 transition">
               <div className="text-4xl font-bold text-gradient-spark">&lt; 5s</div>
@@ -659,6 +667,7 @@ function Index() {
             </a>
           </div>
           <div className="flex items-center gap-4">
+            <AdvertiseWithUs />
             <a
               href="/admin"
               className="font-mono text-xs text-muted-foreground/30 hover:text-muted-foreground transition"

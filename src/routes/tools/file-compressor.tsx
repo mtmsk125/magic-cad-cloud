@@ -25,21 +25,40 @@ function FileCompressor() {
   };
 
   return (
-    <div style={{ padding: 20 }}>
-      <h2>File Compressor (ZIP)</h2>
-      <p>Select one or more files to compress into a ZIP archive in the browser.</p>
-      <input type="file" multiple onChange={(e) => onFiles(e.target.files)} />
-      <div style={{ marginTop: 12 }}>
-        <button onClick={compressAndDownload} disabled={!files || files.length === 0}>Compress & Download ZIP</button>
-      </div>
-      {files && (
-        <div style={{ marginTop: 12 }}>
-          <strong>Files:</strong>
-          <ul>
-            {files.map(f => <li key={f.name}>{f.name} — {f.size} bytes</li>)}
-          </ul>
+    <div className="min-h-screen bg-background text-foreground">
+      <main className="max-w-3xl mx-auto px-5 sm:px-8 py-16">
+        <div className="text-center mb-10">
+          <p className="font-mono text-xs text-accent uppercase tracking-[0.25em]">Tools</p>
+          <h1 className="font-display mt-3 text-3xl sm:text-4xl font-bold">File Compressor (ZIP)</h1>
+          <p className="mt-3 text-sm text-muted-foreground">اختر ملفاً أو أكثر لضغطها في أرشيف ZIP مباشرةً في المتصفح.</p>
         </div>
-      )}
+
+        <div className="bg-card/60 border border-border rounded-2xl p-8 text-center">
+          <input
+            type="file"
+            multiple
+            onChange={(e) => onFiles(e.target.files)}
+            className="mx-auto block text-sm text-muted-foreground file:mr-4 file:rounded-lg file:border-0 file:bg-accent file:px-4 file:py-2 file:text-accent-foreground file:font-semibold hover:file:opacity-90"
+          />
+          <div className="mt-6">
+            <button
+              onClick={compressAndDownload}
+              disabled={!files || files.length === 0}
+              className="rounded-lg bg-accent px-6 py-3 text-sm font-bold text-accent-foreground hover:opacity-90 transition disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              ضغط وتنزيل ZIP
+            </button>
+          </div>
+          {files && (
+            <div className="mt-6 text-left">
+              <strong className="text-sm text-muted-foreground">الملفات:</strong>
+              <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                {files.map(f => <li key={f.name}>📄 {f.name} — {f.size.toLocaleString()} bytes</li>)}
+              </ul>
+            </div>
+          )}
+        </div>
+      </main>
     </div>
   );
 }

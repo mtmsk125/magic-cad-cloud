@@ -13,6 +13,7 @@
 export interface SiteStats {
   filesRepaired: number;
   visitors: number;
+  filesUploaded: number;
   updatedAt: number;
 }
 
@@ -30,6 +31,7 @@ export async function fetchSiteStats(): Promise<SiteStats | null> {
     return {
       filesRepaired: Number(data.filesRepaired) || 0,
       visitors: Number(data.visitors) || 0,
+      filesUploaded: Number(data.filesUploaded) || 0,
       updatedAt: Number(data.updatedAt) || Date.now(),
     };
   } catch (e) {
@@ -50,6 +52,22 @@ export async function recordRepair(): Promise<SiteStats | null> {
     return (await res.json()) as SiteStats;
   } catch (e) {
     console.warn("recordRepair failed:", e);
+    return null;
+  }
+}
+
+/** Record a file being uploaded on the server (real counter). */
+export async function recordUpload(): Promise<SiteStats | null> {
+  try {
+    const res = await fetch("/api/stats", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "upload" }),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as SiteStats;
+  } catch (e) {
+    console.warn("recordUpload failed:", e);
     return null;
   }
 }

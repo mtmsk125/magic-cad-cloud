@@ -137,6 +137,7 @@ function AdminPage() {
   const [unapprovedCount, setUnapprovedCount] = useState(0);
   const [totalVisitors, setTotalVisitors] = useState(0);
   const [totalFixedFiles, setTotalFixedFiles] = useState(0);
+  const [totalUploads, setTotalUploads] = useState(0);
 
   // Load REAL server-side statistics (not fake localStorage counters)
   useEffect(() => {
@@ -144,6 +145,7 @@ function AdminPage() {
       if (s) {
         setTotalVisitors(s.visitors);
         setTotalFixedFiles(s.filesRepaired);
+        setTotalUploads(s.filesUploaded);
       }
     });
   }, []);
@@ -279,6 +281,25 @@ function AdminPage() {
               <div className="mt-3 flex items-center gap-1 text-xs text-green-400">
                 <span>↑ 8.3%</span>
                 <span className="text-muted-foreground">عن الأسبوع الماضي</span>
+              </div>
+            </div>
+
+            {/* Total Uploaded Files */}
+            <div className="relative bg-card border border-border rounded-2xl p-6 overflow-hidden group hover:border-primary/50 transition">
+              <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-sky-400/40 to-blue-400/40" />
+              <div className="flex items-center justify-between mb-4">
+                <div className="w-12 h-12 rounded-xl bg-sky-500/10 flex items-center justify-center text-2xl">
+                  📤
+                </div>
+                <span className="font-mono text-xs text-muted-foreground/60">كل الوقت</span>
+              </div>
+              <div className="font-display text-3xl sm:text-4xl font-bold text-gradient-blueprint">
+                {totalUploads.toLocaleString()}
+              </div>
+              <div className="text-xs text-muted-foreground mt-1 font-mono">الملفات المرفوعة</div>
+              <div className="mt-3 flex items-center gap-1 text-xs text-sky-400">
+                <span>حقيقي</span>
+                <span className="text-muted-foreground">من خادم Vercel</span>
               </div>
             </div>
 

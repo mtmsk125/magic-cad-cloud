@@ -112,23 +112,49 @@ function DxfConverter() {
   };
 
   return (
-    <div style={{ padding: 20 }}>
-      <h2>DXF → SVG / PDF Converter</h2>
-      <p>Upload a DXF file; this converts it to SVG in the browser and lets you download SVG or PDF.</p>
-      <input type="file" accept=".dxf" onChange={(e) => onFile(e.target.files?.[0] || null)} disabled={processing} />
-      {processing && <div style={{ marginTop: 8, fontStyle: 'italic' }}>جاري المعالجة... يرجى الانتظار</div>}
-      {error && <div style={{ color: 'red' }}>{error}</div>}
-      {svgContent && (
-        <div>
-          <div style={{ marginTop: 12 }}>
-            <button onClick={downloadSvg} disabled={processing}>Download SVG</button>
-            <button onClick={exportPdf} style={{ marginLeft: 8 }} disabled={processing}>Export PDF</button>
-          </div>
-          <div style={{ border: '1px solid #ddd', marginTop: 12 }}>
-            <div dangerouslySetInnerHTML={{ __html: svgContent }} />
-          </div>
+    <div className="min-h-screen bg-background text-foreground">
+      <main className="max-w-3xl mx-auto px-5 sm:px-8 py-16">
+        <div className="text-center mb-10">
+          <p className="font-mono text-xs text-accent uppercase tracking-[0.25em]">Tools</p>
+          <h1 className="font-display mt-3 text-3xl sm:text-4xl font-bold">DXF → SVG / PDF Converter</h1>
+          <p className="mt-3 text-sm text-muted-foreground">ارفع ملف DXF ليُحوَّل إلى SVG في المتصفح، ثم نزّله كملف SVG أو PDF.</p>
         </div>
-      )}
+
+        <div className="bg-card/60 border border-border rounded-2xl p-8 text-center">
+          <input
+            type="file"
+            accept=".dxf"
+            onChange={(e) => onFile(e.target.files?.[0] || null)}
+            disabled={processing}
+            className="mx-auto block text-sm text-muted-foreground file:mr-4 file:rounded-lg file:border-0 file:bg-accent file:px-4 file:py-2 file:text-accent-foreground file:font-semibold hover:file:opacity-90"
+          />
+          {processing && <div className="mt-6 font-mono text-xs text-accent animate-pulse">جاري المعالجة... يرجى الانتظار</div>}
+          {error && <div className="mt-6 text-sm font-medium text-red-400">{error}</div>}
+          {svgContent && (
+            <div className="mt-8">
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                <button
+                  onClick={downloadSvg}
+                  disabled={processing}
+                  className="rounded-lg bg-accent px-5 py-2.5 text-sm font-bold text-accent-foreground hover:opacity-90 transition"
+                >
+                  تنزيل SVG
+                </button>
+                <button
+                  onClick={exportPdf}
+                  disabled={processing}
+                  className="rounded-lg border border-border bg-card px-5 py-2.5 text-sm font-semibold hover:border-accent/50 transition"
+                >
+                  تصدير PDF
+                </button>
+              </div>
+              <div className="mt-6 rounded-xl border border-border/60 bg-background p-4">
+                <div dangerouslySetInnerHTML={{ __html: svgContent }} />
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
     </div>
   );
 }
