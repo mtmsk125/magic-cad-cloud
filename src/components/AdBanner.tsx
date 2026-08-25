@@ -100,6 +100,26 @@ export function AdBanner({
     if (!isMounted || isLoading || isPremium || !currentNetwork || adError) return;
     if (pushed.current) return;
 
+    // For AdSense, inject the official loader script once (client id from env or default)
+    if (currentNetwork === 'adsense') {
+      const clientId =
+        import.meta.env.VITE_ADSENSE_CLIENT_ID ||
+        import.meta.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID ||
+        'ca-pub-8107638298388341';
+      if (!(window as any).__adsenseLoaderLoaded) {
+        try {
+          const s = document.createElement('script');
+          s.async = true;
+          s.crossOrigin = 'anonymous';
+          s.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${clientId}`;
+          document.head.appendChild(s);
+          (window as any).__adsenseLoaderLoaded = true;
+        } catch (e) {
+          console.warn('AdSense loader injection failed:', e);
+        }
+      }
+    }
+
     const timer = setTimeout(() => {
       try {
         // For AdSense, push to the global queue

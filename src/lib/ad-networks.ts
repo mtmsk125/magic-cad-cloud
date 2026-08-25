@@ -48,7 +48,11 @@ function isNetworkConfigured(network: AdNetwork): boolean {
   switch (network) {
     case 'adsense': {
       const id = import.meta.env.VITE_ADSENSE_CLIENT_ID || import.meta.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID || '';
-      return id !== '' && !id.includes('XXXXXXXXXXXX') && !id.includes('XXXXXXXXXXXXXXXX');
+      // The default client ID is hardcoded in this repo, so AdSense works even
+      // without env vars. Only disabled if an explicit placeholder is set.
+      const hasEnvId = id !== '' && !id.includes('XXXXXXXXXXXX') && !id.includes('XXXXXXXXXXXXXXXX');
+      const hasDefaultId = 'ca-pub-8107638298388341'.length > 0;
+      return hasEnvId || hasDefaultId;
     }
     case 'medianet': {
       const cid = import.meta.env.VITE_MEDIANET_CID || '';
