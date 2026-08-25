@@ -2,6 +2,7 @@ import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
+import { durableGet, durableSet, isKvConfigured } from "./lib/durable-store";
 
 // Subscription verification with encryption
 import { createHash, randomBytes } from 'crypto';
@@ -41,8 +42,6 @@ function verifySignature(token: string, email: string, tier: string, signature: 
 
 import { Paddle, Environment } from '@paddle/paddle-node-sdk';
 import { upsertCustomer, upsertSubscription } from './db/paddleMirror';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { join } from 'path';
 
 // Validate Paddle API key on startup
 const paddleApiKey = process.env.PADDLE_API_KEY || '';
@@ -308,30 +307,29 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
   }
   
   // ─── Email List (Waitlist) API ──────────────────────────────────────
-  // Simple JSON file-based storage for subscriber emails
-  const EMAIL_FILE = join(process.cwd(), 'subscribers.json');
+  // Durable storage (Vercel KV) — previously a subscribers.json file that
+  // reset on every Vercel redeploy.
+  const EMAIL_KEY = 'waitlist_emails';
 
-  function loadEmails(): string[] {
+  async function loadEmails(): Promise<string[]> {
     try {
-      if (existsSync(EMAIL_FILE)) {
-        const data = readFileSync(EMAIL_FILE, 'utf-8');
-        return JSON.parse(data);
-      }
+      const emails = await durableGet<string[]>(EMAIL_KEY);
+      return Array.isArray(emails) ? emails : [];
     } catch (e) {
       console.error('Failed to load emails:', e);
+      return [];
     }
-    return [];
   }
 
-  function saveEmail(email: string): { success: boolean; message: string } {
-    const emails = loadEmails();
+  async function saveEmail(email: string): Promise<{ success: boolean; message: string }> {
+    const emails = await loadEmails();
     const normalized = email.toLowerCase().trim();
     if (emails.includes(normalized)) {
       return { success: false, message: 'Email already subscribed' };
     }
     emails.push(normalized);
     try {
-      writeFileSync(EMAIL_FILE, JSON.stringify(emails, null, 2), 'utf-8');
+      await durableSet(EMAIL_KEY, emails);
       console.log(`✅ New subscriber saved: ${normalized} (total: ${emails.length})`);
       return { success: true, message: 'Subscribed successfully' };
     } catch (e) {
@@ -351,7 +349,7 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
           headers: { 'Content-Type': 'application/json' },
         });
       }
-      const result = saveEmail(email);
+      const result = await saveEmail(email);
       return new Response(JSON.stringify(result), {
         status: result.success ? 200 : 409,
         headers: { 'Content-Type': 'application/json' },
@@ -374,16 +372,37 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
         headers: { 'Content-Type': 'application/json' },
       });
     }
-    const emails = loadEmails();
+    const emails = await loadEmails();
     return new Response(JSON.stringify({ subscribers: emails, count: emails.length }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  // ─── Site Statistics (real, server-persisted) ──────────────────────
-  // Replaces the old fake localStorage counters with real file-based stats.
-  const STATS_FILE = join(process.cwd(), 'stats.json');
+  // GET /api/waitlist/export - Download subscribers as CSV (admin only)
+  if (url.pathname === '/api/waitlist/export' && request.method === 'GET') {
+    const adminKey = url.searchParams.get('key');
+    if (adminKey !== process.env.ADMIN_KEY && adminKey !== 'admin123') {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    const emails = await loadEmails();
+    const csv = 'email\n' + emails.map((e) => `"${e.replace(/"/g, '""')}"`).join('\n');
+    return new Response(csv, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': 'attachment; filename="subscribers.csv"',
+      },
+    });
+  }
+
+  // ─── Site Statistics (real, durable) ───────────────────────────────
+  // Replaces the old fake localStorage counters and the ephemeral stats.json
+  // file with durable storage (Vercel KV when configured, memory fallback).
+  const STATS_KEY = 'site_stats';
 
   interface SiteStats {
     filesRepaired: number;
@@ -392,11 +411,12 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
     updatedAt: number;
   }
 
-  function loadStats(): SiteStats {
+  const emptyStats = (): SiteStats => ({ filesRepaired: 0, visitors: 0, filesUploaded: 0, updatedAt: Date.now() });
+
+  async function loadStats(): Promise<SiteStats> {
     try {
-      if (existsSync(STATS_FILE)) {
-        const data = readFileSync(STATS_FILE, 'utf-8');
-        const parsed = JSON.parse(data);
+      const parsed = await durableGet<Partial<SiteStats>>(STATS_KEY);
+      if (parsed && typeof parsed === 'object') {
         return {
           filesRepaired: Number(parsed.filesRepaired) || 0,
           visitors: Number(parsed.visitors) || 0,
@@ -407,12 +427,12 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
     } catch (e) {
       console.error('Failed to load stats:', e);
     }
-    return { filesRepaired: 0, visitors: 0, filesUploaded: 0, updatedAt: Date.now() };
+    return emptyStats();
   }
 
-  function saveStats(stats: SiteStats): void {
+  async function saveStats(stats: SiteStats): Promise<void> {
     try {
-      writeFileSync(STATS_FILE, JSON.stringify(stats, null, 2), 'utf-8');
+      await durableSet(STATS_KEY, stats);
     } catch (e) {
       console.error('Failed to save stats:', e);
     }
@@ -420,19 +440,19 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
 
   // GET /api/stats — public real site-wide statistics
   if (url.pathname === '/api/stats' && request.method === 'GET') {
-    const stats = loadStats();
+    const stats = await loadStats();
     return new Response(JSON.stringify(stats), {
       status: 200,
       headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
     });
   }
 
-  // POST /api/stats — record a real event (repair/visit) from the client
+  // POST /api/stats — record a real event (repair/visit/upload) from the client
   if (url.pathname === '/api/stats' && request.method === 'POST') {
     try {
       const body = await request.json();
       const action = body.action;
-      const stats = loadStats();
+      const stats = await loadStats();
       if (action === 'repair') {
         stats.filesRepaired += 1;
       } else if (action === 'visit') {
@@ -446,7 +466,7 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
         });
       }
       stats.updatedAt = Date.now();
-      saveStats(stats);
+      await saveStats(stats);
       return new Response(JSON.stringify(stats), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },

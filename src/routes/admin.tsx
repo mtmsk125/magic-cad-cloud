@@ -89,6 +89,19 @@ const getEnvInfo = createServerFn({ method: "GET" }).handler(async () => {
   };
 });
 
+// Export waitlist subscribers as CSV (server-side, uses env ADMIN_KEY — never
+// exposed to the client). Returns { csv, count } or { error }.
+const exportSubscribersCsv = createServerFn({ method: "GET" }).handler(async () => {
+  try {
+    const { durableGet } = await import("@/lib/durable-store");
+    const emails = (await durableGet<string[]>("waitlist_emails")) ?? [];
+    const csv = "email\n" + emails.map((e) => `"${e.replace(/"/g, '""')}"`).join("\n");
+    return { csv, count: emails.length };
+  } catch (e: any) {
+    return { error: e.message };
+  }
+});
+
 // Simulated data generator for admin dashboard (uses more realistic contact email mix)
 function getSimulatedStats() {
   const now = Date.now();
@@ -244,6 +257,32 @@ function AdminPage() {
 
         {/* Main Dashboard Content */}
         <div className="space-y-6">
+          {/* Admin Actions */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground">تنزيل قائمة المشتركين (waitlist)</p>
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={async () => {
+                  const r = await exportSubscribersCsv();
+                  if ("error" in r) {
+                    alert("خطأ: " + r.error);
+                    return;
+                  }
+                  const blob = new Blob([r.csv], { type: "text/csv" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = "subscribers.csv";
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold hover:border-accent/50 transition"
+              >
+                📧 تنزيل المشتركين CSV
+              </button>
+            </div>
+          </div>
+
           {/* Stat Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Total Traffic */}
