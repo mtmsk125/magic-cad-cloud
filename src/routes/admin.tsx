@@ -154,6 +154,10 @@ function AdminPage() {
   const [totalFixedFiles, setTotalFixedFiles] = useState(0);
   const [totalUploads, setTotalUploads] = useState(0);
   const [kvConfigured, setKvConfigured] = useState(false);
+  const [totalOwnerVisits, setTotalOwnerVisits] = useState(0);
+  const [dailyStats, setDailyStats] = useState<
+    { date: string; visitors: number; ownerVisitors: number; repairs: number; uploads: number }[]
+  >([]);
 
   // Load REAL server-side statistics (not fake localStorage counters)
   useEffect(() => {
@@ -162,6 +166,8 @@ function AdminPage() {
         setTotalVisitors(s.visitors);
         setTotalFixedFiles(s.filesRepaired);
         setTotalUploads(s.filesUploaded);
+        setTotalOwnerVisits(s.ownerVisitors);
+        setDailyStats(s.daily || []);
       }
     });
   }, []);
@@ -180,6 +186,9 @@ function AdminPage() {
       return;
     }
     setAuthed(true);
+    try {
+      localStorage.setItem("dxfix_is_owner", "1");
+    } catch {}
     setLoading(true);
     try {
       const data = await getPaddleStats();
@@ -393,6 +402,56 @@ function AdminPage() {
                 <span>↑ ${Math.floor(totalRevenue * 0.22)}</span>
                 <span className="text-muted-foreground">هذا الربع</span>
               </div>
+            </div>
+          </div>
+
+          {/* Owner visits + Daily breakdown */}
+          <div className="bg-card border border-border rounded-2xl p-6">
+            <h2 className="font-display font-bold text-lg mb-4">الإحصائيات (يومي + تراكمي)</h2>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+              <div className="rounded-xl bg-background border border-border p-4">
+                <div className="text-xs text-muted-foreground font-mono">اليوم — زوار</div>
+                <div className="text-2xl font-bold mt-1">{dailyStats.length ? dailyStats[dailyStats.length - 1].visitors : 0}</div>
+              </div>
+              <div className="rounded-xl bg-background border border-border p-4">
+                <div className="text-xs text-muted-foreground font-mono">اليوم — إصلاحات</div>
+                <div className="text-2xl font-bold mt-1">{dailyStats.length ? dailyStats[dailyStats.length - 1].repairs : 0}</div>
+              </div>
+              <div className="rounded-xl bg-background border border-border p-4">
+                <div className="text-xs text-muted-foreground font-mono">اليوم — رفع</div>
+                <div className="text-2xl font-bold mt-1">{dailyStats.length ? dailyStats[dailyStats.length - 1].uploads : 0}</div>
+              </div>
+              <div className="rounded-xl bg-background border border-border p-4">
+                <div className="text-xs text-muted-foreground font-mono">زياراتي (المالك)</div>
+                <div className="text-2xl font-bold mt-1">{totalOwnerVisits.toLocaleString()}</div>
+                <div className="text-[10px] text-muted-foreground mt-1">مفصولة ولا تُحتسب بالعامة</div>
+              </div>
+            </div>
+
+            <h3 className="font-semibold text-sm mb-3">آخر 14 يومًا</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-muted-foreground text-xs border-b border-border">
+                    <th className="py-2 px-2">التاريخ</th>
+                    <th className="py-2 px-2">زوار</th>
+                    <th className="py-2 px-2">زياراتي</th>
+                    <th className="py-2 px-2">إصلاحات</th>
+                    <th className="py-2 px-2">ارتفاعات</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dailyStats.slice().reverse().map((d) => (
+                    <tr key={d.date} className="border-b border-border/30">
+                      <td className="py-2 px-2 font-mono text-xs">{d.date}</td>
+                      <td className="py-2 px-2">{d.visitors}</td>
+                      <td className="py-2 px-2 text-muted-foreground">{d.ownerVisitors}</td>
+                      <td className="py-2 px-2">{d.repairs}</td>
+                      <td className="py-2 px-2">{d.uploads}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
 

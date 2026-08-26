@@ -399,19 +399,43 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
     });
   }
 
-  // ─── Site Statistics (real, durable) ───────────────────────────────
-  // Replaces the old fake localStorage counters and the ephemeral stats.json
-  // file with durable storage (Vercel KV when configured, memory fallback).
+  // ─── Site Statistics (real, durable, daily + cumulative + owner-split) ──
   const STATS_KEY = 'site_stats';
 
+  interface DailyStat {
+    visitors: number;
+    ownerVisitors: number;
+    repairs: number;
+    uploads: number;
+  }
+
   interface SiteStats {
+    // cumulative (all-time)
     filesRepaired: number;
     visitors: number;
     filesUploaded: number;
+    ownerVisitors: number; // owner-only visits, excluded from public visitors
+    // per-day breakdown
+    daily: Record<string, DailyStat>;
     updatedAt: number;
   }
 
-  const emptyStats = (): SiteStats => ({ filesRepaired: 0, visitors: 0, filesUploaded: 0, updatedAt: Date.now() });
+  // Local-timezone date key (YYYY-MM-DD) so "daily" groups by the user's region.
+  function todayKey(): string {
+    const d = new Date();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${mm}-${dd}`;
+  }
+
+  const emptyStats = (): SiteStats => ({
+    filesRepaired: 0,
+    visitors: 0,
+    filesUploaded: 0,
+    ownerVisitors: 0,
+    daily: {},
+    updatedAt: Date.now(),
+  });
 
   async function loadStats(): Promise<SiteStats> {
     try {
@@ -421,6 +445,8 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
           filesRepaired: Number(parsed.filesRepaired) || 0,
           visitors: Number(parsed.visitors) || 0,
           filesUploaded: Number(parsed.filesUploaded) || 0,
+          ownerVisitors: Number(parsed.ownerVisitors) || 0,
+          daily: (parsed.daily && typeof parsed.daily === 'object' ? parsed.daily : {}) as Record<string, DailyStat>,
           updatedAt: Number(parsed.updatedAt) || Date.now(),
         };
       }
@@ -438,13 +464,34 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
     }
   }
 
-  // GET /api/stats — public real site-wide statistics
+  // GET /api/stats — public real site-wide statistics (+ daily + owner)
   if (url.pathname === '/api/stats' && request.method === 'GET') {
     const stats = await loadStats();
-    return new Response(JSON.stringify(stats), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
-    });
+    // Return last 14 days of daily data, most recent first.
+    const days: { date: string; visitors: number; ownerVisitors: number; repairs: number; uploads: number }[] = [];
+    const now = new Date();
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const key = `${d.getFullYear()}-${mm}-${dd}`;
+      const day = stats.daily[key] || { visitors: 0, ownerVisitors: 0, repairs: 0, uploads: 0 };
+      days.push({ date: key, ...day });
+    }
+    return new Response(
+      JSON.stringify({
+        filesRepaired: stats.filesRepaired,
+        visitors: stats.visitors,
+        filesUploaded: stats.filesUploaded,
+        ownerVisitors: stats.ownerVisitors,
+        daily: days,
+        updatedAt: stats.updatedAt,
+      }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+      }
+    );
   }
 
   // POST /api/stats — record a real event (repair/visit/upload) from the client
@@ -452,25 +499,48 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
     try {
       const body = await request.json();
       const action = body.action;
+      const owner = body.owner === true;
       const stats = await loadStats();
+      const key = todayKey();
+      const day: DailyStat = stats.daily[key] || { visitors: 0, ownerVisitors: 0, repairs: 0, uploads: 0 };
+
       if (action === 'repair') {
         stats.filesRepaired += 1;
+        day.repairs += 1;
       } else if (action === 'visit') {
-        stats.visitors += 1;
+        if (owner) {
+          // Owner visits are counted separately, NOT in public "visitors".
+          stats.ownerVisitors += 1;
+          day.ownerVisitors += 1;
+        } else {
+          stats.visitors += 1;
+          day.visitors += 1;
+        }
       } else if (action === 'upload') {
         stats.filesUploaded += 1;
+        day.uploads += 1;
       } else {
         return new Response(JSON.stringify({ error: 'Invalid action' }), {
           status: 400,
           headers: { 'Content-Type': 'application/json' },
         });
       }
+      stats.daily[key] = day;
       stats.updatedAt = Date.now();
       await saveStats(stats);
-      return new Response(JSON.stringify(stats), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return new Response(
+        JSON.stringify({
+          filesRepaired: stats.filesRepaired,
+          visitors: stats.visitors,
+          filesUploaded: stats.filesUploaded,
+          ownerVisitors: stats.ownerVisitors,
+          updatedAt: stats.updatedAt,
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
     } catch (e) {
       console.error('❌ Stats API error:', e);
       return new Response(JSON.stringify({ error: 'Internal server error' }), {

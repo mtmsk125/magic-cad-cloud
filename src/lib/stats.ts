@@ -2,22 +2,38 @@
  * Real Site Statistics Library
  * -----------------------------
  * Talks to the backend `/api/stats` endpoints which persist counters
- * to a JSON file on the server. This REPLACES the old fake localStorage
- * counters (which were per-browser and not real).
- *
- * All numbers shown in the UI now come from real processing events:
- *  - `recordRepair()` is called after a successful DXF repair.
- *  - `recordVisit()` is called once per browser session.
+ * durably (Vercel KV when configured). Numbers in the UI come from real
+ * processing events, not fake localStorage counters.
  */
+
+export interface DailyStat {
+  date: string;
+  visitors: number;
+  ownerVisitors: number;
+  repairs: number;
+  uploads: number;
+}
 
 export interface SiteStats {
   filesRepaired: number;
   visitors: number;
   filesUploaded: number;
+  ownerVisitors: number;
+  daily: DailyStat[];
   updatedAt: number;
 }
 
 const VISIT_SESSION_KEY = "dxfix_visit_recorded";
+
+/** Heuristic: is the current browser the site owner (marked after admin login)? */
+function isOwnerVisit(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return localStorage.getItem("dxfix_is_owner") === "1";
+  } catch {
+    return false;
+  }
+}
 
 /** Fetch the current real site-wide statistics from the server. */
 export async function fetchSiteStats(): Promise<SiteStats | null> {
@@ -32,6 +48,8 @@ export async function fetchSiteStats(): Promise<SiteStats | null> {
       filesRepaired: Number(data.filesRepaired) || 0,
       visitors: Number(data.visitors) || 0,
       filesUploaded: Number(data.filesUploaded) || 0,
+      ownerVisitors: Number(data.ownerVisitors) || 0,
+      daily: Array.isArray(data.daily) ? data.daily : [],
       updatedAt: Number(data.updatedAt) || Date.now(),
     };
   } catch (e) {
@@ -72,7 +90,7 @@ export async function recordUpload(): Promise<SiteStats | null> {
   }
 }
 
-/** Record a visit on the server — once per browser session only. */
+/** Record a visit on the server, once per browser session only. */
 export async function recordVisit(): Promise<SiteStats | null> {
   if (typeof window === "undefined") return null;
   try {
@@ -85,7 +103,7 @@ export async function recordVisit(): Promise<SiteStats | null> {
     const res = await fetch("/api/stats", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "visit" }),
+      body: JSON.stringify({ action: "visit", owner: isOwnerVisit() }),
     });
     if (!res.ok) return null;
     return (await res.json()) as SiteStats;
