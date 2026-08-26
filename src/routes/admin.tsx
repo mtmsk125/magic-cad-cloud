@@ -86,6 +86,8 @@ const getEnvInfo = createServerFn({ method: "GET" }).handler(async () => {
     VITE_COFEE: mask(process.env.VITE_COFEE),
     VITE_ADSENSE_CLIENT_ID: mask(process.env.VITE_ADSENSE_CLIENT_ID),
     VERCEL: process.env.VERCEL ?? undefined,
+    KV_CONFIGURED:
+      !!process.env.KV_REST_API_URL && !!process.env.KV_REST_API_TOKEN,
   };
 });
 
@@ -151,6 +153,7 @@ function AdminPage() {
   const [totalVisitors, setTotalVisitors] = useState(0);
   const [totalFixedFiles, setTotalFixedFiles] = useState(0);
   const [totalUploads, setTotalUploads] = useState(0);
+  const [kvConfigured, setKvConfigured] = useState(false);
 
   // Load REAL server-side statistics (not fake localStorage counters)
   useEffect(() => {
@@ -184,6 +187,7 @@ function AdminPage() {
       try {
         const env = await getEnvInfo();
         setEnvInfo(env);
+        setKvConfigured(!!env.KV_CONFIGURED);
       } catch {}
     } catch (e: any) {
       setStats({ error: e.message });
@@ -260,7 +264,18 @@ function AdminPage() {
           {/* Admin Actions */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-muted-foreground">تنزيل قائمة المشتركين (waitlist)</p>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-3 items-center">
+              <span
+                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold font-mono ${
+                  kvConfigured
+                    ? "border-green-500/40 bg-green-500/10 text-green-400"
+                    : "border-amber-500/40 bg-amber-500/10 text-amber-300"
+                }`}
+                title={kvConfigured ? "KV_REST_API_URL + KV_REST_API_TOKEN مُفعّلان" : "اربط Vercel KV ليتم الحفظ الدائم"}
+              >
+                <span className={`w-2 h-2 rounded-full ${kvConfigured ? "bg-green-400" : "bg-amber-300 animate-pulse"}`} />
+                {kvConfigured ? "التخزين الدائم: مفعّل" : "التخزين الدائم: غير مفعّل"}
+              </span>
               <button
                 onClick={async () => {
                   const r = await exportSubscribersCsv();
