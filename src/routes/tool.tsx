@@ -2,6 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { analyzeDxf, repairDxf, scoreColor, scoreBg, scoreLabel, getDxfBounds, buildSvgPaths, calculateTotalPerimeter, detectOpenLoops, sortInsideFirst } from "@/lib/dxf";
 import type { DxfAnalysis, DxfIssue, FixSummaryItem, DxfBounds, SvgPath } from "@/lib/dxf";
+// Phase 9 report: consume the cleanup engine's public API only — NO engine changes.
+import { cleanupEntities, DEFAULT_CLEANUP_OPTIONS } from "@/lib/dxf-cleanup";
+import type { CleanupReport } from "@/lib/dxf-cleanup";
 import { downloadAllAsZip, triggerSelfDestruct, isSelfDestructTriggered } from "@/lib/zip-export";
 import { track } from '@vercel/analytics';
 import { FeedbackModal } from "@/components/feedback-modal";
@@ -439,6 +442,8 @@ function ToolPage() {
   const [repairedContent, setRepairedContent] = useState("");
   const [repairedIssues, setRepairedIssues] = useState<DxfIssue[]>([]);
   const [fixSummary, setFixSummary] = useState<FixSummaryItem[]>([]);
+  // Phase 9 report (from cleanupEntities.report — engine output, no recomputation)
+  const [phase9, setPhase9] = useState<Pick<CleanupReport, "fixedOpen" | "removedDuplicates" | "foundOverlaps" | "foundSelfIntersections"> | null>(null);
   // Re-scan result of the ACTUAL repaired DXF — the verified source of truth
   // after repair. Never substitute a hard-coded 100 for this.
   const [repairedAnalysis, setRepairedAnalysis] = useState<DxfAnalysis | null>(null);
@@ -586,6 +591,14 @@ function ToolPage() {
       // Fix Summary
       fixSummaryTitle: "تقرير الإصلاحات والتعديلات",
       fixSummarySub: "نظرة تفصيلية على التغييرات التي تم إجراؤها على ملف DXF",
+      // Phase 9 report
+      phase9Title: "تقرير محرك التنظيف (Phase 9)",
+      phase9Sub: "فحص فتحات ومكررات وتداخلات المتجهات",
+      phase9FixedOpen: "فتحة أُغلقت تلقائياً",
+      phase9RemovedDup: "مكرر تم حذفه",
+      phase9Overlaps: "تداخل (معطّل بالأحمر)",
+      phase9SelfInt: "تقاطع ذاتي (معطّل بالأحمر)",
+      phase9ManualReview: "الملف يحتاج مراجعة يدوية — توجد تداخلات",
       // Cost Estimator
       costTitle: "تقدير تكلفة القص",
       costSub: "احسب التكلفة التقديرية للقص بناءً على الطول الإجمالي",
@@ -675,6 +688,14 @@ function ToolPage() {
       // Fix Summary
       fixSummaryTitle: "Fix Summary Report",
       fixSummarySub: "Detailed overview of changes made to your DXF file",
+      // Phase 9 report
+      phase9Title: "Cleanup Engine Report (Phase 9)",
+      phase9Sub: "Open-gap, duplicate, overlap and self-intersection scan",
+      phase9FixedOpen: "gap auto-closed",
+      phase9RemovedDup: "duplicate removed",
+      phase9Overlaps: "overlap (marked RED)",
+      phase9SelfInt: "self-intersection (marked RED)",
+      phase9ManualReview: "File needs manual review - overlaps found",
       // Cost Estimator
       costTitle: "Cutting Cost Estimator",
       costSub: "Estimate cutting cost based on total path length",
@@ -822,6 +843,24 @@ function ToolPage() {
     setRepairHadChanges(repaired && summary.some(s => s.id === "real_cleanup"));
     saveToHistory(fileName, analysis, true);
 
+    // Phase 9 report: run the SAME cleanup engine on the SAME parsed
+    // entities so the UI shows the real Phase 9 counters (open-vector
+    // fixes, near-duplicate removals, overlap + self-intersection marks).
+    // Read-only usage of the public engine API — no engine modification.
+    try {
+      const engine = cleanupEntities(analysis.entities, DEFAULT_CLEANUP_OPTIONS);
+      setPhase9({
+        fixedOpen: engine.report.fixedOpen,
+        removedDuplicates: engine.report.removedDuplicates,
+        foundOverlaps: engine.report.foundOverlaps,
+        foundSelfIntersections: engine.report.foundSelfIntersections,
+      });
+    } catch (e) {
+      // Never block the repair flow because of report generation.
+      console.error("Phase 9 report generation failed:", e);
+      setPhase9(null);
+    }
+
     // 2) RE-SCAN: re-parse and re-analyze the ACTUAL repaired DXF.
     //    The final score must come from this NEW analysis, never from a
     //    hard-coded 100. "Repair succeeded" does not mean "DXF is perfect".
@@ -908,6 +947,7 @@ function ToolPage() {
     setRepairedContent("");
     setRepairedIssues([]);
     setFixSummary([]);
+    setPhase9(null);
     setRepairedAnalysis(null);
     setReScanFailed(false);
     setShowScanDetails(false);
@@ -1593,6 +1633,57 @@ function ToolPage() {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* Phase 9 (UI only): cleanup engine report — counters come
+                straight from cleanupEntities.report (engine output). The
+                overlap/self-intersection scans are READ-ONLY: geometry is
+                marked RED, never deleted. */}
+            {stage === "repaired" && phase9 && (
+              <div className="rounded-2xl border border-accent/30 bg-gradient-to-br from-accent/5 to-card p-6">
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="w-10 h-10 rounded-xl bg-accent/20 flex items-center justify-center text-xl">
+                    🔍
+                  </div>
+                  <div>
+                    <h3 className="font-display font-bold text-lg">{t.phase9Title}</h3>
+                    <p className="text-xs text-muted-foreground">{t.phase9Sub}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="bg-background border border-green-500/30 rounded-xl p-4 text-center">
+                    <p className="font-mono text-2xl font-bold text-green-400">{phase9.fixedOpen}</p>
+                    <p className="text-xs font-medium mt-1">✅ {t.phase9FixedOpen}</p>
+                  </div>
+                  <div className="bg-background border border-green-500/30 rounded-xl p-4 text-center">
+                    <p className="font-mono text-2xl font-bold text-green-400">{phase9.removedDuplicates}</p>
+                    <p className="text-xs font-medium mt-1">🗑️ {t.phase9RemovedDup}</p>
+                  </div>
+                  <div className={`bg-background border rounded-xl p-4 text-center ${phase9.foundOverlaps > 0 ? "border-red-500/40" : "border-border/60"}`}>
+                    <p className={`font-mono text-2xl font-bold ${phase9.foundOverlaps > 0 ? "text-red-400" : "text-muted-foreground"}`}>{phase9.foundOverlaps}</p>
+                    <p className="text-xs font-medium mt-1">⚠️ {t.phase9Overlaps}</p>
+                  </div>
+                  <div className={`bg-background border rounded-xl p-4 text-center ${phase9.foundSelfIntersections > 0 ? "border-red-500/40" : "border-border/60"}`}>
+                    <p className={`font-mono text-2xl font-bold ${phase9.foundSelfIntersections > 0 ? "text-red-400" : "text-muted-foreground"}`}>{phase9.foundSelfIntersections}</p>
+                    <p className="text-xs font-medium mt-1">⚠️ {t.phase9SelfInt}</p>
+                  </div>
+                </div>
+                {phase9.foundOverlaps > 0 || phase9.foundSelfIntersections > 0 ? (
+                  <div className="mt-4 rounded-xl border border-red-500/40 bg-red-500/10 p-4 flex items-center gap-3">
+                    <span className="text-xl flex-shrink-0">🚩</span>
+                    <p className="text-sm font-semibold text-red-400">
+                      {t.phase9ManualReview}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-xl border border-green-500/30 bg-green-500/5 p-4 flex items-center gap-3">
+                    <span className="text-lg flex-shrink-0">✓</span>
+                    <p className="text-sm font-semibold text-green-400">
+                      {lang === "ar" ? "لا توجد تداخلات أو تقاطعات ذاتية — الملف جاهز" : "No overlaps or self-intersections — file is clean"}
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 

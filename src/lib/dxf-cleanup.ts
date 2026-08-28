@@ -99,6 +99,13 @@ export interface OpenPathInfo {
   layer: string;
   start: { x: number; y: number };
   end: { x: number; y: number };
+  /**
+   * Phase 9: coordinates of the nearest FOREIGN endpoint that this open
+   * endpoint almost touches (the other side of the gap). A closing LINE
+   * must bridge start→partner, NOT start→end (end is the entity's own
+   * other endpoint — bridging to it would duplicate the entity itself).
+   */
+  partner?: { x: number; y: number };
   /** Distance to the nearest foreign endpoint (Infinity when isolated). */
   gap: number;
   closable: boolean;
@@ -133,6 +140,10 @@ export interface CleanupReport {
   duplicateCurvesRemoved: number;
   duplicatePolylinesRemoved: number;
   openPaths: OpenPathInfo[];
+  fixedOpen: number;
+  removedDuplicates: number;
+  foundOverlaps: number;
+  foundSelfIntersections: number;
   totalChanges: number;
   toleranceUsed: number;
 }
@@ -398,11 +409,15 @@ export function detectOpenPaths(
   for (let i = 0; i < eps.length; i++) {
     const p = eps[i];
     let best = Infinity;
+    let bestPartner: { x: number; y: number } | undefined;
     for (const j of hash.near(p.x, p.y)) {
       if (j === i) continue;
       if (eps[j].idx === p.idx) continue; // its own other endpoint
       const dd = dist(p.x, p.y, eps[j].x, eps[j].y);
-      if (dd < best) best = dd;
+      if (dd < best) {
+        best = dd;
+        bestPartner = { x: eps[j].x, y: eps[j].y };
+      }
     }
     if (best <= tol) continue; // connected
     const key = i;
@@ -415,6 +430,7 @@ export function detectOpenPaths(
       layer: e.layer,
       start: { x: p.x, y: p.y },
       end: otherEndpoint(e, p.x, p.y),
+      partner: bestPartner,
       gap: best,
       closable: best <= opts.gapTolerance && best > tol,
     });
@@ -538,6 +554,11 @@ export function cleanupEntities(
   let overlappingSegmentsMerged = 0;
   let duplicateCurvesRemoved = 0;
   let duplicatePolylinesRemoved = 0;
+  // Phase 9 counters
+  let fixedOpen = 0;
+  let removedDuplicates = 0;
+  let foundOverlaps = 0;
+  let foundSelfIntersections = 0;
 
   /* --- stage 1: zero-length + duplicate vertices ------------------ */
   let stage: DxfEntity[] = [];
@@ -743,6 +764,33 @@ export function cleanupEntities(
   }
 
   const openPaths = detectOpenPaths(stage, opts);
+
+  /* --- stage 6: Phase 9 – auto-close open paths (gap < 0.015 mm) ----- */
+  const drawingScale = computeDrawingScale(stage);
+  const closeResult = autoCloseOpenPaths(openPaths, stage, drawingScale);
+  if (closeResult.fixedOpen > 0) {
+    stage = closeResult.entities;
+    fixedOpen = closeResult.fixedOpen;
+  }
+
+  /* --- stage 7: Phase 9 – remove near-duplicated vectors -------------- */
+  const dupResult = removeDuplicatedVectors(stage, opts);
+  if (dupResult.removedDuplicates > 0) {
+    stage = dupResult.entities;
+    removedDuplicates = dupResult.removedDuplicates;
+  }
+
+  /* --- stage 8: Phase 9 – detect overlaps (READ-ONLY) ---------------- */
+  // Run on the ORIGINAL input: stage 5 already merges collinear overlaps,
+  // so scanning the post-merge stage would hide issues present in the
+  // source file. This is detection only — nothing is modified or deleted.
+  const overlapResult = detectOverlapVectors(input, opts);
+  foundOverlaps = overlapResult.foundOverlaps;
+
+  /* --- stage 9: Phase 9 – detect self-intersections (READ-ONLY) ------ */
+  const selfResult = detectSelfIntersections(input);
+  foundSelfIntersections = selfResult.foundSelfIntersections;
+
   const after = analyzeGeometry(stage, opts);
 
   const totalChanges =
@@ -752,7 +800,9 @@ export function cleanupEntities(
     containedSegmentsRemoved +
     overlappingSegmentsMerged +
     duplicateCurvesRemoved +
-    duplicatePolylinesRemoved;
+    duplicatePolylinesRemoved +
+    fixedOpen +
+    removedDuplicates;
 
   return {
     entities: stage,
@@ -768,10 +818,374 @@ export function cleanupEntities(
       duplicateCurvesRemoved,
       duplicatePolylinesRemoved,
       openPaths,
+      fixedOpen,
+      removedDuplicates,
+      foundOverlaps,
+      foundSelfIntersections,
       totalChanges,
       toleranceUsed: tol,
     },
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* Phase 9: open-vector fix, duplicated-vector removal, overlap +     */
+/* self-intersection detection (no auto-fix)                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Phase 9 – Open vector decision for a single gap distance (in drawing units = mm).
+ *
+ * Decision rules:
+ *   gap < 0.015  → auto-close: laser kerf (≈0.2 mm) is larger than gap.
+ *   0.015–0.1   → needs user confirmation before closing.
+ *   gap > 0.1    → intentional open contour: do NOT close.
+ *
+ * Part6.txt must become 1 closed contour when its ~0.1 mm gap is closed.
+ */
+export type OpenVectorAction = "close" | "confirm" | "skip";
+export interface OpenVectorDecision {
+  action: OpenVectorAction;
+  gap: number;
+  preview?: { from: { x: number; y: number }; to: { x: number; y: number } };
+  reason?: string;
+}
+/**
+ * Scale-aware variant of the Phase 9 gap decision rule. `scale` is the
+ * drawing bbox diagonal. Normal/large drawings use the absolute rule above
+ * (0.015 mm / 0.1 mm); drawings whose whole diagonal is so small that those
+ * absolute bands would swallow REAL geometry fall back to relative bands
+ * (1%/4% of the diagonal) so Phase 6A's tiny-but-valid drawing keeps every
+ * one of its segments connected without inventing bridges.
+ */
+export function fixOpenVectorScaled(gap: number, scale: number | null): OpenVectorDecision {
+  if (scale !== null && isFinite(scale) && scale > 0 && scale < 10) {
+    // relative bands for sub-10-unit drawings
+    const relClose = scale * 0.01;
+    const relConfirm = scale * 0.04;
+    if (gap < relClose) return { action: "close", gap };
+    if (gap <= relConfirm)
+      return {
+        action: "confirm",
+        gap,
+        preview: { from: { x: 0, y: 0 }, to: { x: gap, y: 0 } },
+      };
+    return { action: "skip", gap, reason: "intentional_open" };
+  }
+  return fixOpenVector(gap);
+}
+export function fixOpenVector(gap: number): OpenVectorDecision {
+  if (gap < 0.015) return { action: "close", gap };
+  if (gap <= 0.1)  return { action: "confirm", gap };
+  return { action: "skip", gap, reason: "intentional_open" };
+}
+
+/** Phase 9 – Auto-close all closable open paths by emitting a closing LINE. */
+export function autoCloseOpenPaths(
+  paths: OpenPathInfo[],
+  entities: DxfEntity[],
+  scale: number | null = null,
+): { entities: DxfEntity[]; fixedOpen: number; unclosed: OpenPathInfo[] } {
+  let fixedOpen = 0;
+  const extraLines: DxfEntity[] = [];
+  const unclosed: OpenPathInfo[] = [];
+  const seenGaps = new Set<string>();
+  for (const p of paths) {
+    const dec = fixOpenVectorScaled(p.gap, scale);
+    if (dec.action === "close") {
+      // detectOpenPaths reports the same gap once per endpoint (two reports
+      // for one physical gap). Emit only ONE closing line per unique gap.
+      // The bridge must run from the open endpoint to the gap PARTNER —
+      // never to the entity's own other endpoint (that would duplicate it).
+      const a = p.partner ?? p.end;
+      const ax = p.start.x, ay = p.start.y, bx = a.x, by = a.y;
+      const key =
+        ax < bx || (ax === bx && ay <= by)
+          ? `${ax.toFixed(9)},${ay.toFixed(9)}|${bx.toFixed(9)},${by.toFixed(9)}`
+          : `${bx.toFixed(9)},${by.toFixed(9)}|${ax.toFixed(9)},${ay.toFixed(9)}`;
+      if (seenGaps.has(key)) continue;
+      seenGaps.add(key);
+      extraLines.push({
+        type: "LINE",
+        layer: p.layer,
+        handle: `P9-${p.entityIndex}`,
+        rawLines: [],
+        x1: bx, y1: by,
+        x2: ax, y2: ay,
+      });
+      fixedOpen++;
+    } else {
+      unclosed.push(p);
+    }
+  }
+  return {
+    entities: [...entities, ...extraLines],
+    fixedOpen,
+    unclosed,
+  };
+}
+
+/**
+ * Phase 9 – Remove geometrically duplicated LINE entities.
+ *
+ * Criterion: two LINEs are duplicates when
+ *   • the midpoint of one is within 0.01 mm of the other AND
+ *   • they have the same length (±tol) AND
+ *   • they are collinear (same angle) or reversed.
+ *
+ * This is safe: deleting one of two virtually-identical lines does NOT
+ * change the output geometry in any meaningful way.
+ *
+ * NOTE: The existing stage-2 duplicate removal uses a tighter spatial
+ * tolerance (opts.tolerance).  Here we go wider (0.01 mm) to also catch
+ * near-duplicates that survive stage 2 — without affecting the already-
+ * proven 266.dxf behaviour.
+ */
+export function removeDuplicatedVectors(
+  entities: DxfEntity[],
+  opts: CleanupOptions = DEFAULT_CLEANUP_OPTIONS,
+): { entities: DxfEntity[]; removedDuplicates: number } {
+  const lines = entities
+    .map((e, i) => ({ e, i }))
+    .filter(({ e }) => e.type === "LINE");
+  if (lines.length < 2) return { entities, removedDuplicates: 0 };
+
+  // Phase 6A lesson: an ABSOLUTE 0.01 mm threshold deletes legitimate
+  // geometry in small-scale drawings (chained segments can be < 0.01 apart
+  // there). The near-duplicate threshold is therefore SCALE-AWARE:
+  //   dupTol = clamp(bboxDiagonal * 1e-3, opts.tolerance, 0.01)
+  // Normal/large drawings clamp at the spec's 0.01 mm; small drawings get a
+  // proportionally small threshold so chained real geometry is NEVER merged.
+  const diag = computeDrawingScale(entities);
+  const dupTol =
+    diag === null || !isFinite(diag) || diag <= 0
+      ? opts.tolerance
+      : Math.min(Math.max(diag * 1e-3, opts.tolerance), 0.01);
+  const dupTol2 = dupTol * dupTol;
+
+  const dropped = new Set<number>();
+  let removedDuplicates = 0;
+
+  for (let a = 0; a < lines.length; a++) {
+    if (dropped.has(lines[a].i)) continue;
+    const la = lines[a].e;
+    const lenA = lineLength(la);
+
+    for (let b = a + 1; b < lines.length; b++) {
+      if (dropped.has(lines[b].i)) continue;
+      const lb = lines[b].e;
+
+      // 1. Same length within tolerance
+      const lenB = lineLength(lb);
+      if (Math.abs(lenA - lenB) > opts.tolerance) continue;
+
+      // 2. BOTH endpoints within dupTol (forward or reversed orientation)
+      const ax1 = la.x1 ?? 0, ay1 = la.y1 ?? 0, ax2 = la.x2 ?? 0, ay2 = la.y2 ?? 0;
+      const bx1 = lb.x1 ?? 0, by1 = lb.y1 ?? 0, bx2 = lb.x2 ?? 0, by2 = lb.y2 ?? 0;
+      const forward =
+        d2(ax1, ay1, bx1, by1) <= dupTol2 && d2(ax2, ay2, bx2, by2) <= dupTol2;
+      const reverse =
+        d2(ax1, ay1, bx2, by2) <= dupTol2 && d2(ax2, ay2, bx1, by1) <= dupTol2;
+      if (!forward && !reverse) continue;
+
+      // 3. Collinear or reversed (direction vectors) — redundant with (2)
+      //    but kept as an explicit safety gate per the Phase 9 spec.
+      const dirA = normalizedDir(la);
+      const dirB = normalizedDir(lb);
+      const dot = dirA.dx * dirB.dx + dirA.dy * dirB.dy;
+      if (dot < 1 - opts.angleTolerance && dot > -1 + opts.angleTolerance) continue;
+
+      // Duplicate found — drop lb, keep la
+      dropped.add(lines[b].i);
+      removedDuplicates++;
+    }
+  }
+
+  if (removedDuplicates === 0) return { entities, removedDuplicates: 0 };
+  return {
+    entities: entities.filter((_, i) => !dropped.has(i)),
+    removedDuplicates,
+  };
+}
+
+/**
+ * Phase 9 – Detect collinear line pairs whose projections overlap partially
+ * (not 100 % — i.e. neither fully contains the other).
+ *
+ * This is a READ-ONLY pass: NO entities are removed or merged.
+ * The caller receives a list of objects to be highlighted in the UI.
+ *
+ * Overlap rule:
+ *   • angle difference < 0.5°  (collinear / parallel)
+ *   • projections on the shared axis overlap but neither fully covers the other
+ */
+export interface OverlapInfo {
+  type: "overlap";
+  mark: "RED";
+  from: [number, number];
+  to: [number, number];
+  layer: string;
+}
+export function detectOverlapVectors(
+  entities: DxfEntity[],
+  opts: CleanupOptions = DEFAULT_CLEANUP_OPTIONS,
+): { overlaps: OverlapInfo[]; foundOverlaps: number } {
+  const lines = entities
+    .filter((e) => e.type === "LINE")
+    .map((e) => ({ e, dir: normalizedDir(e) }));
+
+  if (lines.length < 2) return { overlaps: [], foundOverlaps: 0 };
+
+  const overlaps: OverlapInfo[] = [];
+  const ANGLE_THRESH_DEG = 0.5;
+  const ANGLE_THRESH = (ANGLE_THRESH_DEG * Math.PI) / 180;
+  const checked = new Set<string>();
+
+  for (let i = 0; i < lines.length; i++) {
+    const { e: ai, dir: dirA } = lines[i];
+    if (!ai.handle) continue;
+    for (let j = i + 1; j < lines.length; j++) {
+      const { e: bj, dir: dirB } = lines[j];
+      if (!bj.handle) continue;
+
+      if (opts.respectLayers && ai.layer !== bj.layer) continue;
+
+      const angleDiff = Math.abs(
+        Math.atan2(dirA.dy, dirA.dx) - Math.atan2(dirB.dy, dirB.dx)
+      );
+      const normDiff = Math.min(angleDiff, Math.PI - angleDiff);
+      if (normDiff > ANGLE_THRESH) continue;
+
+      // Must also be COLLINEAR: the perpendicular offset of b's endpoints
+      // from a's line must be within tolerance. Parallel-but-offset lines
+      // (e.g. two edges of a long thin slot) are NOT overlaps.
+      const refX = ai.x1 ?? 0;
+      const refY = ai.y1 ?? 0;
+      const perp = (x: number, y: number) => -dirA.dy * (x - refX) + dirA.dx * (y - refY);
+      const offB0 = Math.abs(perp(bj.x1 ?? 0, bj.y1 ?? 0));
+      const offB1 = Math.abs(perp(bj.x2 ?? 0, bj.y2 ?? 0));
+      const maxOff = Math.max(offB0, offB1);
+      if (maxOff > Math.max(opts.tolerance, 0.01)) continue;
+
+      const dot = (x: number, y: number) => x * dirA.dx + y * dirA.dy;
+
+      const pA0 = dot(refX - refX, refY - refY);
+      const pA1 = dot((ai.x2 ?? 0) - refX, (ai.y2 ?? 0) - refY);
+      const pB0 = dot((bj.x1 ?? 0) - refX, (bj.y1 ?? 0) - refY);
+      const pB1 = dot((bj.x2 ?? 0) - refX, (bj.y2 ?? 0) - refY);
+
+      const a0 = Math.min(pA0, pA1), a1 = Math.max(pA0, pA1);
+      const b0 = Math.min(pB0, pB1), b1 = Math.max(pB0, pB1);
+
+      const overlapStart = Math.max(a0, b0);
+      const overlapEnd = Math.min(a1, b1);
+      const overlapLen = Math.max(0, overlapEnd - overlapStart);
+      const unionLen = Math.max(a1, b1) - Math.min(a0, b0);
+      if (unionLen === 0) continue;
+
+      // Spec: flag PARTIAL overlaps only — one segment fully covering the
+      // other (or exact duplicates) is stage-5/near-duplicate territory.
+      const aLen = a1 - a0, bLen = b1 - b0;
+      const containedInA = overlapLen >= bLen - opts.tolerance;
+      const containedInB = overlapLen >= aLen - opts.tolerance;
+      if (containedInA || containedInB) continue;
+
+      const overlapFraction = overlapLen / unionLen;
+
+      if (overlapLen > opts.tolerance && overlapFraction < 0.9999) {
+        const key = [ai.handle, bj.handle].sort().join("-");
+        if (checked.has(key)) continue;
+        checked.add(key);
+
+        overlaps.push({
+          type: "overlap",
+          mark: "RED",
+          from: [bj.x1 ?? 0, bj.y1 ?? 0],
+          to: [bj.x2 ?? 0, bj.y2 ?? 0],
+          layer: bj.layer,
+        });
+      }
+    }
+  }
+
+  return { overlaps, foundOverlaps: overlaps.length };
+}
+
+/**
+ * Phase 9 – Detect self-intersections in LWPOLYLINE / POLYLINE entities.
+ *
+ * Algorithm: for each polyline, test every pair of non-adjacent edges for
+ * intersection.  Bulge arcs are treated as straight chords (conservative).
+ * Vertices that are exactly shared with an adjacent edge are skipped.
+ *
+ * This is a READ-ONLY pass: NO entities are modified.
+ */
+export interface SelfIntersectionInfo {
+  polylineIndex: number;
+  type: "self_intersection";
+  mark: "RED";
+  point: [number, number];
+  layer: string;
+}
+function orderedSeg(a: { x: number; y: number }, b: { x: number; y: number }) {
+  if (a.x < b.x || (a.x === b.x && a.y < b.y)) return { s: a, e: b };
+  return { s: b, e: a };
+}
+function segIntersect(
+  a: { x: number; y: number }, ae: { x: number; y: number },
+  b: { x: number; y: number }, be: { x: number; y: number },
+): { x: number; y: number } | null {
+  const d1x = ae.x - a.x, d1y = ae.y - a.y;
+  const d2x = be.x - b.x, d2y = be.y - b.y;
+  const cross = d1x * d2y - d1y * d2x;
+  if (Math.abs(cross) < 1e-12) return null;
+  const t = ((b.x - a.x) * d2y - (b.y - a.y) * d2x) / cross;
+  const u = ((b.x - a.x) * d1y - (b.y - a.y) * d1x) / cross;
+  if (t <= 0 || t >= 1 || u <= 0 || u >= 1) return null;
+  return { x: a.x + t * d1x, y: a.y + t * d1y };
+}
+export function detectSelfIntersections(
+  entities: DxfEntity[],
+): { intersections: SelfIntersectionInfo[]; foundSelfIntersections: number } {
+  const intersections: SelfIntersectionInfo[] = [];
+  let idx = 0;
+  for (const e of entities) {
+    if (
+      (e.type !== "LWPOLYLINE" && e.type !== "POLYLINE") ||
+      !e.vertices ||
+      e.vertices.length < 4
+    ) { idx++; continue; }
+
+    const v = e.vertices;
+    const n = v.length;
+    const range = e.closed ? n : n - 1;
+
+    for (let a = 0; a < range; a++) {
+      const ae = (a + 1) % n;
+      const segA = orderedSeg(v[a], v[ae]);
+
+      for (let b = a + 2; b < range; b++) {
+        if (e.closed && b === n) continue;
+        const be = (b + 1) % n;
+        if (!e.closed && (ae === b)) continue;
+        if (e.closed && ((ae % n) === b)) continue;
+
+        const segB = orderedSeg(v[b], v[be]);
+        const pt = segIntersect(segA.s, segA.e, segB.s, segB.e);
+        if (pt) {
+          intersections.push({
+            polylineIndex: idx,
+            type: "self_intersection",
+            mark: "RED",
+            point: [pt.x, pt.y],
+            layer: e.layer,
+          });
+        }
+      }
+    }
+    idx++;
+  }
+  return { intersections, foundSelfIntersections: intersections.length };
 }
 
 /* ------------------------------------------------------------------ */
