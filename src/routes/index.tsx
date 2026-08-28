@@ -6,6 +6,7 @@ import { AdBanner } from "@/components/AdBanner";
 import AdvertiseWithUs from "@/components/AdvertiseWithUs";
 import { getTranslations, getLangDir, type Lang } from "@/lib/i18n";
 import { fetchSiteStats, recordVisit } from "@/lib/stats";
+import { setReferredBy, ensureReferralCode } from "@/lib/growth/growthClient";
 import { track } from '@vercel/analytics';
 
 export const Route = createFileRoute("/")({
@@ -188,6 +189,29 @@ function Index() {
     setIsMounted(true);
     const stored = localStorage.getItem("dxfix_lang") as Lang | null;
     if (stored && ["ar", "en"].includes(stored)) setLang(stored);
+    // Referral attribution from ?ref= (or utm_source)
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const ref = params.get("ref");
+      if (ref) {
+        setReferredBy(ref.toUpperCase());
+        ensureReferralCode();
+        fetch("/api/growth/event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "referral_visit", source: "referral", utm_source: params.get("utm_source"), utm_medium: params.get("utm_medium"), utm_campaign: params.get("utm_campaign"), utm_content: params.get("utm_content") }),
+        }).catch(() => {});
+      }
+      // Record real event for google/direct sources too
+      const src = params.get("utm_source") || "direct";
+      if (!ref) {
+        fetch("/api/growth/event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "page_view", source: src }),
+        }).catch(() => {});
+      }
+    } catch {}
     // Record this session as a real visit (once per browser session)
     recordVisit().catch(() => {});
     // Real site-wide statistics from the backend server (not fake localStorage)

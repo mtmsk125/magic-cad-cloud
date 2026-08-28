@@ -1,4 +1,4 @@
-import "./lib/error-capture";
+﻿import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
@@ -38,7 +38,7 @@ function verifySignature(token: string, email: string, tier: string, signature: 
   return expected === signature;
 }
 
-// ─── Paddle Webhook Handler ─────────────────────────────────────────
+// â”€â”€â”€ Paddle Webhook Handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 import { Paddle, Environment } from '@paddle/paddle-node-sdk';
 import { upsertCustomer, upsertSubscription } from './db/paddleMirror';
@@ -50,23 +50,23 @@ const paddleWebhookSecret = process.env.PADDLE_WEBHOOK_SECRET || '';
 
 // Log Paddle configuration status at startup
 if (!paddleApiKey) {
-  console.warn('⚠️  PADDLE_API_KEY is not set. Server-side Paddle features (webhooks, portal) will be DISABLED.');
+  console.warn('âڑ ï¸ڈ  PADDLE_API_KEY is not set. Server-side Paddle features (webhooks, portal) will be DISABLED.');
   console.warn('   Get your API key from: https://vendors.paddle.com/authentication');
 }
 if (!paddleWebhookSecret) {
-  console.warn('⚠️  PADDLE_WEBHOOK_SECRET is not set. Webhook signature verification will be DISABLED.');
+  console.warn('âڑ ï¸ڈ  PADDLE_WEBHOOK_SECRET is not set. Webhook signature verification will be DISABLED.');
   console.warn('   Create a webhook at: https://vendors.paddle.com/webhooks');
 }
 if (!paddleClientToken) {
-  console.warn('⚠️  VITE_PADDLE_CLIENT_TOKEN is not set. Client-side checkout will use MOCK mode.');
+  console.warn('âڑ ï¸ڈ  VITE_PADDLE_CLIENT_TOKEN is not set. Client-side checkout will use MOCK mode.');
 } else {
-  console.log(`✅ Paddle client token found: ${paddleClientToken.slice(0, 5)}... (${paddleClientToken.startsWith('test_') ? 'sandbox' : 'production'})`);
+  console.log(`âœ… Paddle client token found: ${paddleClientToken.slice(0, 5)}... (${paddleClientToken.startsWith('test_') ? 'sandbox' : 'production'})`);
 }
 if (paddleApiKey) {
-  console.log(`✅ Paddle API key found: ${paddleApiKey.slice(0, 5)}...`);
+  console.log(`âœ… Paddle API key found: ${paddleApiKey.slice(0, 5)}...`);
 }
 if (paddleWebhookSecret) {
-  console.log(`✅ Paddle webhook secret configured`);
+  console.log(`âœ… Paddle webhook secret configured`);
 }
 
 // Only initialize SDK if we have an API key
@@ -97,7 +97,7 @@ async function handlePaddleWebhook(request: Request): Promise<Response> {
     const rawBody = await request.text();
 
     if (!paddleSdk) {
-      console.error('❌ Paddle SDK not initialized. PADDLE_API_KEY is missing.');
+      console.error('â‌Œ Paddle SDK not initialized. PADDLE_API_KEY is missing.');
       return new Response(JSON.stringify({ error: 'Paddle SDK not configured on server.' }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' },
@@ -177,7 +177,7 @@ async function handlePaddleWebhook(request: Request): Promise<Response> {
   }
 }
 
-// ─── Customer Portal Redirect ──────────────────────────────────────
+// â”€â”€â”€ Customer Portal Redirect â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 import { handleCustomerPortalRedirect } from './controllers/customerPortal';
 
@@ -221,7 +221,7 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
         token,
       });
       
-      console.log(`✅ Subscription activated: ${email} (${tier})`);
+      console.log(`âœ… Subscription activated: ${email} (${tier})`);
       
       return new Response(JSON.stringify({ 
         success: true, 
@@ -234,7 +234,7 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
         headers: { 'Content-Type': 'application/json' },
       });
     } catch (error) {
-      console.error('❌ Subscribe API error:', error);
+      console.error('â‌Œ Subscribe API error:', error);
       return new Response(JSON.stringify({ error: 'Internal server error' }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' },
@@ -298,7 +298,7 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
         headers: { 'Content-Type': 'application/json' },
       });
     } catch (error) {
-      console.error('❌ Check API error:', error);
+      console.error('â‌Œ Check API error:', error);
       return new Response(JSON.stringify({ subscribed: false }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -306,8 +306,8 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
     }
   }
   
-  // ─── Email List (Waitlist) API ──────────────────────────────────────
-  // Durable storage (Vercel KV) — previously a subscribers.json file that
+  // â”€â”€â”€ Email List (Waitlist) API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Durable storage (Vercel KV) â€” previously a subscribers.json file that
   // reset on every Vercel redeploy.
   const EMAIL_KEY = 'waitlist_emails';
 
@@ -330,7 +330,7 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
     emails.push(normalized);
     try {
       await durableSet(EMAIL_KEY, emails);
-      console.log(`✅ New subscriber saved: ${normalized} (total: ${emails.length})`);
+      console.log(`âœ… New subscriber saved: ${normalized} (total: ${emails.length})`);
       return { success: true, message: 'Subscribed successfully' };
     } catch (e) {
       console.error('Failed to save email:', e);
@@ -355,7 +355,7 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
         headers: { 'Content-Type': 'application/json' },
       });
     } catch (error) {
-      console.error('❌ Waitlist API error:', error);
+      console.error('â‌Œ Waitlist API error:', error);
       return new Response(JSON.stringify({ error: 'Internal server error' }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' },
@@ -399,7 +399,7 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
     });
   }
 
-  // ─── Site Statistics (real, durable, daily + cumulative + owner-split) ──
+  // â”€â”€â”€ Site Statistics (real, durable, daily + cumulative + owner-split) â”€â”€
   const STATS_KEY = 'site_stats';
 
   interface DailyStat {
@@ -464,7 +464,7 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
     }
   }
 
-  // GET /api/stats — public real site-wide statistics (+ daily + owner)
+  // GET /api/stats â€” public real site-wide statistics (+ daily + owner)
   if (url.pathname === '/api/stats' && request.method === 'GET') {
     const stats = await loadStats();
     // Return last 14 days of daily data, most recent first.
@@ -494,7 +494,7 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
     );
   }
 
-  // POST /api/stats — record a real event (repair/visit/upload) from the client
+  // POST /api/stats â€” record a real event (repair/visit/upload) from the client
   if (url.pathname === '/api/stats' && request.method === 'POST') {
     try {
       const body = await request.json();
@@ -542,11 +542,81 @@ async function handleApiRequest(request: Request): Promise<Response | null> {
         }
       );
     } catch (e) {
-      console.error('❌ Stats API error:', e);
+      console.error('â‌Œ Stats API error:', e);
       return new Response(JSON.stringify({ error: 'Internal server error' }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' },
       });
+    }
+  }
+
+  // GET /api/growth â€” public growth config (settings, community, launch)
+  if (url.pathname === '/api/growth' && request.method === 'GET') {
+    try {
+      const { loadSettings } = await import('./lib/growth/growthServer');
+      const settings = await loadSettings();
+      return new Response(
+        JSON.stringify({
+          launch: settings.launch,
+          community: settings.community,
+          referral: settings.referral,
+          monetization: { paid_mode: settings.monetization.paid_mode, payment_status: settings.monetization.payment_status, pro_price: settings.monetization.pro_price, currency: settings.monetization.currency },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } }
+      );
+    } catch (e) {
+      console.error('Growth settings error:', e);
+      return new Response(JSON.stringify({ error: 'Internal error' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
+  // POST /api/growth/event â€” record a real growth analytics event (fire-and-forget)
+  if (url.pathname === '/api/growth/event' && request.method === 'POST') {
+    try {
+      const body = await request.json();
+      const { makeEventRecord } = await import('./lib/growth/analytics');
+      const { recordEvent } = await import('./lib/growth/growthServer');
+      const src = { source: body.source || 'direct', utm_source: body.utm_source, utm_medium: body.utm_medium, utm_campaign: body.utm_campaign, utm_content: body.utm_content };
+      await recordEvent(makeEventRecord(body.name, src));
+      return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } catch (e) {
+      console.error('Growth event error:', e);
+      return new Response(JSON.stringify({ ok: false }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
+  // GET /api/growth/report â€” fetch a public scan report by secure id
+  if (url.pathname === '/api/growth/report' && request.method === 'GET') {
+    try {
+      const id = url.searchParams.get('id') || '';
+      const { getPublicReport } = await import('./lib/growth/growthServer');
+      const report = await getPublicReport(id);
+      if (!report) return new Response(JSON.stringify({ error: 'not_found' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ report }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } catch (e) {
+      return new Response(JSON.stringify({ error: 'internal' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
+  // POST /api/growth/report â€” create a public report from safe summary
+  if (url.pathname === '/api/growth/report' && request.method === 'POST') {
+    try {
+      const body = await request.json();
+      const { buildPublicReport } = await import('./lib/growth/publicReports');
+      const { savePublicReport } = await import('./lib/growth/growthServer');
+      const report = buildPublicReport({
+        entities: Number(body.entities) || 0,
+        issuesDetected: Number(body.issuesDetected) || 0,
+        issuesFixed: Number(body.issuesFixed) || 0,
+        issuesRemaining: Number(body.issuesRemaining) || 0,
+        verified: Boolean(body.verified),
+        score: body.score != null ? Number(body.score) : null,
+        warnings: Number(body.warnings) || 0,
+      });
+      await savePublicReport(report);
+      return new Response(JSON.stringify({ id: report.id }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } catch (e) {
+      return new Response(JSON.stringify({ error: 'internal' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
     }
   }
 
@@ -584,7 +654,7 @@ async function getServerEntry(): Promise<ServerEntry> {
 }
 
 // h3 swallows in-handler throws into a normal 500 Response with body
-// {"unhandled":true,"message":"HTTPError"} — try/catch alone never fires for those.
+// {"unhandled":true,"message":"HTTPError"} â€” try/catch alone never fires for those.
 async function normalizeCatastrophicSsrResponse(response: Response): Promise<Response> {
   if (response.status < 500) return response;
   const contentType = response.headers.get("content-type") ?? "";
