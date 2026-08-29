@@ -360,6 +360,9 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount }: {
 }
 
 export const Route = createFileRoute("/tool")({
+  // React #418 fix: /tool is a fully client-interactive page — skip SSR so the
+  // server never renders markup that could mismatch the first client render.
+  ssr: false,
   // No beforeLoad guard — tool is 100% free, no registration or paywall required
   head: () => ({
     meta: [
@@ -467,6 +470,12 @@ function ToolPage() {
 
   // Phase 2: optional curve→polyline conversion (OFF by default).
   const [convertCurves, setConvertCurves] = useState(false);
+
+  // React #418 fix: never show engine-derived numbers before the browser has
+  // woken up. SSR markup must match the first client render exactly, so the
+  // report card renders a skeleton until mounted.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     // Client-only: check self-destruct state from localStorage
@@ -1671,8 +1680,17 @@ function ToolPage() {
                 (duplicates/overlaps) live in the collapsed "تفاصيل تقنية" panel;
                 the false-positive self-intersection counter was deleted. */}
             {stage === "repaired" && (() => {
-              const fixedCount = repairedIssues.length;
-              const needsReviewCount = analysis.issues.filter(i => !repairedIssues.find(r => r.id === i.id)).length;
+              // Client-only gate: skeleton until mounted (React #418 fix).
+              if (!mounted)
+                return (
+                  <div className="rounded-2xl border border-border bg-card p-6">
+                    <div className="h-24 animate-pulse rounded-xl bg-muted/40" />
+                  </div>
+                );
+              const fixedCount = mounted ? repairedIssues.length : 0;
+              const needsReviewCount = mounted && analysis
+                ? analysis.issues.filter(i => !repairedIssues.find(r => r.id === i.id)).length
+                : 0;
               const afterScore = stage === "repaired" && repairedAnalysis ? repairedAnalysis.score : analysis.score;
               return (
                 <div className="rounded-2xl border border-accent/30 bg-gradient-to-br from-accent/5 to-card p-6">
