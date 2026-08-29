@@ -100,7 +100,22 @@ run("Test2_reversed_identical_1_removed", () => {
   const analysis = analyzeDxf(dxf);
   const { fixed } = repairDxf(dxf, analysis);
   const re = analyzeDxf(fixed);
-  return { pass: re.stats.totalEntities === 1, detail: "after=" + re.stats.totalEntities };
+    return { pass: re.stats.totalEntities === 1, detail: "after=" + re.stats.totalEntities };
+});
+
+run("Test2b_reversed_identical_different_layers_both_kept", () => {
+  // Two LINEs that are reversed-identical in geometry but live on DIFFERENT
+  // layers. With respectLayers:true (the default) they must NOT be treated as
+  // duplicates — each layer is its own design domain.
+  const entities = [
+    { type: "LINE", layer: "L1", handle: "1", rawLines: [], x1: 0, y1: 0, x2: 100, y2: 0 },
+    { type: "LINE", layer: "L2", handle: "2", rawLines: [], x1: 100, y1: 0, x2: 0, y2: 0 },
+  ] as any;
+  const result = cleanupEntities(entities, { ...DEFAULT_CLEANUP_OPTIONS, respectLayers: true });
+  return {
+    pass: result.entities.length === 2 && result.report.duplicateEntitiesRemoved === 0,
+    detail: "kept=" + result.entities.length + " removed=" + result.report.duplicateEntitiesRemoved,
+  };
 });
 
 run("Test3_zero_length_removed", () => {

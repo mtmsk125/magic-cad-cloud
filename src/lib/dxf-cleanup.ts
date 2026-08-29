@@ -148,6 +148,61 @@ export interface CleanupReport {
   toleranceUsed: number;
 }
 
+/* ================================================================== */
+/* MASTER CLEANUP (Phase A pre-process + Phase C optimization)         */
+/* Explicit opt-in pipeline wrapping the untouched cleanupEntities().  */
+/* ================================================================== */
+
+export interface MasterCleanupReport {
+  /** Curves (SPLINE/ARC/CIRCLE/ELLIPSE) flattened to polylines. */
+  flattenedSplines: number;
+  /** 1 when inch→mm unit conversion was applied, else 0. */
+  convertedUnits: number;
+  /** Unsupported annotation entities removed (TEXT/MTEXT/DIMENSION/...). */
+  removedUnsupported: number;
+  /** Degenerate entities removed (<0.001 units or scale-aware tiny). */
+  removedZeroLength: number;
+  /** Open gaps closed with bridging lines. */
+  fixedOpen: number;
+  /** Duplicate vectors removed. */
+  removedDuplicates: number;
+  /** Small collinear LINEs merged into longer ones. */
+  mergedCollinear: number;
+  /** Vertices removed by Douglas-Peucker simplification. */
+  simplifiedPoints: number;
+  /** Entities re-layered to "0" + empty layers cleaned. */
+  layersCleaned: number;
+  /** Partial collinear overlaps found (marked RED, never auto-fixed). */
+  foundOverlaps: number;
+  /** Self-intersections found (marked RED, never auto-fixed). */
+  foundSelfIntersections: number;
+  /** Non-empty when bbox <5 or >2000 units (possible scale problem). */
+  scaleWarning: string | null;
+  /** Sum of all applied modifications. */
+  totalChanges: number;
+}
+
+export const SUPPORTED_GEOMETRY_TYPES = new Set([
+  "LINE",
+  "LWPOLYLINE",
+  "POLYLINE",
+  "ARC",
+  "CIRCLE",
+  "SPLINE",
+  "ELLIPSE",
+]);
+
+/** Annotation/reference entities removed by the master sanitizer. */
+export const UNSUPPORTED_GEOMETRY_TYPES = new Set([
+  "TEXT",
+  "MTEXT",
+  "DIMENSION",
+  "HATCH",
+  "LEADER",
+]);
+
+const CURVE_TYPES = new Set(["SPLINE", "ARC", "CIRCLE", "ELLIPSE"]);
+
 /* ------------------------------------------------------------------ */
 /* helpers                                                             */
 /* ------------------------------------------------------------------ */
@@ -791,6 +846,21 @@ export function cleanupEntities(
   const selfResult = detectSelfIntersections(input);
   foundSelfIntersections = selfResult.foundSelfIntersections;
 
+  // [Phase9 Debug] – diagnostics only, no logic change. Throttled: never
+  // serialize huge arrays (50k-entity files would flood the console).
+  console.log('[Phase9 Debug]', {
+    openGaps: openPaths.length,
+    gapsFirst20: openPaths.slice(0, 20).map(p => ({
+      gap: p.gap,
+      closable: p.closable,
+      entityType: p.entityType,
+      layer: p.layer,
+    })),
+    duplicatesFound: dupResult.removedDuplicates,
+    overlapsFound: overlapResult.foundOverlaps,
+    selfIntersectionsFound: selfResult.foundSelfIntersections,
+  });
+
   const after = analyzeGeometry(stage, opts);
 
   const totalChanges =
@@ -950,12 +1020,6 @@ export function removeDuplicatedVectors(
     .filter(({ e }) => e.type === "LINE");
   if (lines.length < 2) return { entities, removedDuplicates: 0 };
 
-  // Phase 6A lesson: an ABSOLUTE 0.01 mm threshold deletes legitimate
-  // geometry in small-scale drawings (chained segments can be < 0.01 apart
-  // there). The near-duplicate threshold is therefore SCALE-AWARE:
-  //   dupTol = clamp(bboxDiagonal * 1e-3, opts.tolerance, 0.01)
-  // Normal/large drawings clamp at the spec's 0.01 mm; small drawings get a
-  // proportionally small threshold so chained real geometry is NEVER merged.
   const diag = computeDrawingScale(entities);
   const dupTol =
     diag === null || !isFinite(diag) || diag <= 0
@@ -966,37 +1030,52 @@ export function removeDuplicatedVectors(
   const dropped = new Set<number>();
   let removedDuplicates = 0;
 
-  for (let a = 0; a < lines.length; a++) {
-    if (dropped.has(lines[a].i)) continue;
-    const la = lines[a].e;
-    const lenA = lineLength(la);
+  // Normalize and decorate lines for sorting/sweep
+  const decorated = lines.map(({ e, i }) => {
+    const ax1 = e.x1 ?? 0, ay1 = e.y1 ?? 0, ax2 = e.x2 ?? 0, ay2 = e.y2 ?? 0;
+    // Normalize endpoint order: left-to-right (then bottom-to-top)
+    const rev = (ax1 > ax2) || (ax1 === ax2 && ay1 > ay2);
+    return {
+      e,
+      i,
+      x1: rev ? ax2 : ax1,
+      y1: rev ? ay2 : ay1,
+      x2: rev ? ax1 : ax2,
+      y2: rev ? ay1 : ay2,
+      len: Math.hypot(ax2 - ax1, ay2 - ay1),
+    };
+  }).sort((a, b) => a.x1 - b.x1);
 
-    for (let b = a + 1; b < lines.length; b++) {
-      if (dropped.has(lines[b].i)) continue;
-      const lb = lines[b].e;
+  for (let a = 0; a < decorated.length; a++) {
+    const da = decorated[a];
+    if (dropped.has(da.i)) continue;
+
+    for (let b = a + 1; b < decorated.length; b++) {
+      const db = decorated[b];      if (db.x1 > da.x1 + dupTol) break; // sweep limit reached — sorted by x1!
+      if (dropped.has(db.i)) continue;
+
+      // Respect layers: identical geometry living on different layers is NOT a
+      // duplicate when respectLayers is enabled (each layer = a separate design
+      // domain). This mirrors the layer guards in detectOverlapVectors and the
+      // curve/polylines dedup keys. Matches DXF_REPAIR_CAPABILITY.md ("احترام طبقات").
+      if (opts.respectLayers && da.e.layer !== db.e.layer) continue;
 
       // 1. Same length within tolerance
-      const lenB = lineLength(lb);
-      if (Math.abs(lenA - lenB) > opts.tolerance) continue;
+      if (Math.abs(da.len - db.len) > opts.tolerance) continue;
 
-      // 2. BOTH endpoints within dupTol (forward or reversed orientation)
-      const ax1 = la.x1 ?? 0, ay1 = la.y1 ?? 0, ax2 = la.x2 ?? 0, ay2 = la.y2 ?? 0;
-      const bx1 = lb.x1 ?? 0, by1 = lb.y1 ?? 0, bx2 = lb.x2 ?? 0, by2 = lb.y2 ?? 0;
-      const forward =
-        d2(ax1, ay1, bx1, by1) <= dupTol2 && d2(ax2, ay2, bx2, by2) <= dupTol2;
-      const reverse =
-        d2(ax1, ay1, bx2, by2) <= dupTol2 && d2(ax2, ay2, bx1, by1) <= dupTol2;
-      if (!forward && !reverse) continue;
+      // 2. Both endpoints within dupTol (forward since already normalized)
+      const dist1_2 = d2(da.x1, da.y1, db.x1, db.y1);
+      const dist2_2 = d2(da.x2, da.y2, db.x2, db.y2);
+      if (dist1_2 > dupTol2 || dist2_2 > dupTol2) continue;
 
-      // 3. Collinear or reversed (direction vectors) — redundant with (2)
-      //    but kept as an explicit safety gate per the Phase 9 spec.
-      const dirA = normalizedDir(la);
-      const dirB = normalizedDir(lb);
+      // 3. Collinear/parallel direction check (retained for exact Phase 9 compliance)
+      const dirA = normalizedDir(da.e);
+      const dirB = normalizedDir(db.e);
       const dot = dirA.dx * dirB.dx + dirA.dy * dirB.dy;
       if (dot < 1 - opts.angleTolerance && dot > -1 + opts.angleTolerance) continue;
 
-      // Duplicate found — drop lb, keep la
-      dropped.add(lines[b].i);
+      // Duplicate found
+      dropped.add(db.i);
       removedDuplicates++;
     }
   }
@@ -1041,12 +1120,59 @@ export function detectOverlapVectors(
   const ANGLE_THRESH = (ANGLE_THRESH_DEG * Math.PI) / 180;
   const checked = new Set<string>();
 
-  for (let i = 0; i < lines.length; i++) {
-    const { e: ai, dir: dirA } = lines[i];
+  // PERFORMANCE (large files): the naive all-pairs scan is O(n²). Bucket by
+  // quantized direction on the half-circle (angle-doubling fold so a direction
+  // and its reverse share a bucket; mod-N adjacency handles the seam), then
+  // sweep by projected start — pairs whose projections cannot overlap are
+  // skipped. Pairs within ANGLE_THRESH quantize at most 1 bucket apart, so
+  // the bucket±1 window preserves the angle filter exactly, and every
+  // surviving pair still runs the identical geometric tests below.
+  const bucketW = ANGLE_THRESH;
+  const nBuckets = Math.ceil(Math.PI / bucketW) + 1;
+  const bucketOf = (dir: { dx: number; dy: number }): number => {
+    const a = Math.atan2(dir.dy, dir.dx);
+    // fold θ and θ+π to the same value in (−π/2, π/2]
+    const folded = Math.atan2(Math.sin(2 * a), Math.cos(2 * a)) / 2;
+    return (((Math.floor((folded + Math.PI / 2) / bucketW) % nBuckets) + nBuckets) % nBuckets);
+  };
+  const buckets = new Map<number, { e: DxfEntity; dir: { dx: number; dy: number } }[]>();
+  for (const item of lines) {
+    const k = bucketOf(item.dir);
+    const arr = buckets.get(k);
+    if (arr) arr.push(item); else buckets.set(k, [item]);
+  }
+
+  for (const [k, group] of buckets) {
+    const cands = [
+      ...(buckets.get((k - 1 + nBuckets) % nBuckets) ?? []),
+      ...group,
+      ...(buckets.get((k + 1) % nBuckets) ?? []),
+    ];
+    if (cands.length < 2) continue;
+    // Projection axis: reference direction of the CENTER bucket.
+    const ref = group[0];
+    const rlen = Math.hypot(ref.dir.dx, ref.dir.dy) || 1;
+    const ux = ref.dir.dx / rlen, uy = ref.dir.dy / rlen;
+    const decorated = cands.map((item) => {
+      const e = item.e;
+      const t1 = (e.x1 ?? 0) * ux + (e.y1 ?? 0) * uy;
+      const t2 = (e.x2 ?? 0) * ux + (e.y2 ?? 0) * uy;
+      return { item, lo: Math.min(t1, t2), hi: Math.max(t1, t2) };
+    }).sort((a, b) => a.lo - b.lo);
+    // Sweep slack: the pair test allows max perpendicular offset of
+    // max(tol, 0.01); a projected start beyond a's end by more than that
+    // (plus tolerance) can never pass the overlap test on either axis.
+    const sweepSlack = Math.max(opts.tolerance, 0.01) + opts.tolerance;
+
+    for (let i = 0; i < decorated.length; i++) {
+    const { item: aItem, hi: aHi } = decorated[i];
+    const { e: ai, dir: dirA } = aItem;
     if (!ai.handle) continue;
-    for (let j = i + 1; j < lines.length; j++) {
-      const { e: bj, dir: dirB } = lines[j];
-      if (!bj.handle) continue;
+    for (let j = i + 1; j < decorated.length; j++) {
+    const { item: bItem, lo: bLo } = decorated[j];
+    if (bLo > aHi + sweepSlack) break; // sorted by lo — all later pairs impossible
+    const { e: bj, dir: dirB } = bItem;
+    if (!bj.handle || bj === ai) continue;
 
       if (opts.respectLayers && ai.layer !== bj.layer) continue;
 
@@ -1105,6 +1231,7 @@ export function detectOverlapVectors(
           layer: bj.layer,
         });
       }
+    }
     }
   }
 
@@ -1235,4 +1362,448 @@ export function smoothEntities(
   });
 
   return { entities: out, verticesRemoved, polylinesTouched };
+}
+
+/* ================================================================== */
+/* MASTER CLEANUP implementation                                       */
+/* ================================================================== */
+
+/** Douglas-Peucker polyline simplification (iterative, tolerance in units). */
+export function rdpSimplify(points: DxfVertex[], tolerance: number): DxfVertex[] {
+  if (points.length <= 2) return points.slice();
+  const keep = new Uint8Array(points.length);
+  keep[0] = 1;
+  keep[points.length - 1] = 1;
+  const stack: [number, number][] = [[0, points.length - 1]];
+  while (stack.length) {
+    const [s, e] = stack.pop()!;
+    let maxD = -1;
+    let idx = -1;
+    const ax = points[s].x, ay = points[s].y;
+    const bx = points[e].x, by = points[e].y;
+    const dx = bx - ax, dy = by - ay;
+    const len = Math.hypot(dx, dy);
+    for (let i = s + 1; i < e; i++) {
+      const d = len < 1e-12
+        ? Math.hypot(points[i].x - ax, points[i].y - ay)
+        : Math.abs(dx * (ay - points[i].y) - dy * (ax - points[i].x)) / len;
+      if (d > maxD) { maxD = d; idx = i; }
+    }
+    if (maxD > tolerance && idx > 0) {
+      keep[idx] = 1;
+      stack.push([s, idx], [idx, e]);
+    }
+  }
+  const out: DxfVertex[] = [];
+  for (let i = 0; i < points.length; i++) if (keep[i]) out.push(points[i]);
+  return out;
+}
+
+/** Merge collinear, touching LINEs into single longer LINEs. */
+export function mergeCollinearLines(
+  entities: DxfEntity[],
+  angleTolRad: number,
+  gapTol: number,
+  respectLayers = true,
+): { entities: DxfEntity[]; merged: number } {
+  const lines = entities.filter(e => e.type === "LINE");
+  if (lines.length < 2) return { entities, merged: 0 };
+
+  const dirKeyOf = (e: DxfEntity): string => {
+    const dx = (e.x2 ?? 0) - (e.x1 ?? 0);
+    const dy = (e.y2 ?? 0) - (e.y1 ?? 0);
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = dx / len, ny = dy / len;
+    const flip = ny < -1e-9 || (Math.abs(ny) <= 1e-9 && nx < 0) ? -1 : 1;
+    const bucket = Math.round(Math.atan2(ny * flip, nx * flip) / 0.00872665);
+    // Phase 8 safety (§7): NEVER merge geometry across different layers —
+    // a CUT line and an ENGRAVE line on the same infinite line are
+    // semantically different even when geometrically continuous.
+    return `${respectLayers ? e.layer : "*"}|${bucket}`;
+  };
+
+  const buckets = new Map<string, DxfEntity[]>();
+  for (const e of lines) {
+    const k = dirKeyOf(e);
+    const arr = buckets.get(k);
+    if (arr) arr.push(e); else buckets.set(k, [e]);
+  }
+
+  const replacement = new Map<DxfEntity, DxfEntity>();
+  let merged = 0;
+  for (const group of buckets.values()) {
+    if (group.length < 2) continue;
+    const ref = group[0];
+    const rdx = (ref.x2 ?? 0) - (ref.x1 ?? 0), rdy = (ref.y2 ?? 0) - (ref.y1 ?? 0);
+    const rlen = Math.hypot(rdx, rdy) || 1;
+    const rux = rdx / rlen, ruy = rdy / rlen;
+    const rx0 = ref.x1 ?? 0, ry0 = ref.y1 ?? 0;
+    type Run = { min: number; max: number; entities: DxfEntity[] };
+    // PERFORMANCE: sort by projected start, then sweep. Once a run's max is
+    // behind the current line's lo + gapTol, no future line (sorted by lo)
+    // can ever join it — so a single forward pass is exactly equivalent to
+    // the previous O(runs × lines) runs.find() scan.
+    const proj = group.map(e => {
+      const off = Math.abs(-((e.x1 ?? 0) - rx0) * ruy + ((e.y1 ?? 0) - ry0) * rux);
+      const t1 = (e.x1 ?? 0) * rux + (e.y1 ?? 0) * ruy;
+      const t2 = (e.x2 ?? 0) * rux + (e.y2 ?? 0) * ruy;
+      return { e, off, lo: Math.min(t1, t2), hi: Math.max(t1, t2) };
+    }).sort((a, b) => a.lo - b.lo);
+    const runs: Run[] = [];
+    for (const p of proj) {
+      if (p.off > gapTol) continue; // perpendicular offset from the reference line must be within gapTol
+      const run = runs.length
+        ? runs[runs.length - 1]
+        : undefined;
+      if (run && p.lo <= run.max + gapTol) {
+        run.max = Math.max(run.max, p.hi);
+        run.entities.push(p.e);
+      } else {
+        runs.push({ min: p.lo, max: p.hi, entities: [p.e] });
+      }
+    }
+    for (const run of runs) {
+      if (run.entities.length < 2) continue;
+      const kept = run.entities[0];
+      const line: DxfEntity = {
+        type: "LINE",
+        layer: kept.layer,
+        handle: kept.handle,
+        rawLines: [],
+        x1: rx0 + run.min * rux,
+        y1: ry0 + run.min * ruy,
+        x2: rx0 + run.max * rux,
+        y2: ry0 + run.max * ruy,
+      };
+      for (const e of run.entities) replacement.set(e, line);
+      merged += run.entities.length - 1;
+    }
+  }
+  if (merged === 0) return { entities, merged };
+  const seen = new Set<DxfEntity>();
+  const out: DxfEntity[] = [];
+  for (const e of entities) {
+    const rep = replacement.get(e);
+    if (!rep) { out.push(e); continue; }
+    if (seen.has(rep)) continue;
+    seen.add(rep);
+    out.push(rep);
+  }
+  return { entities: out, merged };
+}
+
+/**
+ * Move every entity to layer "0". Returns the number of distinct non-zero
+ * layers removed.
+ */
+export function flattenLayersToZero(
+  entities: DxfEntity[],
+): { entities: DxfEntity[]; layersCleaned: number } {
+  const layers = new Set<string>();
+  for (const e of entities) if (e.layer !== "0") layers.add(e.layer);
+  if (layers.size === 0) return { entities, layersCleaned: 0 };
+  return {
+    entities: entities.map(e => (e.layer === "0" ? e : { ...e, layer: "0" })),
+    layersCleaned: layers.size,
+  };
+}
+
+/** Warn when the drawing scale looks suspicious for manufacturing. */
+export function validateDrawingScale(entities: DxfEntity[]): string | null {
+  const diag = computeDrawingScale(entities);
+  if (diag === null || !isFinite(diag) || diag <= 0) return null;
+  if (diag < 5) {
+    return `drawing measures ${diag.toFixed(2)} units — suspiciously small; check scale/units`;
+  }
+  if (diag > 2000) {
+    return `drawing measures ${diag.toFixed(2)} units — suspiciously large; check scale/units`;
+  }
+  return null;
+}
+
+export interface MasterCleanupOptions {
+  /** Flatten SPLINE/ARC/CIRCLE/ELLIPSE to polylines (default: on). */
+  flattenCurves?: boolean;
+  /** Chord tolerance for curve flattening (units, default 0.05). */
+  curveTolerance?: number;
+  /** Apply inch→mm conversion when detectable (default: on). */
+  normalizeUnits?: boolean;
+  /** Raw $INSUNITS value when known (1 = inch, 4 = mm). */
+  insunits?: number;
+  /** Remove TEXT/MTEXT/DIMENSION/HATCH/LEADER (default: on). */
+  removeUnsupported?: boolean;
+  /** RDP tolerance for polyline simplification (default 0.01). */
+  simplifyTolerance?: number;
+  /** Move everything to layer 0 (default: on). */
+  flattenLayers?: boolean;
+  /** Forwarded to cleanupEntities (dedupe/open-gap/tiny removal). */
+  cleanup?: Partial<CleanupOptions>;
+}
+
+/**
+ * MASTER DXF SANITIZER — the "final cleanup" pipeline.
+ *
+ * Order: Phase A (pre-process) → proven Phase 8/9 engine → Phase C (optimization).
+ * Deterministic geometry math only. Findings that cannot be repaired safely
+ * are REPORTED (overlaps, self-intersections), never silently destroyed.
+ */
+export function masterCleanup(
+  input: DxfEntity[],
+  options: MasterCleanupOptions = {},
+  headerSection?: string,
+): { entities: DxfEntity[]; report: MasterCleanupReport } {
+  const report: MasterCleanupReport = {
+    flattenedSplines: 0,
+    convertedUnits: 0,
+    removedUnsupported: 0,
+    removedZeroLength: 0,
+    fixedOpen: 0,
+    removedDuplicates: 0,
+    mergedCollinear: 0,
+    simplifiedPoints: 0,
+    layersCleaned: 0,
+    foundOverlaps: 0,
+    foundSelfIntersections: 0,
+    scaleWarning: null,
+    totalChanges: 0,
+  };
+
+  let stage: DxfEntity[] = input;
+
+  /* --- Phase A1: flatten curves to polylines ------------------------- */
+  if (options.flattenCurves !== false) {
+    const chordTol = options.curveTolerance ?? 0.05;
+    const out: DxfEntity[] = [];
+    for (const e of stage) {
+      if (!CURVE_TYPES.has(e.type)) { out.push(e); continue; }
+      const poly = curveToPolyline(e, chordTol);
+      if (poly) { report.flattenedSplines++; out.push(poly); }
+      else out.push(e);
+    }
+    stage = out;
+  }
+
+  /* --- Phase A2: unit normalization (inch → mm) ---------------------- */
+  if (options.normalizeUnits !== false) {
+    const insunits = options.insunits ?? extractInsUnits(headerSection);
+    const conv = normalizeDrawingUnits(stage, insunits);
+    if (conv) {
+      stage = conv;
+      report.convertedUnits = 1;
+    }
+  }
+
+  /* --- Phase A3: remove unsupported annotation entities -------------- */
+  if (options.removeUnsupported !== false) {
+    const before = stage.length;
+    stage = stage.filter(e => !UNSUPPORTED_GEOMETRY_TYPES.has(e.type));
+    report.removedUnsupported = before - stage.length;
+  }
+
+  /* --- Phase A4+B: the proven Phase 8/9 cleanup engine --------------- */
+  const base = cleanupEntities(stage, options.cleanup);
+  stage = base.entities;
+  report.removedZeroLength += base.report.zeroLengthRemoved;
+  report.fixedOpen = base.report.fixedOpen;
+  // Aggregate ALL duplicate removals (exact, reversed, near-duplicate) into a
+  // single "removedDuplicates" figure for the master report.
+  report.removedDuplicates =
+    base.report.duplicateEntitiesRemoved +
+    base.report.reversedDuplicatesRemoved +
+    base.report.removedDuplicates;
+  report.foundOverlaps = base.report.foundOverlaps;
+  report.foundSelfIntersections = base.report.foundSelfIntersections;
+
+  /* --- Phase C9: merge collinear LINEs -------------------------------- */
+  const mc = mergeCollinearLines(stage, 0.00872665 /* ~0.5° */, 0.01);
+  stage = mc.entities;
+  report.mergedCollinear = mc.merged;
+
+  /* --- Phase C10: RDP simplification ---------------------------------- */
+  const simplifyTol = options.simplifyTolerance ?? 0.01;
+  {
+    let removed = 0;
+    stage = stage.map(e => {
+      if ((e.type !== "LWPOLYLINE" && e.type !== "POLYLINE") || !e.vertices) return e;
+      if (e.vertices.some(v => (v.bulge ?? 0) !== 0)) return e; // never destroy bulge
+      const simplified = rdpSimplify(e.vertices, simplifyTol);
+      if (simplified.length === e.vertices.length) return e;
+      removed += e.vertices.length - simplified.length;
+      return { ...e, vertices: simplified, vertexCount: simplified.length };
+    });
+    report.simplifiedPoints = removed;
+  }
+
+  /* --- Phase C11: flatten layers -------------------------------------- */
+  if (options.flattenLayers !== false) {
+    const fl = flattenLayersToZero(layerSafeEntities(stage));
+    stage = fl.entities;
+    report.layersCleaned = fl.layersCleaned;
+  }
+
+  /* --- Phase C12: scale validation ------------------------------------- */
+  report.scaleWarning = validateDrawingScale(stage);
+
+  report.totalChanges =
+    report.flattenedSplines +
+    report.convertedUnits +
+    report.removedUnsupported +
+    report.removedZeroLength +
+    report.fixedOpen +
+    report.removedDuplicates +
+    report.mergedCollinear +
+    report.simplifiedPoints +
+    report.layersCleaned;
+
+  return { entities: stage, report };
+}
+
+function layerSafeEntities(entities: DxfEntity[]): DxfEntity[] {
+  return entities;
+}
+
+/* --- Master pipeline helpers ------------------------------------------ */
+
+/**
+ * Adaptive curve flattening. SPLINE keeps its fit/control-point shape and is
+ * RDP-simplified at `chordTol`. ARC/CIRCLE/ELLIPSE are tessellated adaptively
+ * so the chord error stays under `chordTol`.
+ * Returns null when the entity cannot be faithfully converted (caller keeps
+ * the original — uncertain = preserve).
+ */
+function curveToPolyline(e: DxfEntity, chordTol: number): DxfEntity | null {
+  if (e.type === "SPLINE") {
+    const pts = e.vertices;
+    if (!pts || pts.length < 2) return null;
+    const simplified = rdpSimplify(pts, chordTol);
+    if (simplified.length < 2) return null;
+    return {
+      type: "LWPOLYLINE",
+      layer: e.layer,
+      handle: e.handle,
+      rawLines: [],
+      vertices: simplified,
+      closed: e.closed ?? false,
+      vertexCount: simplified.length,
+    };
+  }
+
+  if (e.type === "CIRCLE") {
+    const r = e.radius ?? 0;
+    if (!(r > 0)) return null;
+    return {
+      type: "LWPOLYLINE",
+      layer: e.layer,
+      handle: e.handle,
+      rawLines: [],
+      vertices: tessellateArc(e.cx ?? 0, e.cy ?? 0, r, 0, Math.PI * 2, chordTol),
+      closed: true,
+      vertexCount: 0,
+    };
+  }
+
+  if (e.type === "ARC") {
+    const r = e.radius ?? 0;
+    if (!(r > 0)) return null;
+    const a1 = ((e.startAngle ?? 0) * Math.PI) / 180;
+    const a2 = ((e.endAngle ?? 0) * Math.PI) / 180;
+    return {
+      type: "LWPOLYLINE",
+      layer: e.layer,
+      handle: e.handle,
+      rawLines: [],
+      vertices: tessellateArc(e.cx ?? 0, e.cy ?? 0, r, a1, a2, chordTol),
+      closed: false,
+      vertexCount: 0,
+    };
+  }
+
+  if (e.type === "ELLIPSE") {
+    const cx = e.cx ?? 0, cy = e.cy ?? 0;
+    const r = e.radius ?? 0; // major radius (parser stores sqrt(mx²+my²))
+    if (!(r > 0)) return null;
+    // The parser does not retain the true axis ratio (code 40); use a
+    // conservative 0.6 default so the shape remains visually correct.
+    const axisRatio = 0.6;
+    const a1 = ((e.startAngle ?? 0) * Math.PI) / 180;
+    const a2 = ((e.endAngle ?? 360) * Math.PI) / 180;
+    return {
+      type: "LWPOLYLINE",
+      layer: e.layer,
+      handle: e.handle,
+      rawLines: [],
+      vertices: tessellateArc(cx, cy, r, a1, a2, chordTol, axisRatio),
+      closed: (e.endAngle ?? 360) - (e.startAngle ?? 0) >= 360,
+      vertexCount: 0,
+    };
+  }
+
+  return null;
+}
+
+/** Adaptive arc/ellipse tessellation with chord-error control. */
+function tessellateArc(
+  cx: number, cy: number, r: number,
+  a1: number, a2: number,
+  chordTol: number,
+  axisRatio = 1,
+): DxfVertex[] {
+  let sweep = a2 - a1;
+  while (sweep <= 0) sweep += Math.PI * 2;
+  if (sweep > Math.PI * 2) sweep = Math.PI * 2;
+  const effR = Math.max(r * axisRatio, r);
+  // segments so the sagitta r·(1−cos(dθ/2)) stays ≤ chordTol
+  const cosArg = Math.max(-1, Math.min(1, 1 - chordTol / effR));
+  const step = 2 * Math.acos(cosArg);
+  const segments = Math.min(Math.max(Math.ceil(sweep / Math.max(step, 1e-6)), 8), 4096);
+  const pts: DxfVertex[] = [];
+  for (let i = 0; i <= segments; i++) {
+    const t = a1 + (sweep * i) / segments;
+    pts.push({ x: cx + r * axisRatio * Math.cos(t), y: cy + r * Math.sin(t) });
+  }
+  return pts;
+}
+
+/**
+ * Inch→mm conversion when confidently detectable:
+ * $INSUNITS === 1 (inch), OR units unspecified AND bbox width > 500
+ * (implausible for mm parts, typical of inch exports).
+ * Returns scaled entities, or null when no conversion was applied.
+ */
+function normalizeDrawingUnits(
+  entities: DxfEntity[],
+  insunits?: number,
+): DxfEntity[] | null {
+  const scaleNeeded =
+    insunits === 1 ? true : insunits === undefined && widthOf(entities) > 500;
+  if (!scaleNeeded) return null;
+  const S = 25.4;
+  return entities.map(e => {
+    const out: DxfEntity = { ...e };
+    if (out.x1 !== undefined) { out.x1 *= S; out.y1 = (out.y1 ?? 0) * S; }
+    if (out.x2 !== undefined) { out.x2 *= S; out.y2 = (out.y2 ?? 0) * S; }
+    if (out.cx !== undefined) { out.cx *= S; out.cy = (out.cy ?? 0) * S; }
+    if (out.radius !== undefined) out.radius *= S;
+    if (out.vertices) {
+      out.vertices = out.vertices.map(v => ({ ...v, x: v.x * S, y: v.y * S }));
+    }
+    return out;
+  });
+}
+
+function widthOf(entities: DxfEntity[]): number {
+  const diag = computeDrawingScale(entities);
+  return diag === null ? 0 : diag;
+}
+
+/**
+ * Extract $INSUNITS from the raw HEADER section text (e.g. "9\n$INSUNITS\n70\n1\n").
+ * Returns undefined when absent/unparseable — caller falls back to bbox heuristic.
+ */
+export function extractInsUnits(header?: string): number | undefined {
+  if (!header) return undefined;
+  const m = header.match(/\$INSUNITS\s*\n\s*70\s*\n\s*(-?\d+)/);
+  if (!m) return undefined;
+  const v = parseInt(m[1], 10);
+  return isFinite(v) ? v : undefined;
 }
