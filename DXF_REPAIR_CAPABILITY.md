@@ -26,8 +26,8 @@
 | Zero-length (LINE) | Yes | Yes | Yes | **Yes** (T3) | SAFE AUTO-FIX |
 | Tiny geometry | Warning | No | No | No | DETECT ONLY (تنبيه) |
 | Open contour / gap | Yes | Yes | Partial | ⚠️ جزئي | ASSISTED FIX |
-| Near-open contour | No | No | No | No | DETECT ONLY |
-| Broken endpoints | Snap 0.001 | Yes | Partial | ⚠️ جزئي | ASSISTED FIX |
+| Near-open contour (gap > gapTolerance 0.05, unclosable) | Yes | No | Yes | **Yes** (large_gap_stays_open: gap too big → preserved open) | DETECT ONLY |
+| Broken endpoints / small open-gap (gap ≤ 0.05) | Yes | Yes (auto-close via gapTolerance 0.05; snap 0.001 is coincident-vertex `tolerance`, NOT the gap-closure threshold) | Yes | **Yes** (small_gap_closed 0.026→closed, openAfter=0; 266.dxf 4× 0.026 → issues=0) | SAFE AUTO-FIX |
 | Collinear segments | Yes | Yes | Yes | **Yes** (T6/T5) | SAFE AUTO-FIX |
 | Self-intersection | dxf-ai (غير موصول) | No | No | No | **DETECT ONLY** (جديد) |
 | Stray geometry | No | No | No | No | **DETECT ONLY** (جديد) |
