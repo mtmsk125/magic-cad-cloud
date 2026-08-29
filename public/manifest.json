@@ -8,36 +8,12 @@
   "theme_color": "#00d4ff",
   "orientation": "any",
   "categories": ["utilities", "productivity", "design"],
-  "icons": [
-    {
-      "src": "/icons/icon-192x192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/icons/icon-512x512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
-  ],
-  "screenshots": [
-    {
-      "src": "/screenshots/tool-page.png",
-      "sizes": "1280x720",
-      "type": "image/png",
-      "form_factor": "wide",
-      "label": "DXFix Tool Interface"
-    }
-  ],
   "shortcuts": [
     {
       "name": "إصلاح ملف DXF",
       "short_name": "إصلاح",
       "description": "ارفع ملف DXF للإصلاح والتحليل",
-      "url": "/tool",
-      "icons": [{ "src": "/icons/icon-192x192.png", "sizes": "192x192" }]
+      "url": "/tool"
     },
     {
       "name": "الأسعار",

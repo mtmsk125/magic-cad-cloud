@@ -1028,12 +1028,20 @@ function ToolPage() {
   // Open loop detection: Phase 9 pipeline
   // - gap < 0.1mm  → auto-close (count as FIXED, no red dot)
   // - gap >= 0.1mm → real problem (draw red, needs manual repair)
+  // ── SINGLE SOURCE OF TRUTH (v1.1 universal fix) ────────────────────────────
+  // Every UI surface (score card, SVG preview + issue markers, open-point
+  // dots, report card, safety badge, scan details) derives from ONE analysis
+  // object: the re-scanned repaired file after repair, the original analysis
+  // before. This removes the state mixing that showed "100/100" in the cards
+  // while the preview still highlighted ORIGINAL issue markers (e.g. 346).
+  const displayAnalysis = stage === "repaired" && repairedAnalysis
+    ? repairedAnalysis
+    : analysis;
+
   const openLoopData = (() => {
-    if (!analysis) return { count: 0, openPoints: [], fixedCount: 0 };
-    
-    const entities = stage === "repaired" && repairedAnalysis 
-      ? repairedAnalysis.entities 
-      : analysis.entities;
+    if (!displayAnalysis) return { count: 0, openPoints: [], fixedCount: 0 };
+
+    const entities = displayAnalysis.entities;
     
     // v1.0 FINAL TOLERANCE RULE (absolute — drawing scale deliberately ignored):
     //   gap <  0.1mm → auto-close, counted as FIXED, no red dot
@@ -1555,13 +1563,10 @@ function ToolPage() {
           <div className="space-y-6">
             {/* Score card — driven by the REAL re-scan of the repaired DXF */}
             {(() => {
-              // Final verified score from re-analyzing the repaired file.
-              const finalScore = stage === "repaired"
-                ? (repairedAnalysis ? repairedAnalysis.score : analysis.score)
-                : analysis.score;
-              const finalLabel = stage === "repaired"
-                ? (repairedAnalysis ? scoreLabel(repairedAnalysis.score, lang) : scoreLabel(analysis.score, lang))
-                : scoreLabel(analysis.score, lang);
+              // Final verified score from re-analyzing the repaired file —
+              // same source as preview + report card (displayAnalysis).
+              const finalScore = (displayAnalysis ?? analysis).score;
+              const finalLabel = scoreLabel(finalScore, lang);
               return (
             <div className={`rounded-2xl border p-8 flex flex-col sm:flex-row items-center gap-6 ${scoreBg(finalScore)}`}>
               <div className="text-center">
@@ -1603,8 +1608,12 @@ function ToolPage() {
 
             {/* SVG Preview */}
             {(() => {
-              const issueIndices = new Set(analysis.issues.flatMap(i => i.entityIndices));
-              return <DxfPreview analysis={analysis} issueIndices={issueIndices} lang={lang} openPoints={openLoopData.openPoints} pathCount={openLoopData.count} />;
+              // Preview + issue markers come from the SAME analysis as the
+              // score/report cards (single source of truth). After repair this
+              // shows ONLY the remaining (needs-review) issues.
+              if (!displayAnalysis) return null;
+              const issueIndices = new Set(displayAnalysis.issues.flatMap(i => i.entityIndices));
+              return <DxfPreview analysis={displayAnalysis} issueIndices={issueIndices} lang={lang} openPoints={openLoopData.openPoints} pathCount={openLoopData.count} />;
             })()}
 
             {/* Open Loops Count */}
@@ -1643,8 +1652,8 @@ function ToolPage() {
             {/* Machine Safety & G-Code Verification Badge */}
             <SafetyBadge
               lang={lang}
-              totalEntities={(stage === "repaired" && repairedAnalysis ? repairedAnalysis : analysis).stats.totalEntities}
-              score={stage === "repaired" ? (repairedAnalysis ? repairedAnalysis.score : analysis.score) : analysis.score}
+              totalEntities={(displayAnalysis ?? analysis).stats.totalEntities}
+              score={(displayAnalysis ?? analysis).score}
             />
 
             {/* Fix Summary Widget */}
@@ -1688,9 +1697,11 @@ function ToolPage() {
                   </div>
                 );
               const fixedCount = mounted ? repairedIssues.length : 0;
-              const needsReviewCount = mounted && analysis
-                ? analysis.issues.filter(i => !repairedIssues.find(r => r.id === i.id)).length
-                : 0;
+              // Needs-review = whatever the VERIFIED re-scan of the repaired
+              // file still reports — the same set the preview highlights
+              // (single source of truth). v11 test proved this equals
+              // original-minus-fixed for the p266 case (4 fixed → 0 review).
+              const needsReviewCount = mounted ? (displayAnalysis ?? analysis).issues.length : 0;
               const afterScore = stage === "repaired" && repairedAnalysis ? repairedAnalysis.score : analysis.score;
               return (
                 <div className="rounded-2xl border border-accent/30 bg-gradient-to-br from-accent/5 to-card p-6">
@@ -2057,8 +2068,8 @@ function ToolPage() {
                     <span className="font-mono text-xs">{showScanDetails ? "▲" : "▼"}</span>
                   </button>
                   {showScanDetails && (() => {
-                    const src = stage === "repaired" && repairedAnalysis ? repairedAnalysis : analysis;
-                    const needsReview = analysis.issues.filter(i => !repairedIssues.find(r => r.id === i.id)).length;
+                    const src = displayAnalysis ?? analysis;
+                    const needsReview = (displayAnalysis ?? analysis).issues.length;
                     const rows: Array<[string, string]> = [
                       [lang === "ar" ? "عدد العناصر" : "Total entities", String(src.stats.totalEntities)],
                       [lang === "ar" ? "المشاكل المكتشفة" : "Issues detected", String(analysis.issues.length)],
