@@ -1352,6 +1352,32 @@ export function repairDxf(content: string, analysis: DxfAnalysis, options: Repai
       en: `Auto-closed ${closeCount} open paths (gap < 0.1mm)`,
       detail: 'إغلاق جميع المسارات المفتوحة (gap < 0.1mm)',
     });
+
+    // v1.1 SINGLE SOURCE OF TRUTH: record WHICH detected issues were actually
+    // fixed by this step, so the UI report (fixed vs needs-review) reflects the
+    // engine result. closeAllPolylines maps 1:1 in order, so an index whose
+    // object reference changed is exactly one that got closed (flag 0→1).
+    // NOTE: earlier repair steps (snap/join/purge) may clone entities, so object
+    // identity with analysis.entities is NOT reliable — match by a geometric key
+    // (type|layer|first vertex|vertex count) that survives cloning.
+    // Report-recording only — the geometry behavior above is unchanged.
+    const entKey = (e: DxfEntity) =>
+      `${e.type}|${e.layer}|${e.vertices?.[0]?.x ?? "?"},${e.vertices?.[0]?.y ?? "?"}|${e.vertices?.length ?? 0}`;
+    const openIssueByKey = new Map<string, DxfIssue>();
+    for (const issue of analysis.issues) {
+      if (issue.type === "open_polyline" && issue.entityIndices && issue.entityIndices.length === 1) {
+        const ent = analysis.entities[issue.entityIndices[0]];
+        if (ent) openIssueByKey.set(entKey(ent), issue);
+      }
+    }
+    for (let j = 0; j < entities.length; j++) {
+      if (entities[j] !== closedEntities[j]) {
+        const issue = openIssueByKey.get(entKey(entities[j]));
+        if (issue && !repairedIssues.some(r => r.id === issue.id)) {
+          repairedIssues.push({ ...issue, fixed: true });
+        }
+      }
+    }
   }
   entities = closedEntities;
 
