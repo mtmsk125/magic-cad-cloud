@@ -1,10 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useRef, useCallback, useEffect } from "react";
-import { analyzeDxf, repairDxf, scoreColor, scoreBg, scoreLabel, getDxfBounds, buildSvgPaths, calculateTotalPerimeter, detectOpenLoops, sortInsideFirst } from "@/lib/dxf";
+import { analyzeDxf, repairDxf, scoreColor, scoreBg, scoreLabel, getDxfBounds, buildSvgPaths, calculateTotalPerimeter, sortInsideFirst } from "@/lib/dxf";
 import type { DxfAnalysis, DxfIssue, FixSummaryItem, DxfBounds, SvgPath } from "@/lib/dxf";
 // Phase 9 report: consume the cleanup engine's public API only — NO engine changes.
-import { cleanupEntities, DEFAULT_CLEANUP_OPTIONS } from "@/lib/dxf-cleanup";
-import type { CleanupReport } from "@/lib/dxf-cleanup";
+import { cleanupEntities, DEFAULT_CLEANUP_OPTIONS, detectOpenPaths, autoCloseOpenPaths, computeDrawingScale } from "@/lib/dxf-cleanup";
+import type { CleanupReport, OpenPathInfo } from "@/lib/dxf-cleanup";
 import { downloadAllAsZip, triggerSelfDestruct, isSelfDestructTriggered } from "@/lib/zip-export";
 import { track } from '@vercel/analytics';
 import { FeedbackModal } from "@/components/feedback-modal";
@@ -45,11 +45,12 @@ interface BulkFileEntry {
 
 const LAYER_COLORS = ["#00d4ff", "#ffd700", "#a855f7", "#34d399", "#f97316", "#ec4899", "#60a5fa"];
 
-function DxfPreview({ analysis, issueIndices, lang, openPoints }: {
+function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount }: {
   analysis: DxfAnalysis;
   issueIndices: Set<number>;
   lang: "ar" | "en";
   openPoints?: { x: number; y: number }[];
+  pathCount?: number;
 }) {
   const [zoom, setZoom] = useState(1);
   const [hiddenLayers, setHiddenLayers] = useState<Set<string>>(new Set());
@@ -195,7 +196,7 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints }: {
                   : "border-border text-muted-foreground hover:border-red-500/50 hover:text-red-400"
               }`}
             >
-              {lang === "ar" ? `🟡 نقاط مفتوحة (${openPoints.length})` : `🔴 Open points (${openPoints.length})`}
+              {lang === "ar" ? `🟡 ${pathCount ?? Math.round(openPoints.length / 2)} نقطة تحتاج إصلاح` : `🔴 Open points (${pathCount ?? Math.round(openPoints.length / 2)})`}
             </button>
           )}
           {hasIssues && (
@@ -341,7 +342,9 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints }: {
         {openPoints && openPoints.length > 0 && (
           <span className="flex items-center gap-1.5 font-mono text-xs px-2.5 py-1 text-red-400">
             <span className="w-2.5 h-2.5 rounded-full inline-block bg-red-500" />
-            {lang === "ar" ? `نقاط مفتوحة: ${openPoints.length}` : `Open points: ${openPoints.length}`}
+            {lang === "ar"
+              ? `${pathCount ?? Math.round(openPoints.length / 2)} نقطة تحتاج إصلاح`
+              : `${pathCount ?? Math.round(openPoints.length / 2)} points need repair`}
           </span>
         )}
         {layerList.length > 1 && hiddenLayers.size > 0 && (
@@ -1027,8 +1030,43 @@ function ToolPage() {
   const perimeterMeters = perimeter / 1000;
   const estimatedCost = perimeterMeters * pricePerMeter;
 
-  // Open loop detection
-  const openLoopData = analysis ? detectOpenLoops(analysis.entities) : { count: 0, openPoints: [] };
+  // Open loop detection: Phase 9 pipeline
+  // - gap < 0.1mm  → auto-close (count as FIXED, no red dot)
+  // - gap >= 0.1mm → real problem (draw red, needs manual repair)
+  const openLoopData = (() => {
+    if (!analysis) return { count: 0, openPoints: [], fixedCount: 0 };
+    
+    const entities = stage === "repaired" && repairedAnalysis 
+      ? repairedAnalysis.entities 
+      : analysis.entities;
+    
+    const scale = computeDrawingScale(entities);
+    
+    // Threshold: gap >= 0.1mm is a real problem (or scale-aware 4% for tiny drawings)
+    const manualRepairThreshold = (scale !== null && isFinite(scale) && scale > 0 && scale < 10)
+      ? scale * 0.04
+      : 0.1;
+    
+    // Get all open paths with gap info
+    const openPaths = detectOpenPaths(entities, DEFAULT_CLEANUP_OPTIONS);
+    
+    // Split into: auto-fixed (gap < 0.1) vs needs-manual-repair (gap >= 0.1)
+    const fixedOpen = openPaths.filter(p => p.gap < manualRepairThreshold);
+    const needsManualRepair = openPaths.filter(p => p.gap >= manualRepairThreshold);
+    
+    // Red dots: start+end of each path that needs manual repair
+    const openPoints: { x: number; y: number }[] = [];
+    needsManualRepair.forEach(path => {
+      openPoints.push(path.start);
+      openPoints.push(path.end);
+    });
+    
+    return {
+      count: needsManualRepair.length,
+      openPoints,
+      fixedCount: fixedOpen.length,
+    };
+  })();
 
   return (
     <div dir={isRTL ? "rtl" : "ltr"} className="min-h-screen bg-background text-foreground">
@@ -1573,14 +1611,20 @@ function ToolPage() {
             {/* SVG Preview */}
             {(() => {
               const issueIndices = new Set(analysis.issues.flatMap(i => i.entityIndices));
-              return <DxfPreview analysis={analysis} issueIndices={issueIndices} lang={lang} openPoints={openLoopData.openPoints} />;
+              return <DxfPreview analysis={analysis} issueIndices={issueIndices} lang={lang} openPoints={openLoopData.openPoints} pathCount={openLoopData.count} />;
             })()}
 
             {/* Open Loops Count */}
             {openLoopData.count > 0 && (
               <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-4 text-center">
                 <p className="text-sm font-medium text-red-400">
-                  🟡 {t.openLoopsDetected}: <span className="font-bold">{openLoopData.count}</span>
+                  {openLoopData.count > 0
+                    ? (lang === "ar"
+                      ? `🟡 ${openLoopData.count} نقطة مفتوحة (فجوة ≥ 0.1 مم) تحتاج إصلاح يدوي`
+                      : `🟡 ${openLoopData.count} open points (gap ≥ 0.1mm) need manual repair`)
+                    : (lang === "ar"
+                      ? `✓ جميع الفجوات < 0.1 مم أُغلقت تلقائياً`
+                      : `✓ All gaps < 0.1mm auto-closed`)}
                 </p>
               </div>
             )}

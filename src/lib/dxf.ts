@@ -308,7 +308,7 @@ export function calculateTotalPerimeter(entities: DxfEntity[]): number {
 /**
  * Detect open loops - vertices that fail to connect to other geometry
  */
-export function detectOpenLoops(entities: DxfEntity[]): { count: number; openPoints: { x: number; y: number }[] } {
+export function detectOpenLoops(entities: DxfEntity[], minGap: number = 0.1): { count: number; openPoints: { x: number; y: number }[] } {
   const endpoints: { x: number; y: number }[] = [];
   const openPoints: { x: number; y: number }[] = [];
   const TOLERANCE = 0.1;
@@ -336,16 +336,20 @@ export function detectOpenLoops(entities: DxfEntity[]): { count: number; openPoi
   for (let i = 0; i < endpoints.length; i++) {
     if (matched.has(i)) continue;
     let foundMatch = false;
+    let minDist = Infinity;
     for (let j = i + 1; j < endpoints.length; j++) {
       if (matched.has(j)) continue;
-      if (dist(endpoints[i].x, endpoints[i].y, endpoints[j].x, endpoints[j].y) < TOLERANCE) {
+      const d = dist(endpoints[i].x, endpoints[i].y, endpoints[j].x, endpoints[j].y);
+      if (d < minDist) minDist = d;
+      if (d < TOLERANCE) {
         matched.add(i);
         matched.add(j);
         foundMatch = true;
         break;
       }
     }
-    if (!foundMatch) {
+    // Only count as "open" if the nearest endpoint is >= minGap
+    if (!foundMatch && minDist >= minGap) {
       openPoints.push(endpoints[i]);
     }
   }
@@ -1099,31 +1103,25 @@ function joinConnectedEntities(entities: DxfEntity[]): { joined: DxfEntity[]; jo
 }
 
 /**
- * إغلاق جميع المسارات المفتوحة
+ * Auto-fix: set closed flag to 1 for polylines that are geometrically
+ * closed (gap < 0.1mm) but have the flag set to 0.
+ * Also closes polylines whose first/last vertices are within 0.1mm.
  */
 function closeAllPolylines(entities: DxfEntity[]): { closed: DxfEntity[]; closeCount: number } {
-  // Phase 6A (Bug 1): an open polyline may ONLY become closed when the
-  // geometry is ACTUALLY closed — i.e. the distance between the first and
-  // last meaningful vertex is within the existing gap tolerance. A repeated
-  // first/last vertex record alone is NOT proof of closure (real-world case:
-  // an open contour whose last vertex duplicates the first, with a huge real
-  // endpoint gap). Explicit DXF closed flags are untouched either way.
-  const gapTol = DEFAULT_CLEANUP_OPTIONS.gapTolerance;
+  // Threshold: gap < 0.1mm → geometrically closed → set flag to 1
+  const GEOMETRIC_CLOSE_TOL = 0.1; // mm
   const snapTol = DEFAULT_CLEANUP_OPTIONS.tolerance;
   const result = entities.map(e => {
-    // Phase 8 (real-world 266.dxf): legacy POLYLINE entities were silently
-    // skipped here, so open legacy polylines were detected but never closed
-    // (Fixed: 0). Both LWPOLYLINE and legacy POLYLINE are now closable under
-    // the same conservative rule.
+    // Only LWPOLYLINE and legacy POLYLINE are closable.
     if ((e.type !== "LWPOLYLINE" && e.type !== "POLYLINE") || e.closed || !e.vertices || e.vertices.length < 2) return e;
-    // Ignore trailing vertex RECORDS that merely duplicate the first vertex:
-    // they are a serialization style (explicit closing point on an unflagged
-    // polyline), NOT proof of geometric closure. Measure the REAL contour gap
-    // from the last DISTINCT vertex instead (Phase 6A Bug 1).
+    // Ignore trailing vertices that merely duplicate the first (serialization
+    // style), not proof of geometric closure. Measure from the last DISTINCT
+    // vertex instead.
     let n = e.vertices.length - 1;
     while (n > 0 && dist(e.vertices[n].x, e.vertices[n].y, e.vertices[0].x, e.vertices[0].y) <= snapTol) n--;
     const lastMeaningful = e.vertices[n];
-    if (dist(e.vertices[0].x, e.vertices[0].y, lastMeaningful.x, lastMeaningful.y) > gapTol)
+    const gap = dist(e.vertices[0].x, e.vertices[0].y, lastMeaningful.x, lastMeaningful.y);
+    if (gap > GEOMETRIC_CLOSE_TOL)
       return e; // genuinely open → PRESERVE open state
     return { ...e, closed: true };
   });
@@ -1342,15 +1340,17 @@ export function repairDxf(content: string, analysis: DxfAnalysis, options: Repai
   }
   entities = joined;
 
-  // ─── STEP 7: Close all paths ───
+  // ─── STEP 7: Auto-fix closed flag for geometrically-closed polylines ───
+  // If a polyline is geometrically closed (gap < 0.1mm) but flag is 0,
+  // auto-set the flag to 1. This is the user's explicit requirement.
   const { closed: closedEntities, closeCount } = closeAllPolylines(entities);
   if (closeCount > 0) {
     fixSummary.push({
       id: 'closed_paths',
       icon: '⭕',
-      ar: `تم إغلاق ${closeCount} مسار مفتوح`,
-      en: `Closed ${closeCount} open paths`,
-      detail: 'إغلاق جميع المسارات المفتوحة',
+      ar: `تم إغلاق ${closeCount} مسار مفتوح (gap < 0.1 مم) تلقائياً`,
+      en: `Auto-closed ${closeCount} open paths (gap < 0.1mm)`,
+      detail: 'إغلاق جميع المسارات المفتوحة (gap < 0.1mm)',
     });
   }
   entities = closedEntities;
