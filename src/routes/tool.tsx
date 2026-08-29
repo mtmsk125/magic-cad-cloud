@@ -2,9 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { analyzeDxf, repairDxf, scoreColor, scoreBg, scoreLabel, getDxfBounds, buildSvgPaths, calculateTotalPerimeter, sortInsideFirst } from "@/lib/dxf";
 import type { DxfAnalysis, DxfIssue, FixSummaryItem, DxfBounds, SvgPath } from "@/lib/dxf";
-// Phase 9 report: consume the cleanup engine's public API only — NO engine changes.
-import { cleanupEntities, DEFAULT_CLEANUP_OPTIONS, detectOpenPaths, autoCloseOpenPaths, computeDrawingScale } from "@/lib/dxf-cleanup";
-import type { CleanupReport, OpenPathInfo } from "@/lib/dxf-cleanup";
+// Open-path detection: consume the cleanup engine's public API only — NO engine changes.
+import { DEFAULT_CLEANUP_OPTIONS, detectOpenPaths } from "@/lib/dxf-cleanup";
 import { downloadAllAsZip, triggerSelfDestruct, isSelfDestructTriggered } from "@/lib/zip-export";
 import { track } from '@vercel/analytics';
 import { FeedbackModal } from "@/components/feedback-modal";
@@ -445,8 +444,6 @@ function ToolPage() {
   const [repairedContent, setRepairedContent] = useState("");
   const [repairedIssues, setRepairedIssues] = useState<DxfIssue[]>([]);
   const [fixSummary, setFixSummary] = useState<FixSummaryItem[]>([]);
-  // Phase 9 report (from cleanupEntities.report — engine output, no recomputation)
-  const [phase9, setPhase9] = useState<Pick<CleanupReport, "fixedOpen" | "removedDuplicates" | "foundOverlaps" | "foundSelfIntersections"> | null>(null);
   // Re-scan result of the ACTUAL repaired DXF — the verified source of truth
   // after repair. Never substitute a hard-coded 100 for this.
   const [repairedAnalysis, setRepairedAnalysis] = useState<DxfAnalysis | null>(null);
@@ -594,14 +591,18 @@ function ToolPage() {
       // Fix Summary
       fixSummaryTitle: "تقرير الإصلاحات والتعديلات",
       fixSummarySub: "نظرة تفصيلية على التغييرات التي تم إجراؤها على ملف DXF",
-      // Phase 9 report
-      phase9Title: "تقرير محرك التنظيف (Phase 9)",
-      phase9Sub: "فحص فتحات ومكررات وتداخلات المتجهات",
-      phase9FixedOpen: "فتحة أُغلقت تلقائياً",
-      phase9RemovedDup: "مكرر تم حذفه",
-      phase9Overlaps: "تداخل (معطّل بالأحمر)",
-      phase9SelfInt: "تقاطع ذاتي (معطّل بالأحمر)",
-      phase9ManualReview: "الملف يحتاج مراجعة يدوية — توجد تداخلات",
+      // Unified report (v1.0): single scan & repair card
+      reportTitle: "تقرير الفحص والإصلاح",
+      reportSub: "نتائج الفحص الفعلية من محرك الإصلاح",
+      reportFixedAuto: "تم الإصلاح تلقائياً",
+      reportNeedsReview: "يحتاج مراجعة",
+      reportFileState: "حالة الملف",
+      reportOf100: "(من 100)",
+      reportReadyCut: "جاهز للقص ✓",
+      reportReadyCutSub: "تمت إعادة فحص الملف بعد الإصلاح — لا توجد حالات بحاجة لمراجعتك",
+      techDetails: "تفاصيل تقنية",
+      techDupRemoved: "مكررات تم حذفها",
+      techOverlaps: "تداخلات معلَّمة (لم تُحذف)",
       // Cost Estimator
       costTitle: "تقدير تكلفة القص",
       costSub: "احسب التكلفة التقديرية للقص بناءً على الطول الإجمالي",
@@ -691,14 +692,18 @@ function ToolPage() {
       // Fix Summary
       fixSummaryTitle: "Fix Summary Report",
       fixSummarySub: "Detailed overview of changes made to your DXF file",
-      // Phase 9 report
-      phase9Title: "Cleanup Engine Report (Phase 9)",
-      phase9Sub: "Open-gap, duplicate, overlap and self-intersection scan",
-      phase9FixedOpen: "gap auto-closed",
-      phase9RemovedDup: "duplicate removed",
-      phase9Overlaps: "overlap (marked RED)",
-      phase9SelfInt: "self-intersection (marked RED)",
-      phase9ManualReview: "File needs manual review - overlaps found",
+      // Unified report (v1.0): single scan & repair card
+      reportTitle: "Scan & Repair Report",
+      reportSub: "Actual results from the repair engine",
+      reportFixedAuto: "Auto-fixed",
+      reportNeedsReview: "Needs review",
+      reportFileState: "File state",
+      reportOf100: "(/100)",
+      reportReadyCut: "Ready to cut ✓",
+      reportReadyCutSub: "File re-scanned after repair — nothing needs your review",
+      techDetails: "Technical details",
+      techDupRemoved: "duplicates removed",
+      techOverlaps: "overlaps marked (not deleted)",
       // Cost Estimator
       costTitle: "Cutting Cost Estimator",
       costSub: "Estimate cutting cost based on total path length",
@@ -846,24 +851,6 @@ function ToolPage() {
     setRepairHadChanges(repaired && summary.some(s => s.id === "real_cleanup"));
     saveToHistory(fileName, analysis, true);
 
-    // Phase 9 report: run the SAME cleanup engine on the SAME parsed
-    // entities so the UI shows the real Phase 9 counters (open-vector
-    // fixes, near-duplicate removals, overlap + self-intersection marks).
-    // Read-only usage of the public engine API — no engine modification.
-    try {
-      const engine = cleanupEntities(analysis.entities, DEFAULT_CLEANUP_OPTIONS);
-      setPhase9({
-        fixedOpen: engine.report.fixedOpen,
-        removedDuplicates: engine.report.removedDuplicates,
-        foundOverlaps: engine.report.foundOverlaps,
-        foundSelfIntersections: engine.report.foundSelfIntersections,
-      });
-    } catch (e) {
-      // Never block the repair flow because of report generation.
-      console.error("Phase 9 report generation failed:", e);
-      setPhase9(null);
-    }
-
     // 2) RE-SCAN: re-parse and re-analyze the ACTUAL repaired DXF.
     //    The final score must come from this NEW analysis, never from a
     //    hard-coded 100. "Repair succeeded" does not mean "DXF is perfect".
@@ -950,7 +937,6 @@ function ToolPage() {
     setRepairedContent("");
     setRepairedIssues([]);
     setFixSummary([]);
-    setPhase9(null);
     setRepairedAnalysis(null);
     setReScanFailed(false);
     setShowScanDetails(false);
@@ -1040,12 +1026,10 @@ function ToolPage() {
       ? repairedAnalysis.entities 
       : analysis.entities;
     
-    const scale = computeDrawingScale(entities);
-    
-    // Threshold: gap >= 0.1mm is a real problem (or scale-aware 4% for tiny drawings)
-    const manualRepairThreshold = (scale !== null && isFinite(scale) && scale > 0 && scale < 10)
-      ? scale * 0.04
-      : 0.1;
+    // v1.0 FINAL TOLERANCE RULE (absolute — drawing scale deliberately ignored):
+    //   gap <  0.1mm → auto-close, counted as FIXED, no red dot
+    //   gap >= 0.1mm → real open geometry, red dot, NEEDS REVIEW
+    const manualRepairThreshold = 0.1;
     
     // Get all open paths with gap info
     const openPaths = detectOpenPaths(entities, DEFAULT_CLEANUP_OPTIONS);
@@ -1680,91 +1664,70 @@ function ToolPage() {
               </div>
             )}
 
-            {/* Phase 9 (UI only): cleanup engine report — counters come
-                straight from cleanupEntities.report (engine output). The
-                overlap/self-intersection scans are READ-ONLY: geometry is
-                marked RED, never deleted. */}
-            {stage === "repaired" && phase9 && (
-              <div className="rounded-2xl border border-accent/30 bg-gradient-to-br from-accent/5 to-card p-6">
-                <div className="flex items-center gap-3 mb-5">
-                  <div className="w-10 h-10 rounded-xl bg-accent/20 flex items-center justify-center text-xl">
-                    🔍
+            {/* v1.0 FINAL: ONE unified scan & repair report card. Numbers come
+                ONLY from existing engine output (repairDxf / repairedIssues /
+                analysis.issues / cleanupEntities.report). No frontend recomputation.
+                The separate Phase 9 card was removed — its technical counters
+                (duplicates/overlaps) live in the collapsed "تفاصيل تقنية" panel;
+                the false-positive self-intersection counter was deleted. */}
+            {stage === "repaired" && (() => {
+              const fixedCount = repairedIssues.length;
+              const needsReviewCount = analysis.issues.filter(i => !repairedIssues.find(r => r.id === i.id)).length;
+              const afterScore = stage === "repaired" && repairedAnalysis ? repairedAnalysis.score : analysis.score;
+              return (
+                <div className="rounded-2xl border border-accent/30 bg-gradient-to-br from-accent/5 to-card p-6">
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="w-10 h-10 rounded-xl bg-accent/20 flex items-center justify-center text-xl">
+                      📋
+                    </div>
+                    <div>
+                      <h3 className="font-display font-bold text-lg">{t.reportTitle}</h3>
+                      <p className="text-xs text-muted-foreground">{t.reportSub}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-display font-bold text-lg">{t.phase9Title}</h3>
-                    <p className="text-xs text-muted-foreground">{t.phase9Sub}</p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="bg-background border border-green-500/30 rounded-xl p-4 text-center">
-                    <p className="font-mono text-2xl font-bold text-green-400">{phase9.fixedOpen}</p>
-                    <p className="text-xs font-medium mt-1">✅ {t.phase9FixedOpen}</p>
-                  </div>
-                  <div className="bg-background border border-green-500/30 rounded-xl p-4 text-center">
-                    <p className="font-mono text-2xl font-bold text-green-400">{phase9.removedDuplicates}</p>
-                    <p className="text-xs font-medium mt-1">🗑️ {t.phase9RemovedDup}</p>
-                  </div>
-                  <div className={`bg-background border rounded-xl p-4 text-center ${phase9.foundOverlaps > 0 ? "border-red-500/40" : "border-border/60"}`}>
-                    <p className={`font-mono text-2xl font-bold ${phase9.foundOverlaps > 0 ? "text-red-400" : "text-muted-foreground"}`}>{phase9.foundOverlaps}</p>
-                    <p className="text-xs font-medium mt-1">⚠️ {t.phase9Overlaps}</p>
-                  </div>
-                  <div className={`bg-background border rounded-xl p-4 text-center ${phase9.foundSelfIntersections > 0 ? "border-red-500/40" : "border-border/60"}`}>
-                    <p className={`font-mono text-2xl font-bold ${phase9.foundSelfIntersections > 0 ? "text-red-400" : "text-muted-foreground"}`}>{phase9.foundSelfIntersections}</p>
-                    <p className="text-xs font-medium mt-1">⚠️ {t.phase9SelfInt}</p>
-                  </div>
-                </div>
-                {phase9.foundOverlaps > 0 || phase9.foundSelfIntersections > 0 ? (
-                  <div className="mt-4 rounded-xl border border-red-500/40 bg-red-500/10 p-4 flex items-center gap-3">
-                    <span className="text-xl flex-shrink-0">🚩</span>
-                    <p className="text-sm font-semibold text-red-400">
-                      {t.phase9ManualReview}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="mt-4 rounded-xl border border-green-500/30 bg-green-500/5 p-4 flex items-center gap-3">
-                    <span className="text-lg flex-shrink-0">✓</span>
-                    <p className="text-sm font-semibold text-green-400">
-                      {lang === "ar" ? "لا توجد تداخلات أو تقاطعات ذاتية — الملف جاهز" : "No overlaps or self-intersections — file is clean"}
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
 
-            {/* Phase 7 (UI only): three primary summary cards — numbers come
-                ONLY from existing engine output (repairedIssues / analysis.issues /
-                repairedAnalysis). No frontend recomputation of findings. */}
-            {stage === "repaired" && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="rounded-2xl border border-green-500/30 bg-green-500/5 p-5 text-center">
-                  <p className="font-mono text-3xl font-bold text-green-400">{repairedIssues.length}</p>
-                  <p className="text-sm font-semibold mt-1">{lang === "ar" ? "تم الإصلاح" : "Repaired"}</p>
-                </div>
-                <div className={`rounded-2xl border p-5 text-center ${analysis.issues.filter(i => !repairedIssues.find(r => r.id === i.id)).length > 0 ? "border-yellow-500/30 bg-yellow-500/5" : "border-border bg-card"}`}>
-                  <p className={`font-mono text-3xl font-bold ${analysis.issues.filter(i => !repairedIssues.find(r => r.id === i.id)).length > 0 ? "text-yellow-400" : "text-muted-foreground"}`}>
-                    {analysis.issues.filter(i => !repairedIssues.find(r => r.id === i.id)).length}
-                  </p>
-                  <p className="text-sm font-semibold mt-1">{lang === "ar" ? "يحتاج مراجعة" : "Needs review"}</p>
-                </div>
-                <div className="rounded-2xl border border-border bg-card p-5 text-center">
-                  <p className="font-mono text-3xl font-bold text-accent">
-                    {(repairedAnalysis ?? analysis).stats.totalEntities}
-                  </p>
-                  <p className="text-sm font-semibold mt-1">{lang === "ar" ? "عنصر في الملف الناتج" : "Entities in output"}</p>
-                </div>
-              </div>
-            )}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="rounded-2xl border border-green-500/30 bg-green-500/5 p-5 text-center">
+                      <p className="font-mono text-3xl font-bold text-green-400">{fixedCount}</p>
+                      <p className="text-sm font-semibold mt-1">✅ {t.reportFixedAuto}</p>
+                    </div>
+                    <div className={`rounded-2xl border p-5 text-center ${needsReviewCount > 0 ? "border-yellow-500/30 bg-yellow-500/5" : "border-border bg-card"}`}>
+                      <p className={`font-mono text-3xl font-bold ${needsReviewCount > 0 ? "text-yellow-400" : "text-muted-foreground"}`}>
+                        {needsReviewCount}
+                      </p>
+                      <p className="text-sm font-semibold mt-1">👁 {t.reportNeedsReview}</p>
+                    </div>
+                    <div className="rounded-2xl border border-border bg-card p-5 text-center">
+                      <p className="font-mono text-2xl font-bold text-accent" dir="ltr">
+                        {analysis.score} → {afterScore}
+                      </p>
+                      <p className="text-sm font-semibold mt-1">{t.reportFileState} {t.reportOf100}</p>
+                    </div>
+                  </div>
 
-            {/* Phase 7 (UI only): zero safe repairs message */}
-            {stage === "repaired" && repairedIssues.length === 0 && (
-              <div className="rounded-2xl border border-border bg-card p-5 text-center">
-                <p className="text-sm text-muted-foreground">
-                  {lang === "ar"
-                    ? "لم يتم العثور على إصلاحات آمنة مطلوبة — يمكنك متابعة التنزيل حسب السير الحالي."
-                    : "No safe repairs were required — you can continue to download as usual."}
-                </p>
-              </div>
-            )}
+                  {needsReviewCount === 0 ? (
+                    <div className="mt-5 rounded-2xl border border-green-500/40 bg-green-500/10 p-6 text-center">
+                      <p className="font-display text-2xl font-bold text-green-400">{t.reportReadyCut}</p>
+                      <p className="text-xs text-muted-foreground mt-1">{t.reportReadyCutSub}</p>
+                      <button
+                        onClick={handleDownloadFixed}
+                        className="mt-4 w-full sm:w-auto px-8 py-4 rounded-xl bg-green-500 text-white font-bold text-lg hover:opacity-90 transition shadow-[var(--shadow-spark)]"
+                      >
+                        ⬇ {t.downloadFixed}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="mt-5 rounded-2xl border border-yellow-500/40 bg-yellow-500/10 p-4 text-center">
+                      <p className="text-sm font-semibold text-yellow-400">
+                        ⚠️ {lang === "ar"
+                          ? `${needsReviewCount} حالة لم تُعدَّل تلقائياً حفاظاً على هندسة الرسم — راجعها قبل القص`
+                          : `${needsReviewCount} item(s) were left unchanged to preserve the original geometry — review before cutting`}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Phase 7 (UI only): conservative-behavior trust box */}
             <div className="rounded-2xl border border-accent/20 bg-accent/5 p-5">
