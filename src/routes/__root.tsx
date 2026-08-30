@@ -80,14 +80,6 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   );
 }
 
-function getInitialLang(): Lang {
-  if (typeof window !== "undefined") {
-    const stored = localStorage.getItem("dxfix_lang") as Lang | null;
-    if (stored && ["ar", "en", "fr", "zh"].includes(stored)) return stored;
-  }
-  return "ar";
-}
-
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   head: () => ({
     meta: [
@@ -150,8 +142,22 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 });
 
 function RootShell({ children }: { children: ReactNode }) {
-  const [lang, setLang] = useState<Lang>(getInitialLang);
+  // React #418 fix: the server renders with the default language ("ar").
+  // Reading localStorage during the first render made the client produce a
+  // different <html lang/dir> than the SSR markup → hydration mismatch.
+  // Start from the same default on both sides, then sync after mount.
+  const [lang, setLang] = useState<Lang>("ar");
   const dir = getLangDir(lang);
+
+  // Sync stored language preference after hydration (never during render)
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("dxfix_lang") as Lang | null;
+      if (stored && ["ar", "en", "fr", "zh"].includes(stored)) setLang(stored);
+    } catch {
+      // localStorage unavailable — keep default
+    }
+  }, []);
 
   // Listen for language changes from child routes (via custom event)
   useEffect(() => {
@@ -181,16 +187,18 @@ function RootShell({ children }: { children: ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const [isMounted, setIsMounted] = useState(false);
-  const [lang, setLang] = useState<Lang>(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("dxfix_lang") as Lang | null;
-      if (stored && ["ar", "en", "fr", "zh"].includes(stored)) return stored;
-    }
-    return "ar";
-  });
+  // React #418 fix: start from the SSR default ("ar") and sync the stored
+  // preference after mount — never read localStorage during first render.
+  const [lang, setLang] = useState<Lang>("ar");
 
   useEffect(() => {
     setIsMounted(true);
+    try {
+      const stored = localStorage.getItem("dxfix_lang") as Lang | null;
+      if (stored && ["ar", "en", "fr", "zh"].includes(stored)) setLang(stored);
+    } catch {
+      // localStorage unavailable — keep default
+    }
   }, []);
 
   useEffect(() => {

@@ -44,24 +44,59 @@ interface BulkFileEntry {
 
 const LAYER_COLORS = ["#00d4ff", "#ffd700", "#a855f7", "#34d399", "#f97316", "#ec4899", "#60a5fa"];
 
-function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount }: {
+// Unified open-loop pipeline (single source of truth for preview AND report).
+// Same engine (detectOpenPaths) and same threshold (0.1mm) as analyzeDxf:
+//   gap <  0.1mm → auto-closed by the engine (no red dot)
+//   gap >= 0.1mm → real problem (red dot + reported as an error)
+function computeOpenLoopData(a: DxfAnalysis | null): { count: number; openPoints: { x: number; y: number }[]; fixedCount: number } {
+  if (!a) return { count: 0, openPoints: [], fixedCount: 0 };
+  const manualRepairThreshold = 0.1;
+  const openPaths = detectOpenPaths(a.entities, DEFAULT_CLEANUP_OPTIONS);
+  const fixedOpen = openPaths.filter(p => p.gap < manualRepairThreshold);
+  const needsManualRepair = openPaths.filter(p => p.gap >= manualRepairThreshold);
+  const openPoints: { x: number; y: number }[] = [];
+  needsManualRepair.forEach(path => {
+    openPoints.push(path.start);
+    openPoints.push(path.end);
+  });
+  return { count: needsManualRepair.length, openPoints, fixedCount: fixedOpen.length };
+}
+
+// Data bundle rendered by the preview — one for the repaired file ("after")
+// and one for the original file ("before") so the user can toggle between
+// the pre-repair and post-repair states of the SAME drawing.
+interface PreviewData {
+  analysis: DxfAnalysis;
+  issueIndices: Set<number>;
+  openPoints: { x: number; y: number }[];
+  pathCount: number;
+}
+
+function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, before }: {
   analysis: DxfAnalysis;
   issueIndices: Set<number>;
   lang: "ar" | "en";
   openPoints?: { x: number; y: number }[];
   pathCount?: number;
+  before?: PreviewData;
 }) {
   const [zoom, setZoom] = useState(1);
   const [hiddenLayers, setHiddenLayers] = useState<Set<string>>(new Set());
   const [issuesOnly, setIssuesOnly] = useState(false);
   const [showOpenLoops, setShowOpenLoops] = useState(true);
+  const [showBefore, setShowBefore] = useState(false);
   const [simulating, setSimulating] = useState(false);
   const [simProgress, setSimProgress] = useState(0);
   const [simPointer, setSimPointer] = useState<{ x: number; y: number } | null>(null);
   const simRef = useRef<number | null>(null);
   const allPathsRef = useRef<SvgPath[]>([]);
 
-  const bounds = getDxfBounds(analysis.entities);
+  // Active dataset = "after" (default) or "before" (original file) view.
+  const active: PreviewData = showBefore && before
+    ? before
+    : { analysis, issueIndices, openPoints: openPoints ?? [], pathCount: pathCount ?? 0 };
+
+  const bounds = getDxfBounds(active.analysis.entities);
   if (!bounds || bounds.width === 0 || bounds.height === 0) {
     return (
       <p className="text-center font-mono text-xs text-muted-foreground py-8">
@@ -75,9 +110,9 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount }: {
   const vy = bounds.minY - PAD;
   const vw = bounds.width + PAD * 2;
   const vh = bounds.height + PAD * 2;
-  const allPaths = buildSvgPaths(analysis.entities, bounds);
+  const allPaths = buildSvgPaths(active.analysis.entities, bounds);
   allPathsRef.current = allPaths;
-  const layerList = analysis.stats.layers;
+  const layerList = active.analysis.stats.layers;
 
   function layerColor(layer: string) {
     const idx = layerList.indexOf(layer);
@@ -94,20 +129,20 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount }: {
 
   const visiblePaths = allPaths.filter(p => {
     if (hiddenLayers.has(p.layer)) return false;
-    if (issuesOnly && !issueIndices.has(p.entityIndex)) return false;
+    if (issuesOnly && !active.issueIndices.has(p.entityIndex)) return false;
     return true;
   });
 
   const strokeW = Math.max(bounds.width, bounds.height) * 0.004;
-  const hasIssues = issueIndices.size > 0;
+  const hasIssues = active.issueIndices.size > 0;
 
   // Calculate open loop points in SVG coordinates
   const { maxY } = bounds;
   const flipY = (y: number) => maxY - y + bounds.minY;
-  const svgOpenPoints = openPoints?.map(p => ({
+  const svgOpenPoints = active.openPoints.map(p => ({
     x: p.x,
     y: flipY(p.y),
-  })) || [];
+  }));
 
   // CNC Toolpath Simulation
   const startSimulation = useCallback(() => {
@@ -170,8 +205,38 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount }: {
       <div className="flex items-center justify-between px-5 py-3 border-b border-border gap-3 flex-wrap">
         <span className="font-display font-semibold text-sm">
           {lang === "ar" ? "🖼 معاينة الرسم" : "🖼 Drawing Preview"}
+          {before && (
+            showBefore
+              ? (lang === "ar" ? " — قبل الإصلاح" : " — Before fix")
+              : (lang === "ar" ? " — بعد الإصلاح" : " — After fix")
+          )}
         </span>
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Before/After toggle: compare the ORIGINAL file against the repaired one */}
+          {before && (
+            <div className="flex rounded-lg border border-border overflow-hidden font-mono text-xs">
+              <button
+                onClick={() => setShowBefore(true)}
+                className={`px-3 py-1 transition ${
+                  showBefore
+                    ? "bg-amber-500/20 text-amber-400 font-bold"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {lang === "ar" ? "قبل الإصلاح" : "Before"}
+              </button>
+              <button
+                onClick={() => setShowBefore(false)}
+                className={`px-3 py-1 transition ${
+                  !showBefore
+                    ? "bg-accent/20 text-accent font-bold"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {lang === "ar" ? "بعد الإصلاح" : "After"}
+              </button>
+            </div>
+          )}
           {/* Simulation Button */}
           <button
             onClick={startSimulation}
@@ -186,7 +251,7 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount }: {
               ? (lang === "ar" ? `⏳ ${simProgress}%` : `⏳ ${simProgress}%`)
               : (lang === "ar" ? "▶ تشغيل المحاكاة" : "▶ Play Simulation")}
           </button>
-          {openPoints && openPoints.length > 0 && (
+          {active.openPoints.length > 0 && (
             <button
               onClick={() => setShowOpenLoops(v => !v)}
               className={`font-mono text-xs px-3 py-1 rounded-lg border transition ${
@@ -195,7 +260,7 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount }: {
                   : "border-border text-muted-foreground hover:border-red-500/50 hover:text-red-400"
               }`}
             >
-              {lang === "ar" ? `🟡 ${pathCount ?? Math.round(openPoints.length / 2)} نقطة تحتاج إصلاح` : `🔴 Open points (${pathCount ?? Math.round(openPoints.length / 2)})`}
+              {lang === "ar" ? `🟡 ${active.pathCount} نقطة تحتاج إصلاح` : `🔴 Open points (${active.pathCount})`}
             </button>
           )}
           {hasIssues && (
@@ -228,7 +293,7 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount }: {
           style={{ display: "block", margin: "0 auto", background: "#0d1117" }}
         >
           {visiblePaths.map((p, i) => {
-            const isIssue = issueIndices.has(p.entityIndex);
+            const isIssue = active.issueIndices.has(p.entityIndex);
             const color = isIssue ? "#ef4444" : layerColor(p.layer);
             return (
               <path
@@ -338,12 +403,12 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount }: {
             {lang === "ar" ? "مشاكل" : "Issues"}
           </span>
         )}
-        {openPoints && openPoints.length > 0 && (
+        {active.openPoints.length > 0 && (
           <span className="flex items-center gap-1.5 font-mono text-xs px-2.5 py-1 text-red-400">
             <span className="w-2.5 h-2.5 rounded-full inline-block bg-red-500" />
             {lang === "ar"
-              ? `${pathCount ?? Math.round(openPoints.length / 2)} نقطة تحتاج إصلاح`
-              : `${pathCount ?? Math.round(openPoints.length / 2)} points need repair`}
+              ? `${active.pathCount} نقطة تحتاج إصلاح`
+              : `${active.pathCount} points need repair`}
           </span>
         )}
         {layerList.length > 1 && hiddenLayers.size > 0 && (
@@ -1025,49 +1090,22 @@ function ToolPage() {
   const perimeterMeters = perimeter / 1000;
   const estimatedCost = perimeterMeters * pricePerMeter;
 
-  // Open loop detection: Phase 9 pipeline
-  // - gap < 0.1mm  → auto-close (count as FIXED, no red dot)
-  // - gap >= 0.1mm → real problem (draw red, needs manual repair)
-  // ── SINGLE SOURCE OF TRUTH (v1.1 universal fix) ────────────────────────────
-  // Every UI surface (score card, SVG preview + issue markers, open-point
-  // dots, report card, safety badge, scan details) derives from ONE analysis
-  // object: the re-scanned repaired file after repair, the original analysis
-  // before. This removes the state mixing that showed "100/100" in the cards
-  // while the preview still highlighted ORIGINAL issue markers (e.g. 346).
+  // Open loop detection: unified pipeline (v1.2 consistency fix).
+  //   gap < 0.1mm  → auto-close (count as FIXED, no red dot)
+  //   gap >= 0.1mm → real problem (draw red, needs manual repair)
+  // ── SINGLE SOURCE OF TRUTH ─────────────────────────────────────────────────
+  // displayAnalysis drives every UI surface (score card, SVG preview, open-point
+  // dots, report card). computeOpenLoopData uses the SAME engine (detectOpenPaths)
+  // and threshold (0.1mm) as analyzeDxf, so the preview can never contradict the
+  // report again.
   const displayAnalysis = stage === "repaired" && repairedAnalysis
     ? repairedAnalysis
     : analysis;
 
-  const openLoopData = (() => {
-    if (!displayAnalysis) return { count: 0, openPoints: [], fixedCount: 0 };
-
-    const entities = displayAnalysis.entities;
-    
-    // v1.0 FINAL TOLERANCE RULE (absolute — drawing scale deliberately ignored):
-    //   gap <  0.1mm → auto-close, counted as FIXED, no red dot
-    //   gap >= 0.1mm → real open geometry, red dot, NEEDS REVIEW
-    const manualRepairThreshold = 0.1;
-    
-    // Get all open paths with gap info
-    const openPaths = detectOpenPaths(entities, DEFAULT_CLEANUP_OPTIONS);
-    
-    // Split into: auto-fixed (gap < 0.1) vs needs-manual-repair (gap >= 0.1)
-    const fixedOpen = openPaths.filter(p => p.gap < manualRepairThreshold);
-    const needsManualRepair = openPaths.filter(p => p.gap >= manualRepairThreshold);
-    
-    // Red dots: start+end of each path that needs manual repair
-    const openPoints: { x: number; y: number }[] = [];
-    needsManualRepair.forEach(path => {
-      openPoints.push(path.start);
-      openPoints.push(path.end);
-    });
-    
-    return {
-      count: needsManualRepair.length,
-      openPoints,
-      fixedCount: fixedOpen.length,
-    };
-  })();
+  const openLoopData = computeOpenLoopData(displayAnalysis);
+  // "Before" state: the ORIGINAL (pre-repair) file — used by the before/after
+  // preview toggle so the user can visually compare both states.
+  const beforeLoopData = computeOpenLoopData(analysis);
 
   return (
     <div dir={isRTL ? "rtl" : "ltr"} className="min-h-screen bg-background text-foreground">
@@ -1610,10 +1648,26 @@ function ToolPage() {
             {(() => {
               // Preview + issue markers come from the SAME analysis as the
               // score/report cards (single source of truth). After repair this
-              // shows ONLY the remaining (needs-review) issues.
+              // shows the post-repair state by default, with a toggle to view
+              // the original pre-repair file.
               if (!displayAnalysis) return null;
               const issueIndices = new Set(displayAnalysis.issues.flatMap(i => i.entityIndices));
-              return <DxfPreview analysis={displayAnalysis} issueIndices={issueIndices} lang={lang} openPoints={openLoopData.openPoints} pathCount={openLoopData.count} />;
+              const beforeIssueIndices = analysis
+                ? new Set(analysis.issues.flatMap(i => i.entityIndices))
+                : new Set<number>();
+              return <DxfPreview
+                analysis={displayAnalysis}
+                issueIndices={issueIndices}
+                lang={lang}
+                openPoints={openLoopData.openPoints}
+                pathCount={openLoopData.count}
+                before={stage === "repaired" && analysis ? {
+                  analysis,
+                  issueIndices: beforeIssueIndices,
+                  openPoints: beforeLoopData.openPoints,
+                  pathCount: beforeLoopData.count,
+                } : undefined}
+              />;
             })()}
 
             {/* Open Loops Count */}

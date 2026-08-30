@@ -106,7 +106,7 @@ export interface FixSummaryItem {
   detail: string;
 }
 
-import { cleanupEntities, DEFAULT_CLEANUP_OPTIONS, effectiveTinyTolerance } from "./dxf-cleanup";
+import { cleanupEntities, DEFAULT_CLEANUP_OPTIONS, detectOpenPaths, effectiveTinyTolerance } from "./dxf-cleanup";
 import { classifyManufacturing } from "./manufacturing";
 
 function parseGroups(content: string): DxfGroup[] {
@@ -733,32 +733,29 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
     }
   }
 
-  // Detect open loops (unconnected endpoints)
-  const { count: openLoopCount, openPoints } = detectOpenLoops(snappedEntities);
+  // Detect open endpoints — UNIFIED WITH THE PREVIEW ENGINE (v1.2 consistency fix).
+  // The SVG preview (tool.tsx) uses detectOpenPaths from dxf-cleanup, which covers
+  // LINE + open POLYLINE + ARC endpoints and measures the true Euclidean gap.
+  // The old detectOpenLoops pass ignored ARC endpoints entirely, so the report
+  // claimed "0 issues / score 100" while the preview highlighted hundreds of open
+  // arc endpoints (real-world bug: 346 red dots vs score 100). From now on BOTH
+  // surfaces derive from the SAME engine and the SAME threshold:
+  //   gap <  0.1mm → engine auto-closes it (not reported)
+  //   gap >= 0.1mm → real open geometry, reported AND drawn as a red dot
+  const MANUAL_REPAIR_GAP = 0.1;
+  const openPathInfos = detectOpenPaths(snappedEntities, DEFAULT_CLEANUP_OPTIONS);
+  const manualRepairPaths = openPathInfos.filter(p => p.gap >= MANUAL_REPAIR_GAP);
+  const openLoopCount = manualRepairPaths.length;
   if (openLoopCount > 0) {
-    for (let i = 0; i < snappedEntities.length; i++) {
-      const e = snappedEntities[i];
-      if (e.type === "LINE") {
-        const isOpen = openPoints.some(p =>
-          (dist(p.x, p.y, e.x1 ?? 0, e.y1 ?? 0) < 0.1) ||
-          (dist(p.x, p.y, e.x2 ?? 0, e.y2 ?? 0) < 0.1)
-        );
-        if (isOpen) {
-          const existingDup = issues.find(i => i.type === "duplicate_line");
-          if (!existingDup || !existingDup.entityIndices.includes(i)) {
-            issues.push({
-              id: `open_loop_${i}`,
-              type: "open_loop",
-              severity: "warning",
-              ar: `نقطة مفتوحة — لا تتصل بأي عنصر آخر`,
-              en: `Open endpoint — not connected to any other entity`,
-              entityIndices: [i],
-              fixed: false,
-            });
-          }
-        }
-      }
-    }
+    issues.push({
+      id: "open_loops",
+      type: "open_loop",
+      severity: "error",
+      ar: `${openLoopCount} نقطة مفتوحة (فجوة ≥ 0.1مم) — يجب إغلاقها قبل القص`,
+      en: `${openLoopCount} open endpoint(s) (gap ≥ 0.1mm) — must be closed before cutting`,
+      entityIndices: [...new Set(manualRepairPaths.map(p => p.entityIndex))],
+      fixed: false,
+    });
   }
 
   const layerSet = new Set(snappedEntities.map(e => e.layer));
@@ -786,7 +783,9 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
       if (issue.type === "duplicate_line") score -= Math.min(40, issue.entityIndices.length * 3);
       else if (issue.type === "open_polyline") score -= 15;
       else if (issue.type === "zero_length") score -= 5;
-      else if (issue.type === "open_loop") score -= 5;
+      // open_loop is now ONE aggregated error whose entityIndices hold every
+      // affected entity — scale the penalty with the real open-endpoint count.
+      else if (issue.type === "open_loop") score -= Math.min(60, issue.entityIndices.length * 2);
     } else {
       score -= 3;
     }
