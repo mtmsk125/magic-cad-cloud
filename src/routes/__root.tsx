@@ -81,7 +81,7 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 }
 
 // --- Geometry Fix Mode State ---
-export type GeometryFixMethod = "straight" | "arc" | "skip";
+export type GeometryFixMethod = "smart" | "straight" | "arc" | "skip";
 export interface GeometryFixState {
   enabled: boolean;
   method: GeometryFixMethod;

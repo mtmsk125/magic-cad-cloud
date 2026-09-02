@@ -84,9 +84,173 @@ function computeOpenLoopData(a: DxfAnalysis | null): { count: number; openPoints
 // Creates ONE new DxfEntity per manually-repairable gap. The strategy is always
 // "add a bridge entity", NEVER "move/destroy the original endpoints", so the
 // surrounding drawing geometry is left 100% untouched (no drawing corruption):
+//   method = "smart"    → analyzes drawing style and picks best bridge type
 //   method = "straight" → new LINE from start→partner
 //   method = "arc"      → new LWPOLYLINE with a single half-circle bulge
 //   method = "skip"     → no entity (gap left as-is, user chose to skip)
+
+// --- Smart Detection Helpers ---
+type EntityStyle = "line" | "arc" | "spline" | "circle" | "unknown";
+
+interface EndpointStyle {
+  style: EntityStyle;
+  exitAngle: number;
+  radius?: number;
+  direction?: "CW" | "CCW";
+}
+
+function normaliseAngle(a: number): number {
+  let n = a % Math.PI;
+  if (n < 0) n += Math.PI;
+  return n;
+}
+
+function getEndpointStyle(
+  entity: DxfEntity,
+  endpoint: { x: number; y: number },
+): EndpointStyle {
+  switch (entity.type) {
+    case "LINE": {
+      const x1 = entity.x1 ?? 0, y1 = entity.y1 ?? 0;
+      const x2 = entity.x2 ?? 0, y2 = entity.y2 ?? 0;
+      const dist1 = Math.hypot(endpoint.x - x1, endpoint.y - y1);
+      const dist2 = Math.hypot(endpoint.x - x2, endpoint.y - y2);
+      const angle = Math.atan2(y2 - y1, x2 - x1);
+      const tangent = dist1 < dist2 ? angle : angle + Math.PI;
+      return { style: "line", exitAngle: normaliseAngle(tangent) };
+    }
+    case "ARC": {
+      const cx = entity.cx ?? 0, cy = entity.cy ?? 0;
+      const r = entity.radius ?? 1;
+      const start = entity.startAngle ?? 0;
+      const end = entity.endAngle ?? Math.PI * 2;
+      const epAngle = Math.atan2(endpoint.y - cy, endpoint.x - cx);
+      const sweep = end - start;
+      const isCCW = sweep > 0;
+      const tangent = isCCW ? epAngle + Math.PI / 2 : epAngle - Math.PI / 2;
+      return {
+        style: "arc",
+        exitAngle: normaliseAngle(tangent),
+        radius: r,
+        direction: isCCW ? "CCW" : "CW",
+      };
+    }
+    case "CIRCLE": {
+      const cx = entity.cx ?? 0, cy = entity.cy ?? 0;
+      const epAngle = Math.atan2(endpoint.y - cy, endpoint.x - cx);
+      return { style: "circle", exitAngle: normaliseAngle(epAngle + Math.PI / 2) };
+    }
+    default:
+      return { style: "unknown", exitAngle: 0 };
+  }
+}
+
+function entityPointDistance(e: DxfEntity, pt: { x: number; y: number }): number {
+  switch (e.type) {
+    case "LINE": {
+      const x1 = e.x1 ?? 0, y1 = e.y1 ?? 0;
+      const x2 = e.x2 ?? 0, y2 = e.y2 ?? 0;
+      const A = pt.x - x1, B = pt.y - y1;
+      const C = x2 - x1, D = y2 - y1;
+      const dot = A * C + B * D;
+      const lenSq = C * C + D * D;
+      if (lenSq === 0) return Math.hypot(A, B);
+      const t = Math.max(0, Math.min(1, dot / lenSq));
+      return Math.hypot(pt.x - (x1 + t * C), pt.y - (y1 + t * D));
+    }
+    case "ARC":
+    case "CIRCLE": {
+      const cx = e.cx ?? 0, cy = e.cy ?? 0;
+      return Math.abs(Math.hypot(pt.x - cx, pt.y - cy) - (e.radius ?? 1));
+    }
+    case "LWPOLYLINE":
+    case "POLYLINE": {
+      if (!e.vertices || e.vertices.length === 0) return Infinity;
+      let minDist = Infinity;
+      for (let i = 0; i < e.vertices.length - 1; i++) {
+        const x1 = e.vertices[i].x, y1 = e.vertices[i].y;
+        const x2 = e.vertices[i + 1].x, y2 = e.vertices[i + 1].y;
+        const A = pt.x - x1, B = pt.y - y1;
+        const C = x2 - x1, D = y2 - y1;
+        const dot = A * C + B * D;
+        const lenSq = C * C + D * D;
+        if (lenSq === 0) { minDist = Math.min(minDist, Math.hypot(A, B)); continue; }
+        const t = Math.max(0, Math.min(1, dot / lenSq));
+        minDist = Math.min(minDist, Math.hypot(pt.x - (x1 + t * C), pt.y - (y1 + t * D)));
+      }
+      return minDist;
+    }
+    default:
+      return Infinity;
+  }
+}
+
+function makeLine(from: { x: number; y: number }, to: { x: number; y: number }, layer: string, handle: string): DxfEntity {
+  return { type: "LINE", layer, handle, rawLines: [], x1: from.x, y1: from.y, x2: to.x, y2: to.y };
+}
+
+function makeArcBlend(from: { x: number; y: number }, to: { x: number; y: number }, layer: string, handle: string): DxfEntity {
+  const mx = (from.x + to.x) / 2;
+  const my = (from.y + to.y) / 2;
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy) || 1e-9;
+  return {
+    type: "LWPOLYLINE",
+    layer,
+    handle,
+    rawLines: [],
+    closed: false,
+    vertices: [
+      { x: from.x, y: from.y },
+      { x: mx + (-dy / len) * (len / 2), y: my + (dx / len) * (len / 2) },
+      { x: to.x, y: to.y },
+    ],
+  };
+}
+
+function smartBridgeEntity(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  entities: DxfEntity[],
+  layer: string,
+  handle: string,
+): DxfEntity {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy) || 1e-9;
+
+  function nearestEntity(pt: { x: number; y: number }): DxfEntity | null {
+    let best: DxfEntity | null = null;
+    let bestDist = Infinity;
+    for (const e of entities) {
+      const dist = entityPointDistance(e, pt);
+      if (dist < bestDist) { bestDist = dist; best = e; }
+    }
+    return bestDist < len * 5 ? best : null;
+  }
+
+  const fromEntity = nearestEntity(from);
+  const toEntity = nearestEntity(to);
+  const fromStyle = fromEntity ? getEndpointStyle(fromEntity, from) : null;
+  const toStyle = toEntity ? getEndpointStyle(toEntity, to) : null;
+
+  if (fromStyle?.style === "line" && toStyle?.style === "line") {
+    return makeLine(from, to, layer, handle);
+  }
+
+  if (fromStyle?.style === "arc" && toStyle?.style === "arc") {
+    if (
+      fromStyle.radius != null && toStyle.radius != null &&
+      Math.abs(fromStyle.radius - toStyle.radius) < 0.01
+    ) {
+      return makeArcBlend(from, to, layer, handle);
+    }
+  }
+
+  return makeLine(from, to, layer, handle);
+}
+
 interface FixBridgeEntity {
   entity: DxfEntity;
   bridge: BridgePreview;
@@ -120,34 +284,16 @@ function buildFixBridgeEntities(
     const bridge: BridgePreview = { from, to, gap: path.gap, closable: false };
 
     if (method === "arc") {
-      const mx = (from.x + to.x) / 2;
-      const my = (from.y + to.y) / 2;
-      const dx = to.x - from.x;
-      const dy = to.y - from.y;
-      const len = Math.hypot(dx, dy) || 1e-9;
       // Half-circle arc → signed bulge 1.0 (bulge = tan(sweep/4); sweep=180° → 1)
-      const entity: DxfEntity = {
-        type: "LWPOLYLINE",
-        layer,
-        handle,
-        rawLines: [],
-        closed: false,
-        vertices: [
-          { x: from.x, y: from.y },
-          { x: mx + (-dy / len) * (len / 2), y: my + (dx / len) * (len / 2) },
-          { x: to.x, y: to.y },
-        ],
-      };
+      const entity = makeArcBlend(from, to, layer, handle);
+      out.push({ entity, bridge });
+    } else if (method === "smart") {
+      // Smart detection: analyze adjacent entities and pick best bridge style
+      const entity = smartBridgeEntity(from, to, analysis.entities, layer, handle);
       out.push({ entity, bridge });
     } else {
-      const entity: DxfEntity = {
-        type: "LINE",
-        layer,
-        handle,
-        rawLines: [],
-        x1: from.x, y1: from.y,
-        x2: to.x, y2: to.y,
-      };
+      // method === "straight" — default
+      const entity = makeLine(from, to, layer, handle);
       out.push({ entity, bridge });
     }
   });
@@ -230,6 +376,17 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
   const simRef = useRef<number | null>(null);
   const allPathsRef = useRef<SvgPath[]>([]);
 
+  // Gap magnifier (loupe): shows a zoomed circular view right at the cursor
+  // over an open point / bridge so the user sees the gap detail clearly.
+
+  const [magnifier, setMagnifier] = useState<{
+    cx: number;   // world-X of the focus point
+    cy: number;   // world-Y of the focus point
+    mx: number;   // client-X (screen) where the loupe should follow
+    my: number;   // client-Y (screen)
+    label: string; // e.g. "فجوة 0.23 مم"
+  } | null>(null);
+
   // Geometry Fix Mode integration
   const { geometryFixMode, setGeometryFixMode } = useGeometryFixMode();
 
@@ -308,6 +465,14 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
   const strokeW = Math.max(bounds.width, bounds.height) * 0.004;
   const hasIssues = active.issueIndices.size > 0;
 
+  // Gap magnifier window: zoom the area around the cursor (K× relative to the
+  // base render). MAG_WIN = the world-unit width of the loupe viewBox window.
+
+  const MAG_K = 12;                     // relative magnification factor
+  const MAG_SIZE = 224;                  // loupe diameter in px
+  const magWin = vw / MAG_K;             // world-units across the loupe window
+  const magHalf = magWin / 2;
+
   // Calculate open loop points in SVG coordinates
   const { maxY } = bounds;
   const flipY = (y: number) => maxY - y + bounds.minY;
@@ -315,6 +480,15 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
     x: p.x,
     y: flipY(p.y),
   }));
+
+  // Hover handlers for the gap magnifier — reuse for dots, dashed bridges and
+  // blue fix geometry. Stores client coords so the loupe follows the cursorه
+  const focusHandlers = (cx: number, cy: number, label: string) => ({
+    onMouseEnter: (e: { clientX: number; clientY: number }) => setMagnifier({ cx, cy, mx: e.clientX, my: e.clientY, label }),
+    onMouseMove: (e: { clientX: number; clientY: number }) =>
+      setMagnifier(m => (m ? { ...m, mx: e.clientX, my: e.clientY } : m)),
+    onMouseLeave: () => setMagnifier(null),
+  });
 
   // CNC Toolpath Simulation
   const startSimulation = useCallback(() => {
@@ -462,6 +636,19 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
           {geometryFixMode.enabled && (
             <div className="flex rounded-lg border border-border overflow-hidden font-mono text-xs">
               <button
+                onClick={() => changeFixMethod("smart")}
+                className={`px-3 py-1 transition ${
+                  geometryFixMode.method === "smart"
+                    ? "bg-purple-500/20 text-purple-400 font-bold"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title={lang === "ar"
+                  ? "يحلل أسلوب الرسم ويكمل بنفس النمط (خط/قوس/منحنى)"
+                  : "Analyzes the drawing style and continues in the same pattern (line/arc/curve)"}
+              >
+                {lang === "ar" ? `🧠 ذكي` : `🧠 Smart`}
+              </button>
+              <button
                 onClick={() => changeFixMethod("straight")}
                 className={`px-3 py-1 transition ${
                   geometryFixMode.method === "straight"
@@ -593,9 +780,14 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
             const { from, to, closable } = bridge;
             const fx = from.x, fy = flipY(from.y);
             const tx = to.x, ty = flipY(to.y);
+            const mcx = (from.x + to.x) / 2;
+            const mcy = (from.y + to.y) / 2;
             const color = closable ? "#22c55e" : "#ef4444"; // green for auto-closable, red for manual
             const opacity = closable ? 0.7 : 0.5;
             const dash = closable ? "4,2" : "8,4";
+            const label = lang === "ar"
+              ? `فجوة ${bridge.gap.toFixed(3)} مم`
+              : `Gap ${bridge.gap.toFixed(3)} mm`;
             return (
               <line
                 key={`bridge-${i}`}
@@ -605,6 +797,7 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
                 strokeDasharray={dash}
                 opacity={opacity}
                 strokeLinecap="round"
+                {...focusHandlers(mcx, mcy, label)}
               />
             );
           })}
@@ -616,6 +809,11 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
                 const { from, to } = fix.bridge;
                 const fx = from.x, fy = flipY(from.y);
                 const tx = to.x, ty = flipY(to.y);
+                const mcx = (from.x + to.x) / 2;
+                const mcy = (from.y + to.y) / 2;
+                const label = lang === "ar"
+                  ? `ربط ${fix.bridge.gap.toFixed(3)} مم`
+                  : `Bridge ${fix.bridge.gap.toFixed(3)} mm`;
                 if (fix.entity.type === "LWPOLYLINE" && fix.entity.vertices && fix.entity.vertices.length > 2) {
                   const pts = [
                     { x: fx, y: fy },
@@ -633,6 +831,7 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
                       opacity={0.95}
                       strokeLinecap="round"
                       strokeLinejoin="round"
+                      {...focusHandlers(mcx, mcy, label)}
                     />
                   );
                 }
@@ -644,6 +843,7 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
                     strokeWidth={strokeW * 1.4}
                     opacity={0.95}
                     strokeLinecap="round"
+                    {...focusHandlers(mcx, mcy, label)}
                   />
                 );
               })}
@@ -651,7 +851,14 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
           )}
           {/* Open loop indicators - bright red circles */}
           {showOpenLoops && svgOpenPoints.map((pt, i) => (
-            <g key={`open-${i}`}>
+            <g
+              key={`open-${i}`}
+              {...focusHandlers(
+                active.openPoints[i]?.x ?? pt.x,
+                active.openPoints[i]?.y ?? pt.y,
+                lang === "ar" ? "نقطة مفتوحة" : "Open point",
+              )}
+            >
               <circle
                 cx={pt.x}
                 cy={pt.y}
@@ -672,6 +879,149 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
           ))}
         </svg>
       </div>
+
+      {/* Gap magnifier — circular loupe that follows the cursor over open
+          points / bridges, rendering the area magnified so the user sees the
+          exact gap detail (and the proposed blue bridge) clearly. */}
+      {magnifier && (
+        <div
+          style={{
+            position: "fixed",
+            left: magnifier.mx + 18,
+            top: magnifier.my + 18,
+            width: MAG_SIZE,
+            height: MAG_SIZE,
+            borderRadius: "50%",
+            overflow: "hidden",
+            border: "2px solid rgba(59,130,246,0.9)",
+            boxShadow: "0 10px 40px rgba(0,0,0,0.7)",
+            background: "#0d1117",
+            pointerEvents: "none",
+            zIndex: 60,
+          }}
+        >
+          <svg
+            viewBox={`${magnifier.cx - magHalf} ${flipY(magnifier.cy) - magHalf} ${magWin} ${magWin}`}
+            width={MAG_SIZE}
+            height={MAG_SIZE}
+          >
+            {/* Context geometry — dimmed so the gap stands out */}
+            {visiblePaths.map((p, i) => (
+              <path
+                key={`mag-${i}`}
+                d={p.d}
+                stroke="#64748b"
+                strokeWidth={0.5}
+                fill="none"
+                opacity={0.4}
+              />
+            ))}
+            {/* Dashed bridge lines */}
+            {showOpenLoops && active.bridges.map((bridge, i) => (
+              <line
+                key={`mag-bridge-${i}`}
+                x1={bridge.from.x}
+                y1={flipY(bridge.from.y)}
+                x2={bridge.to.x}
+                y2={flipY(bridge.to.y)}
+                stroke={bridge.closable ? "#22c55e" : "#ef4444"}
+                strokeWidth={1.8}
+                strokeDasharray={bridge.closable ? "4,2" : "8,4"}
+                opacity={0.95}
+              />
+            ))}
+            {/* Blue fix bridges (proposed or applied) */}
+            {(fixEntities.length > 0 || (geometryFixMode.enabled && proposedFixes.length > 0)) &&
+              (fixEntities.length > 0 ? fixEntities : proposedFixes).map((fix, i) => {
+                const { from, to } = fix.bridge;
+                if (fix.entity.type === "LWPOLYLINE" && fix.entity.vertices && fix.entity.vertices.length > 2) {
+                  const pts = [
+                    { x: from.x, y: flipY(from.y) },
+                    ...fix.entity.vertices.slice(1, -1).map(v => ({ x: v.x, y: flipY(v.y) })),
+                    { x: to.x, y: flipY(to.y) },
+                  ];
+                  const d = pts.map((p, j) => `${j === 0 ? "M" : "L"} ${p.x.toFixed(4)} ${p.y.toFixed(4)}`).join(" ");
+                  return (
+                    <path
+                      key={`mag-fix-arc-${i}`}
+                      d={d}
+                      stroke="#3b82f6"
+                      strokeWidth={2}
+                      fill="none"
+                      opacity={0.98}
+                    />
+                  );
+                }
+                return (
+                  <line
+                    key={`mag-fix-line-${i}`}
+                    x1={from.x}
+                    y1={flipY(from.y)}
+                    x2={to.x}
+                    y2={flipY(to.y)}
+                    stroke="#3b82f6"
+                    strokeWidth={2}
+                    opacity={0.98}
+                  />
+                );
+              })}
+            {/* Open point dots */}
+            {showOpenLoops && svgOpenPoints.map((pt, i) => (
+              <g key={`mag-open-${i}`}>
+                <circle
+                  cx={pt.x}
+                  cy={pt.y}
+                  r={3.5}
+                  fill="none"
+                  stroke="#ef4444"
+                  strokeWidth={2}
+                  opacity={0.95}
+                />
+                <circle cx={pt.x} cy={pt.y} r={1.5} fill="#ef4444" />
+              </g>
+            ))}
+            {/* Center crosshair */}
+            <line
+              x1={magnifier.cx - magHalf * 0.08}
+              y1={flipY(magnifier.cy)}
+              x2={magnifier.cx + magHalf * 0.08}
+              y2={flipY(magnifier.cy)}
+              stroke="rgba(59,130,246,0.5)"
+              strokeWidth={1}
+            />
+            <line
+              x1={magnifier.cx}
+              y1={flipY(magnifier.cy) - magHalf * 0.08}
+              x2={magnifier.cx}
+              y2={flipY(magnifier.cy) + magHalf * 0.08}
+              stroke="rgba(59,130,246,0.5)"
+              strokeWidth={1}
+            />
+          </svg>
+          <div
+            style={{
+              position: "absolute",
+              bottom: 8,
+              left: 0,
+              right: 0,
+              textAlign: "center",
+            }}
+          >
+            <span
+              style={{
+                background: "rgba(0,0,0,0.75)",
+                color: "#e2e8f0",
+                padding: "2px 10px",
+                borderRadius: 10,
+                fontSize: 12,
+                fontFamily: "'JetBrains Mono', monospace",
+              }}
+            >
+              {magnifier.label}
+              </span>
+          </div>
+        </div>
+      )}
 
       {/* Simulation progress bar */}
       {simulating && (
