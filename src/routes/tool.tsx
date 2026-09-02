@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { analyzeDxf, repairDxf, scoreColor, scoreBg, scoreLabel, getDxfBounds, buildSvgPaths, calculateTotalPerimeter, sortInsideFirst } from "@/lib/dxf";
-import type { DxfAnalysis, DxfIssue, FixSummaryItem, DxfBounds, SvgPath } from "@/lib/dxf";
+import type { DxfAnalysis, DxfIssue, FixSummaryItem, DxfBounds, SvgPath, DxfEntity } from "@/lib/dxf";
 // Open-path detection: consume the cleanup engine's public API only — NO engine changes.
 import { DEFAULT_CLEANUP_OPTIONS, detectOpenPaths } from "@/lib/dxf-cleanup";
 import { downloadAllAsZip, triggerSelfDestruct, isSelfDestructTriggered } from "@/lib/zip-export";
@@ -18,7 +18,7 @@ import type { PathSegment } from "@/lib/path-union";
 import { pathsToCuttingPaths, advancedOptimize, generateOptimizationReport } from "@/lib/toolpath-optimizer";
 import type { CuttingPath } from "@/lib/toolpath-optimizer";
 import { recordRepair, recordUpload } from "@/lib/stats";
-import { useGeometryFixMode, type GeometryFixState } from "./__root";
+import { useGeometryFixMode, type GeometryFixState, type GeometryFixMethod } from "./__root";
 
 
 interface HistoryEntry {
@@ -66,10 +66,7 @@ function computeOpenLoopData(a: DxfAnalysis | null): { count: number; openPoints
   needsManualRepair.forEach(path => {
     openPoints.push(path.start);
     openPoints.push(path.end);
-    // Add bridge preview for gaps that WOULD be auto-closed (< 0.1mm) but aren't yet repaired
-    // Actually, for the preview we show bridges for ALL detected gaps with their status
   });
-  // Add bridge previews for ALL open paths (both closable and manual-repair)
   openPaths.forEach(path => {
     if (path.partner) {
       bridges.push({
@@ -81,6 +78,125 @@ function computeOpenLoopData(a: DxfAnalysis | null): { count: number; openPoints
     }
   });
   return { count: needsManualRepair.length, openPoints, fixedCount: fixedOpen.length, bridges };
+}
+
+// ─── Geometry Fix Mode: build replacement geometry for gaps ≥ 0.1mm ─────────
+// Creates ONE new DxfEntity per manually-repairable gap. The strategy is always
+// "add a bridge entity", NEVER "move/destroy the original endpoints", so the
+// surrounding drawing geometry is left 100% untouched (no drawing corruption):
+//   method = "straight" → new LINE from start→partner
+//   method = "arc"      → new LWPOLYLINE with a single half-circle bulge
+//   method = "skip"     → no entity (gap left as-is, user chose to skip)
+interface FixBridgeEntity {
+  entity: DxfEntity;
+  bridge: BridgePreview;
+}
+function buildFixBridgeEntities(
+  analysis: DxfAnalysis | null,
+  method: GeometryFixMethod,
+): FixBridgeEntity[] {
+  if (!analysis || method === "skip") return [];
+  const openPaths = detectOpenPaths(analysis.entities, DEFAULT_CLEANUP_OPTIONS);
+  const manualRepairThreshold = 0.1;
+  const manual = openPaths.filter(p => p.gap >= manualRepairThreshold && p.partner);
+  const used = new Set<string>();
+  const out: FixBridgeEntity[] = [];
+  const layer = analysis.entities[0]?.layer ?? "0";
+  const maxHandle = analysis.entities.reduce((m, e) => {
+    const h = parseInt(e.handle || "0", 16);
+    return Number.isFinite(h) ? Math.max(m, h) : m;
+  }, 0);
+
+  manual.forEach((path, i) => {
+    const from = path.start;
+    const to = path.partner!;
+    // Key both orientations so each gap is bridged exactly once.
+    const key = [from.x, from.y, to.x, to.y].map(n => n.toFixed(6)).join(",");
+    const revKey = [to.x, to.y, from.x, from.y].map(n => n.toFixed(6)).join(",");
+    if (used.has(key) || used.has(revKey)) return;
+    used.add(key);
+    used.add(revKey);
+    const handle = (maxHandle + i + 1).toString(16);
+    const bridge: BridgePreview = { from, to, gap: path.gap, closable: false };
+
+    if (method === "arc") {
+      const mx = (from.x + to.x) / 2;
+      const my = (from.y + to.y) / 2;
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
+      const len = Math.hypot(dx, dy) || 1e-9;
+      // Half-circle arc → signed bulge 1.0 (bulge = tan(sweep/4); sweep=180° → 1)
+      const entity: DxfEntity = {
+        type: "LWPOLYLINE",
+        layer,
+        handle,
+        rawLines: [],
+        closed: false,
+        vertices: [
+          { x: from.x, y: from.y },
+          { x: mx + (-dy / len) * (len / 2), y: my + (dx / len) * (len / 2) },
+          { x: to.x, y: to.y },
+        ],
+      };
+      out.push({ entity, bridge });
+    } else {
+      const entity: DxfEntity = {
+        type: "LINE",
+        layer,
+        handle,
+        rawLines: [],
+        x1: from.x, y1: from.y,
+        x2: to.x, y2: to.y,
+      };
+      out.push({ entity, bridge });
+    }
+  });
+  return out;
+}
+
+// Serialize a single fix entity (LINE / LWPOLYLINE) into DXF ENTITIES text.
+// Mirrors the serialiser in src/lib/dxf.ts so the downloaded file stays valid.
+function serializeFixEntity(e: DxfEntity): string {
+  if (e.type === "LWPOLYLINE" && e.vertices) {
+    const lines: string[] = [
+      "  0", "LWPOLYLINE",
+      "  8", e.layer,
+      " 90", String(e.vertices.length),
+      " 70", e.closed ? "1" : "0",
+    ];
+    if (e.handle) lines.push("  5", e.handle);
+    for (const v of e.vertices) {
+      lines.push(" 10", v.x.toFixed(6));
+      lines.push(" 20", v.y.toFixed(6));
+      if (v.bulge && v.bulge !== 0) lines.push(" 42", v.bulge.toFixed(6));
+    }
+    return lines.join("\n");
+  }
+  // LINE
+  const lines: string[] = ["  0", "LINE", "  8", e.layer];
+  if (e.handle) lines.push("  5", e.handle);
+  lines.push(" 10", (e.x1 ?? 0).toFixed(6));
+  lines.push(" 20", (e.y1 ?? 0).toFixed(6));
+  lines.push(" 11", (e.x2 ?? 0).toFixed(6));
+  lines.push(" 21", (e.y2 ?? 0).toFixed(6));
+  return lines.join("\n");
+}
+
+// Append applied fix bridge entities into an existing DXF string, inserted just
+// before the ENTITIES ENDSEC. Returns the original content when nothing to add.
+function appendFixEntitiesToDxf(
+  content: string,
+  fixEntities: FixBridgeEntity[],
+): string {
+  if (!content || fixEntities.length === 0) return content;
+  const block = fixEntities.map(f => serializeFixEntity(f.entity)).join("\n");
+  // Insert before "\n  0\nENDSEC" inside the ENTITIES section (the first ENDSEC).
+  const endSecIdx = content.indexOf("\n  0\nENDSEC");
+  if (endSecIdx === -1) {
+    // Fallback: append at EOF (still valid for most consumers).
+    return content.endsWith("\n") ? content + block + "\n" : content + "\n" + block + "\n";
+  }
+  return content.slice(0, endSecIdx) + "\n" + block + content.slice(endSecIdx);
 }
 
 // Data bundle rendered by the preview — one for the repaired file ("after")
@@ -121,6 +237,36 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
   const active: PreviewData = showBefore && before
     ? before
     : { analysis, issueIndices, openPoints: openPoints ?? [], pathCount: pathCount ?? 0, bridges: bridges ?? [] };
+
+  // Applied bridge entities (live preview of the fix, with Undo support).
+  const [fixEntities, setFixEntities] = useState<FixBridgeEntity[]>([]);
+  // Rebuild proposed fix entities whenever the file / method / mode changes.
+  const proposedFixes = useMemo(
+    () => (geometryFixMode.enabled ? buildFixBridgeEntities(active.analysis, geometryFixMode.method) : []),
+    [geometryFixMode.enabled, geometryFixMode.method, active.analysis],
+  );
+  const applyFix = useCallback(() => {
+    setFixEntities(proposedFixes);
+    setGeometryFixMode(prev => ({ ...prev, applied: proposedFixes.length > 0 }));
+  }, [proposedFixes, setGeometryFixMode]);
+  const undoFix = useCallback(() => {
+    setFixEntities([]);
+    setGeometryFixMode(prev => ({ ...prev, applied: false }));
+  }, [setGeometryFixMode]);
+  // Switching mode off clears both the applied mark and the live entities.
+  const toggleFixMode = useCallback(() => {
+    setGeometryFixMode(prev => {
+      const enabled = !prev.enabled;
+      return enabled
+        ? { ...prev, enabled }
+        : { enabled, method: prev.method, applied: false };
+    });
+    if (geometryFixMode.enabled) setFixEntities([]);
+  }, [geometryFixMode.enabled, setGeometryFixMode]);
+  const changeFixMethod = useCallback((method: GeometryFixMethod) => {
+    setGeometryFixMode(prev => ({ ...prev, method, applied: false }));
+    setFixEntities([]);
+  }, [setGeometryFixMode]);
 
   const bounds = getDxfBounds(active.analysis.entities);
   if (!bounds || bounds.width === 0 || bounds.height === 0) {
@@ -303,7 +449,7 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
           )}
           {active.bridges.length > 0 && (
             <button
-              onClick={() => setGeometryFixMode((prev: GeometryFixState) => ({ ...prev, enabled: !prev.enabled }))}
+              onClick={toggleFixMode}
               className={`font-mono text-xs px-3 py-1 rounded-lg border transition ${
                 geometryFixMode.enabled
                   ? "border-blue-500 bg-blue-500/20 text-blue-400"
@@ -316,7 +462,7 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
           {geometryFixMode.enabled && (
             <div className="flex rounded-lg border border-border overflow-hidden font-mono text-xs">
               <button
-                onClick={() => setGeometryFixMode({ enabled: true, method: "straight" })}
+                onClick={() => changeFixMethod("straight")}
                 className={`px-3 py-1 transition ${
                   geometryFixMode.method === "straight"
                     ? "bg-blue-500/20 text-blue-400 font-bold"
@@ -326,7 +472,7 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
                 {lang === "ar" ? `خط مستقيم` : `Straight Line`}
               </button>
               <button
-                onClick={() => setGeometryFixMode({ enabled: true, method: "arc" })}
+                onClick={() => changeFixMethod("arc")}
                 className={`px-3 py-1 transition ${
                   geometryFixMode.method === "arc"
                     ? "bg-blue-500/20 text-blue-400 font-bold"
@@ -336,7 +482,7 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
                 {lang === "ar" ? `قوس` : `Arc Blend`}
               </button>
               <button
-                onClick={() => setGeometryFixMode({ enabled: true, method: "skip" })}
+                onClick={() => changeFixMethod("skip")}
                 className={`px-3 py-1 transition ${
                   geometryFixMode.method === "skip"
                     ? "bg-blue-500/20 text-blue-400 font-bold"
@@ -345,6 +491,35 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
               >
                 {lang === "ar" ? `تخطي` : `Skip`}
               </button>
+            </div>
+          )}
+          {geometryFixMode.enabled && proposedFixes.length > 0 && !(showBefore && before) && (
+            <div className="flex items-center gap-1.5">
+              {geometryFixMode.applied ? (
+                <button
+                  onClick={undoFix}
+                  className="font-mono text-xs px-3 py-1 rounded-lg border border-green-500/50 bg-green-500/15 text-green-400 hover:bg-green-500/25 transition font-bold"
+                >
+                  {lang === "ar"
+                    ? `✓ تم تطبيق ${proposedFixes.length} إصلاح — تراجع`
+                    : `✓ Applied ${proposedFixes.length} fixes — Undo`}
+                </button>
+              ) : (
+                <button
+                  onClick={applyFix}
+                  className="font-mono text-xs px-3 py-1 rounded-lg border border-cyan-500/50 bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 transition font-bold"
+                >
+                  {lang === "ar" ? `✔ تطبيق ${proposedFixes.length} إصلاح` : `✔ Apply ${proposedFixes.length} fixes`}
+                </button>
+              )}
+              {fixEntities.length > 0 && !geometryFixMode.applied && (
+                <button
+                  onClick={undoFix}
+                  className="font-mono text-xs px-3 py-1 rounded-lg border border-amber-500/50 bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 transition"
+                >
+                  {lang === "ar" ? "↩ تراجع" : "↩ Undo"}
+                </button>
+              )}
             </div>
           )}
           {hasIssues && (
@@ -433,6 +608,47 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
               />
             );
           })}
+          {/* Applied / proposed Geometry-Fix bridges — solid blue so the user
+              sees EXACTLY where the new connecting geometry will be drawn. */}
+          {(fixEntities.length > 0 || (geometryFixMode.enabled && proposedFixes.length > 0)) && (
+            <g>
+              {(fixEntities.length > 0 ? fixEntities : proposedFixes).map((fix, i) => {
+                const { from, to } = fix.bridge;
+                const fx = from.x, fy = flipY(from.y);
+                const tx = to.x, ty = flipY(to.y);
+                if (fix.entity.type === "LWPOLYLINE" && fix.entity.vertices && fix.entity.vertices.length > 2) {
+                  const pts = [
+                    { x: fx, y: fy },
+                    ...fix.entity.vertices.slice(1, -1).map(v => ({ x: v.x, y: flipY(v.y) })),
+                    { x: tx, y: ty },
+                  ];
+                  const d = pts.map((p, j) => `${j === 0 ? "M" : "L"} ${p.x.toFixed(4)} ${p.y.toFixed(4)}`).join(" ");
+                  return (
+                    <path
+                      key={`fix-arc-${i}`}
+                      d={d}
+                      stroke="#3b82f6"
+                      strokeWidth={strokeW * 1.4}
+                      fill="none"
+                      opacity={0.95}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  );
+                }
+                return (
+                  <line
+                    key={`fix-line-${i}`}
+                    x1={fx} y1={fy} x2={tx} y2={ty}
+                    stroke="#3b82f6"
+                    strokeWidth={strokeW * 1.4}
+                    opacity={0.95}
+                    strokeLinecap="round"
+                  />
+                );
+              })}
+            </g>
+          )}
           {/* Open loop indicators - bright red circles */}
           {showOpenLoops && svgOpenPoints.map((pt, i) => (
             <g key={`open-${i}`}>
@@ -609,6 +825,8 @@ function StepIndicator({ stage, lang }: { stage: Stage; lang: "ar" | "en" }) {
 function ToolPage() {
   const [lang, setLang] = useState<Lang>("ar");
   const [stage, setStage] = useState<Stage>("upload");
+  // Geometry Fix Mode — shared with the preview toolbar (read `applied`).
+  const { geometryFixMode } = useGeometryFixMode();
   const [dragging, setDragging] = useState(false);
   const [fileName, setFileName] = useState("");
   const [fileContent, setFileContent] = useState("");
@@ -1051,7 +1269,17 @@ function ToolPage() {
   };
 
   const handleDownloadFixed = () => {
-    triggerMonetagAdAndDownload(repairedContent, fileName.replace(/\.dxf$/i, "_fixed.dxf"));
+    // If the user applied Geometry-Fix bridges, inject them into the exported
+    // DXF so the downloaded file actually contains the new connecting geometry.
+    let content = repairedContent;
+    const fixAnalysis = repairedAnalysis ?? analysis;
+    if (geometryFixMode.applied && geometryFixMode.enabled && geometryFixMode.method !== "skip" && fixAnalysis) {
+      const fixes = buildFixBridgeEntities(fixAnalysis, geometryFixMode.method);
+      if (fixes.length > 0) {
+        content = appendFixEntitiesToDxf(content, fixes);
+      }
+    }
+    triggerMonetagAdAndDownload(content, fileName.replace(/\.dxf$/i, "_fixed.dxf"));
   };
 
   const triggerMonetagAdAndDownload = (content: string, name: string) => {

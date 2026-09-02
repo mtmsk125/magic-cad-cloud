@@ -85,6 +85,9 @@ export type GeometryFixMethod = "straight" | "arc" | "skip";
 export interface GeometryFixState {
   enabled: boolean;
   method: GeometryFixMethod;
+  /** True once the user clicked "Apply" — the bridge entities are then
+   *  committed and included in the downloaded DXF. */
+  applied: boolean;
 }
 
 // --- Geometry Fix Mode Context ---
@@ -214,6 +217,7 @@ function RootComponent() {
   const [geometryFixMode, setGeometryFixMode] = useState<GeometryFixState>({
     enabled: false,
     method: "straight",
+    applied: false,
   });
 
   useEffect(() => {
