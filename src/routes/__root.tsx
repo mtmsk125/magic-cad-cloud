@@ -7,7 +7,7 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode, createContext, useContext } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
@@ -78,6 +78,25 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
       </div>
     </div>
   );
+}
+
+// --- Geometry Fix Mode State ---
+export type GeometryFixMethod = "straight" | "arc" | "skip";
+export interface GeometryFixState {
+  enabled: boolean;
+  method: GeometryFixMethod;
+}
+
+// --- Geometry Fix Mode Context ---
+const GeometryFixContext = createContext<{
+  geometryFixMode: GeometryFixState;
+  setGeometryFixMode: (mode: GeometryFixState | ((prev: GeometryFixState) => GeometryFixState)) => void;
+} | null>(null);
+
+export function useGeometryFixMode() {
+  const ctx = useContext(GeometryFixContext);
+  if (!ctx) throw new Error("useGeometryFixMode must be used within RootComponent");
+  return ctx;
 }
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
@@ -191,6 +210,12 @@ function RootComponent() {
   // preference after mount — never read localStorage during first render.
   const [lang, setLang] = useState<Lang>("ar");
 
+  // --- Geometry Fix Mode ---
+  const [geometryFixMode, setGeometryFixMode] = useState<GeometryFixState>({
+    enabled: false,
+    method: "straight",
+  });
+
   useEffect(() => {
     setIsMounted(true);
     try {
@@ -272,14 +297,16 @@ function RootComponent() {
     return () => window.removeEventListener("dxfix-lang-change" as any, handleLangChange as any);
   }, []);
 
-  return (
+    return (
     <QueryClientProvider client={queryClient}>
-      <SpeedInsights />
-      <PwaInstallPrompt lang={lang === "ar" ? "ar" : "en"} />
-      <CookieBanner />
-      <FloatingNav />
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
+      <GeometryFixContext.Provider value={{ geometryFixMode, setGeometryFixMode }}>
+        <SpeedInsights />
+        <PwaInstallPrompt lang={lang === "ar" ? "ar" : "en"} />
+        <CookieBanner />
+        <FloatingNav />
+        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+        <Outlet />
+      </GeometryFixContext.Provider>
     </QueryClientProvider>
   );
 }

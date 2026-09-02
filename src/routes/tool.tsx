@@ -18,6 +18,7 @@ import type { PathSegment } from "@/lib/path-union";
 import { pathsToCuttingPaths, advancedOptimize, generateOptimizationReport } from "@/lib/toolpath-optimizer";
 import type { CuttingPath } from "@/lib/toolpath-optimizer";
 import { recordRepair, recordUpload } from "@/lib/stats";
+import { useGeometryFixMode, type GeometryFixState } from "./__root";
 
 
 interface HistoryEntry {
@@ -112,6 +113,9 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
   const [simPointer, setSimPointer] = useState<{ x: number; y: number } | null>(null);
   const simRef = useRef<number | null>(null);
   const allPathsRef = useRef<SvgPath[]>([]);
+
+  // Geometry Fix Mode integration
+  const { geometryFixMode, setGeometryFixMode } = useGeometryFixMode();
 
   // Active dataset = "after" (default) or "before" (original file) view.
   const active: PreviewData = showBefore && before
@@ -295,7 +299,53 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
               }`}
             >
               {lang === "ar" ? `🔗 ${active.bridges.length} خطوط توصيل` : `🔗 Bridges (${active.bridges.length})`}
+                        </button>
+          )}
+          {active.bridges.length > 0 && (
+            <button
+              onClick={() => setGeometryFixMode((prev: GeometryFixState) => ({ ...prev, enabled: !prev.enabled }))}
+              className={`font-mono text-xs px-3 py-1 rounded-lg border transition ${
+                geometryFixMode.enabled
+                  ? "border-blue-500 bg-blue-500/20 text-blue-400"
+                  : "border-border text-muted-foreground hover:border-blue-500/50 hover:text-blue-400"
+              }`}
+            >
+              {lang === "ar" ? `🔧 وضع إصلاح الهندسة` : `🔧 Geometry Fix Mode`}
             </button>
+          )}
+          {geometryFixMode.enabled && (
+            <div className="flex rounded-lg border border-border overflow-hidden font-mono text-xs">
+              <button
+                onClick={() => setGeometryFixMode({ enabled: true, method: "straight" })}
+                className={`px-3 py-1 transition ${
+                  geometryFixMode.method === "straight"
+                    ? "bg-blue-500/20 text-blue-400 font-bold"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {lang === "ar" ? `خط مستقيم` : `Straight Line`}
+              </button>
+              <button
+                onClick={() => setGeometryFixMode({ enabled: true, method: "arc" })}
+                className={`px-3 py-1 transition ${
+                  geometryFixMode.method === "arc"
+                    ? "bg-blue-500/20 text-blue-400 font-bold"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {lang === "ar" ? `قوس` : `Arc Blend`}
+              </button>
+              <button
+                onClick={() => setGeometryFixMode({ enabled: true, method: "skip" })}
+                className={`px-3 py-1 transition ${
+                  geometryFixMode.method === "skip"
+                    ? "bg-blue-500/20 text-blue-400 font-bold"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {lang === "ar" ? `تخطي` : `Skip`}
+              </button>
+            </div>
           )}
           {hasIssues && (
             <button
