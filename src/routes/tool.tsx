@@ -48,18 +48,38 @@ const LAYER_COLORS = ["#00d4ff", "#ffd700", "#a855f7", "#34d399", "#f97316", "#e
 // Same engine (detectOpenPaths) and same threshold (0.1mm) as analyzeDxf:
 //   gap <  0.1mm → auto-closed by the engine (no red dot)
 //   gap >= 0.1mm → real problem (red dot + reported as an error)
-function computeOpenLoopData(a: DxfAnalysis | null): { count: number; openPoints: { x: number; y: number }[]; fixedCount: number } {
-  if (!a) return { count: 0, openPoints: [], fixedCount: 0 };
+interface BridgePreview {
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+  gap: number;
+  closable: boolean;
+}
+function computeOpenLoopData(a: DxfAnalysis | null): { count: number; openPoints: { x: number; y: number }[]; fixedCount: number; bridges: BridgePreview[] } {
+  if (!a) return { count: 0, openPoints: [], fixedCount: 0, bridges: [] };
   const manualRepairThreshold = 0.1;
   const openPaths = detectOpenPaths(a.entities, DEFAULT_CLEANUP_OPTIONS);
   const fixedOpen = openPaths.filter(p => p.gap < manualRepairThreshold);
   const needsManualRepair = openPaths.filter(p => p.gap >= manualRepairThreshold);
   const openPoints: { x: number; y: number }[] = [];
+  const bridges: BridgePreview[] = [];
   needsManualRepair.forEach(path => {
     openPoints.push(path.start);
     openPoints.push(path.end);
+    // Add bridge preview for gaps that WOULD be auto-closed (< 0.1mm) but aren't yet repaired
+    // Actually, for the preview we show bridges for ALL detected gaps with their status
   });
-  return { count: needsManualRepair.length, openPoints, fixedCount: fixedOpen.length };
+  // Add bridge previews for ALL open paths (both closable and manual-repair)
+  openPaths.forEach(path => {
+    if (path.partner) {
+      bridges.push({
+        from: path.start,
+        to: path.partner,
+        gap: path.gap,
+        closable: path.gap < manualRepairThreshold,
+      });
+    }
+  });
+  return { count: needsManualRepair.length, openPoints, fixedCount: fixedOpen.length, bridges };
 }
 
 // Data bundle rendered by the preview — one for the repaired file ("after")
@@ -70,14 +90,16 @@ interface PreviewData {
   issueIndices: Set<number>;
   openPoints: { x: number; y: number }[];
   pathCount: number;
+  bridges: BridgePreview[];
 }
 
-function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, before }: {
+function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridges, before }: {
   analysis: DxfAnalysis;
   issueIndices: Set<number>;
   lang: "ar" | "en";
   openPoints?: { x: number; y: number }[];
   pathCount?: number;
+  bridges?: BridgePreview[];
   before?: PreviewData;
 }) {
   const [zoom, setZoom] = useState(1);
@@ -94,7 +116,7 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, befor
   // Active dataset = "after" (default) or "before" (original file) view.
   const active: PreviewData = showBefore && before
     ? before
-    : { analysis, issueIndices, openPoints: openPoints ?? [], pathCount: pathCount ?? 0 };
+    : { analysis, issueIndices, openPoints: openPoints ?? [], pathCount: pathCount ?? 0, bridges: bridges ?? [] };
 
   const bounds = getDxfBounds(active.analysis.entities);
   if (!bounds || bounds.width === 0 || bounds.height === 0) {
@@ -263,6 +285,18 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, befor
               {lang === "ar" ? `🟡 ${active.pathCount} نقطة تحتاج إصلاح` : `🔴 Open points (${active.pathCount})`}
             </button>
           )}
+          {active.bridges.length > 0 && (
+            <button
+              onClick={() => setShowOpenLoops(v => !v)}
+              className={`font-mono text-xs px-3 py-1 rounded-lg border transition ${
+                showOpenLoops
+                  ? "border-green-500 bg-green-500/20 text-green-400"
+                  : "border-border text-muted-foreground hover:border-green-500/50 hover:text-green-400"
+              }`}
+            >
+              {lang === "ar" ? `🔗 ${active.bridges.length} خطوط توصيل` : `🔗 Bridges (${active.bridges.length})`}
+            </button>
+          )}
           {hasIssues && (
             <button
               onClick={() => setIssuesOnly(v => !v)}
@@ -329,6 +363,26 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, befor
               />
             </g>
           )}
+          {/* Bridge preview lines - dashed lines showing how open endpoints will be connected */}
+          {showOpenLoops && active.bridges.map((bridge, i) => {
+            const { from, to, closable } = bridge;
+            const fx = from.x, fy = flipY(from.y);
+            const tx = to.x, ty = flipY(to.y);
+            const color = closable ? "#22c55e" : "#ef4444"; // green for auto-closable, red for manual
+            const opacity = closable ? 0.7 : 0.5;
+            const dash = closable ? "4,2" : "8,4";
+            return (
+              <line
+                key={`bridge-${i}`}
+                x1={fx} y1={fy} x2={tx} y2={ty}
+                stroke={color}
+                strokeWidth={strokeW * 1.2}
+                strokeDasharray={dash}
+                opacity={opacity}
+                strokeLinecap="round"
+              />
+            );
+          })}
           {/* Open loop indicators - bright red circles */}
           {showOpenLoops && svgOpenPoints.map((pt, i) => (
             <g key={`open-${i}`}>
@@ -1661,11 +1715,13 @@ function ToolPage() {
                 lang={lang}
                 openPoints={openLoopData.openPoints}
                 pathCount={openLoopData.count}
+                bridges={openLoopData.bridges}
                 before={stage === "repaired" && analysis ? {
                   analysis,
                   issueIndices: beforeIssueIndices,
                   openPoints: beforeLoopData.openPoints,
                   pathCount: beforeLoopData.count,
+                  bridges: beforeLoopData.bridges,
                 } : undefined}
               />;
             })()}

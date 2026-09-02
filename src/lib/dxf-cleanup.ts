@@ -452,6 +452,11 @@ export function detectOpenPaths(
       const a2 = ((e.endAngle ?? 0) * Math.PI) / 180;
       eps.push({ x: (e.cx ?? 0) + r * Math.cos(a1), y: (e.cy ?? 0) + r * Math.sin(a1), idx });
       eps.push({ x: (e.cx ?? 0) + r * Math.cos(a2), y: (e.cy ?? 0) + r * Math.sin(a2), idx });
+    } else if (e.type === "SPLINE" && e.vertices && e.vertices.length > 1) {
+      // SPLINE endpoints — treat like open polyline
+      const v = e.vertices;
+      eps.push({ x: v[0].x, y: v[0].y, idx });
+      eps.push({ x: v[v.length - 1].x, y: v[v.length - 1].y, idx });
     }
   });
 
