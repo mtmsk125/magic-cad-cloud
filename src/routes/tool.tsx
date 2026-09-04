@@ -721,32 +721,19 @@ function DxfPreview({
                 ? "▶ تشغيل المحاكاة"
                 : "▶ Play Simulation"}
           </button>
-          {active.openPoints.length > 0 && (
+          {/* Single combined toggle for open-points + bridges (avoids two buttons controlling the same state) */}
+          {(active.openPoints.length > 0 || active.bridges.length > 0) && (
             <button
               onClick={() => setShowOpenLoops((v) => !v)}
               className={`font-mono text-xs px-3 py-1 rounded-lg border transition ${
                 showOpenLoops
-                  ? "border-red-500 bg-red-500/20 text-red-400"
-                  : "border-border text-muted-foreground hover:border-red-500/50 hover:text-red-400"
+                  ? "border-amber-500 bg-amber-500/20 text-amber-400"
+                  : "border-border text-muted-foreground hover:border-amber-500/50 hover:text-amber-400"
               }`}
             >
               {lang === "ar"
-                ? `🟡 ${active.pathCount} نقطة تحتاج إصلاح`
-                : `🔴 Open points (${active.pathCount})`}
-            </button>
-          )}
-          {active.bridges.length > 0 && (
-            <button
-              onClick={() => setShowOpenLoops((v) => !v)}
-              className={`font-mono text-xs px-3 py-1 rounded-lg border transition ${
-                showOpenLoops
-                  ? "border-green-500 bg-green-500/20 text-green-400"
-                  : "border-border text-muted-foreground hover:border-green-500/50 hover:text-green-400"
-              }`}
-            >
-              {lang === "ar"
-                ? `🔗 ${active.bridges.length} خطوط توصيل`
-                : `🔗 Bridges (${active.bridges.length})`}
+                ? `👁 ${active.pathCount} نقطة / ${active.bridges.length} جسور`
+                : `👁 ${active.pathCount} points / ${active.bridges.length} bridges`}
             </button>
           )}
           {active.bridges.length > 0 && (
@@ -2925,17 +2912,27 @@ function ToolPage() {
               );
             })()}
 
-            {/* Open Loops Count */}
+            {/* Open Loops Count — after repair, show a calmer message since auto-repair already ran */}
             {openLoopData.count > 0 && (
-              <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-4 text-center">
-                <p className="text-sm font-medium text-red-400">
-                  {openLoopData.count > 0
+              <div className={`rounded-2xl border p-4 text-center ${
+                stage === "repaired"
+                  ? "border-green-500/30 bg-green-500/5"
+                  : "border-red-500/30 bg-red-500/5"
+              }`}>
+                <p className={`text-sm font-medium ${
+                  stage === "repaired" ? "text-green-400" : "text-red-400"
+                }`}>
+                  {stage === "repaired"
                     ? lang === "ar"
-                      ? `🟡 ${openLoopData.count} نقطة مفتوحة (فجوة ≥ 0.1 مم) تحتاج إصلاح يدوي`
-                      : `🟡 ${openLoopData.count} open points (gap ≥ 0.1mm) need manual repair`
-                    : lang === "ar"
-                      ? `✓ جميع الفجوات < 0.1 مم أُغلقت تلقائياً`
-                      : `✓ All gaps < 0.1mm auto-closed`}
+                      ? `✓ تم الإصلاح التلقائي — بقي ${openLoopData.count} فجوة كبيرة (≥ ${gapTolerance}مم) تحتاج تدخل يدوي اختياري`
+                      : `✓ Auto-repair done — ${openLoopData.count} large gaps (≥ ${gapTolerance}mm) remain for optional manual fix`
+                    : openLoopData.count > 0
+                      ? lang === "ar"
+                        ? `🟡 ${openLoopData.count} نقطة مفتوحة (فجوة ≥ ${gapTolerance}مم) تحتاج إصلاح`
+                        : `🟡 ${openLoopData.count} open points (gap ≥ ${gapTolerance}mm) need repair`
+                      : lang === "ar"
+                        ? `✓ جميع الفجوات < ${gapTolerance}مم أُغلقت تلقائياً`
+                        : `✓ All gaps < ${gapTolerance}mm auto-closed`}
                 </p>
               </div>
             )}
