@@ -696,24 +696,84 @@ function Index() {
             </h2>
           </div>
         </div>
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-px bg-border rounded-xl overflow-hidden border border-border">
-          {[
-            [t.f1t, t.f1d, "01"],
-            [t.f2t, t.f2d, "02"],
-            [t.f3t, t.f3d, "03"],
-            [t.f4t, t.f4d, "04"],
-            [t.f5t, t.f5d, "05"],
-            [t.f6t, t.f6d, "06"],
-          ].map(([title, desc, num]) => (
-            <div key={num} className="bg-card p-8 group hover:bg-secondary/60 transition relative">
-              <div className="font-mono text-xs text-primary/70">/{num}</div>
-              <h3 className="font-display mt-4 text-xl font-semibold">{title}</h3>
-              <p className="mt-3 text-sm text-muted-foreground leading-relaxed">{desc}</p>
-              <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-primary to-transparent opacity-0 group-hover:opacity-100 transition" />
-            </div>
-          ))}
-        </div>
-      </section>
+         {/* Feature groups — collapsible sections reduce visual clutter while keeping all 6 features accessible */}
+         {(() => {
+           const groups = [
+             {
+               icon: "🔧",
+               titleAr: "\u0627\u0644\u0645\u0639\u0627\u0644\u062c\u0629 \u0648\u0627\u0644\u062a\u062d\u0644\u064a\u0644",
+               titleEn: "Processing & Analysis",
+               cards: [
+                 [t.f1t, t.f1d, "01"],
+                 [t.f2t, t.f2d, "02"],
+               ],
+             },
+             {
+               icon: "📤",
+               titleAr: "\u0627\u0644\u062a\u0635\u062f\u064a\u0631 \u0648\u0627\u0644\u062a\u0648\u0627\u0641\u0642",
+               titleEn: "Export & Compatibility",
+               cards: [
+                 [t.f3t, t.f3d, "03"],
+                 [t.f4t, t.f4d, "04"],
+               ],
+             },
+             {
+               icon: "🛡️",
+               titleAr: "\u0627\u0644\u0644\u063a\u0629 \u0648\u0627\u0644\u0623\u0645\u0627\u0646",
+               titleEn: "Language & Security",
+               cards: [
+                 [t.f5t, t.f5d, "05"],
+                 [t.f6t, t.f6d, "06"],
+               ],
+             },
+           ];
+           const [openGroups, setOpenGroups] = useState<Set<number>>(new Set([0]));
+           const toggleGroup = (i: number) =>
+             setOpenGroups((prev) => {
+               const next = new Set(prev);
+               next.has(i) ? next.delete(i) : next.add(i);
+               return next;
+             });
+           return (
+             <div className="space-y-4">
+               {groups.map((group, gi) => {
+                 const open = openGroups.has(gi);
+                 return (
+                   <div key={gi} className="border border-border rounded-xl overflow-hidden bg-card">
+                     <button
+                       onClick={() => toggleGroup(gi)}
+                       className="w-full flex items-center justify-between p-5 text-start hover:bg-secondary/40 transition"
+                     >
+                       <span className="flex items-center gap-3">
+                         <span className="text-2xl">{group.icon}</span>
+                         <span className="font-display font-bold text-lg">
+                           {lang === "ar" ? group.titleAr : group.titleEn}
+                         </span>
+                         <span className="text-xs font-mono text-muted-foreground bg-secondary px-2 py-0.5 rounded-full">
+                           {group.cards.length}
+                         </span>
+                       </span>
+                       <span className="text-muted-foreground text-sm">{open ? "\u25B2" : "\u25BC"}</span>
+                     </button>
+                     {open && (
+                       <div className="grid md:grid-cols-2 gap-px bg-border/60 border-t border-border">
+                         {group.cards.map(([title, desc, num]) => (
+                           <div key={num} className="bg-card p-7 group hover:bg-secondary/60 transition relative">
+                             <div className="font-mono text-xs text-primary/70">/{num}</div>
+                             <h3 className="font-display mt-3 text-lg font-semibold">{title}</h3>
+                             <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{desc}</p>
+                             <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-primary to-transparent opacity-0 group-hover:opacity-100 transition" />
+                           </div>
+                         ))}
+                       </div>
+                     )}
+                   </div>
+                 );
+               })}
+             </div>
+           );
+         })()}
+       </section>
 
       {/* HOW IT WORKS */}
       <section id="how" className="relative border-y border-border/60 bg-card/30">

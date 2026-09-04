@@ -80,6 +80,8 @@ export interface DxfAnalysis {
   processedFileSize?: number;
   sizeReductionPercent?: number;
   manufacturing?: ManufacturingScan;
+  junctions?: { x: number; y: number; entityCount: number }[];
+  isolatedStrokes?: number[];
 }
 export type ManufacturingCategory = "confirmed" | "potential" | "safe";
 
@@ -127,6 +129,8 @@ import {
   removeResidues,
   DEFAULT_CLEANUP_OPTIONS,
   detectOpenPaths,
+  detectJunctions,
+  detectIsolatedStrokes,
   effectiveTinyTolerance,
 } from "./dxf-cleanup";
 import { classifyManufacturing } from "./manufacturing";
@@ -895,6 +899,10 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
   // Phase 3: manufacturing classification layer (detect/classify only — no repair).
   const mfg = classifyManufacturing(snappedEntities);
 
+  // Detect junctions (3+ entities meeting) and isolated strokes (standalone segments)
+  const junctions = detectJunctions(snappedEntities, DEFAULT_CLEANUP_OPTIONS);
+  const isolatedStrokes = detectIsolatedStrokes(snappedEntities, DEFAULT_CLEANUP_OPTIONS);
+
   return {
     entities: snappedEntities,
     issues,
@@ -912,6 +920,8 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
     originalFileSize,
     sizeReductionPercent,
     manufacturing: mfg,
+    junctions,
+    isolatedStrokes,
   };
 }
 

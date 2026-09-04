@@ -448,6 +448,151 @@ function projectGroup(group: DxfEntity[], _opts: CleanupOptions): Interval[] {
 /* open path detection                                                 */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Detect junctions — points where 3+ distinct entities meet.
+ * Builds a spatial hash of all endpoints; any cell containing endpoints
+ * from 3+ different entities is a junction (fork / T-junction / cross).
+ */
+export function detectJunctions(
+  entities: DxfEntity[],
+  opts: CleanupOptions = DEFAULT_CLEANUP_OPTIONS,
+): { x: number; y: number; entityCount: number }[] {
+  const tol = opts.tolerance;
+  const cellSize = Math.max(tol * 5, 1e-6);
+  const hash = new PointHash(cellSize);
+  type EP = { x: number; y: number; idx: number };
+  const eps: EP[] = [];
+
+  entities.forEach((e, idx) => {
+    if (e.type === "LINE" && lineLength(e) > tol) {
+      eps.push({ x: e.x1 ?? 0, y: e.y1 ?? 0, idx });
+      eps.push({ x: e.x2 ?? 0, y: e.y2 ?? 0, idx });
+    } else if (
+      (e.type === "LWPOLYLINE" || e.type === "POLYLINE") &&
+      e.vertices &&
+      e.vertices.length > 1 &&
+      !e.closed
+    ) {
+      const v = e.vertices;
+      eps.push({ x: v[0].x, y: v[0].y, idx });
+      eps.push({ x: v[v.length - 1].x, y: v[v.length - 1].y, idx });
+    } else if (e.type === "ARC" && (e.radius ?? 0) > tol) {
+      const r = e.radius ?? 0;
+      const a1 = ((e.startAngle ?? 0) * Math.PI) / 180;
+      const a2 = ((e.endAngle ?? 0) * Math.PI) / 180;
+      eps.push({ x: (e.cx ?? 0) + r * Math.cos(a1), y: (e.cy ?? 0) + r * Math.sin(a1), idx });
+      eps.push({ x: (e.cx ?? 0) + r * Math.cos(a2), y: (e.cy ?? 0) + r * Math.sin(a2), idx });
+    } else if (e.type === "SPLINE" && e.vertices && e.vertices.length > 1) {
+      const v = e.vertices;
+      eps.push({ x: v[0].x, y: v[0].y, idx });
+      eps.push({ x: v[v.length - 1].x, y: v[v.length - 1].y, idx });
+    }
+  });
+
+  eps.forEach((p, i) => hash.add(p.x, p.y, i));
+
+  // Group endpoints into clusters
+  const visited = new Set<number>();
+  const junctions: { x: number; y: number; entityCount: number }[] = [];
+
+  for (let i = 0; i < eps.length; i++) {
+    if (visited.has(i)) continue;
+    const cluster: number[] = [i];
+    visited.add(i);
+    const queue = [i];
+    while (queue.length > 0) {
+      const cur = queue.shift()!;
+      const nearby = hash.near(eps[cur].x, eps[cur].y);
+      for (const n of nearby) {
+        if (visited.has(n)) continue;
+        if (dist(eps[cur].x, eps[cur].y, eps[n].x, eps[n].y) <= cellSize) {
+          visited.add(n);
+          cluster.push(n);
+          queue.push(n);
+        }
+      }
+    }
+    // Count distinct entities in this cluster
+    const distinctEntities = new Set(cluster.map((c) => eps[c].idx));
+    if (distinctEntities.size >= 3) {
+      const cx = cluster.reduce((s, c) => s + eps[c].x, 0) / cluster.length;
+      const cy = cluster.reduce((s, c) => s + eps[c].y, 0) / cluster.length;
+      junctions.push({ x: cx, y: cy, entityCount: distinctEntities.size });
+    }
+  }
+  return junctions;
+}
+
+/**
+ * Detect isolated strokes — entities with NO connection at either endpoint.
+ * An entity is isolated when both its endpoints have no nearby endpoint
+ * from a *different* entity within tolerance.
+ */
+export function detectIsolatedStrokes(
+  entities: DxfEntity[],
+  opts: CleanupOptions = DEFAULT_CLEANUP_OPTIONS,
+): number[] {
+  const tol = opts.tolerance;
+  const cellSize = Math.max(tol * 5, 1e-6);
+  const hash = new PointHash(cellSize);
+  type EP = { x: number; y: number; idx: number };
+  const eps: EP[] = [];
+
+  entities.forEach((e, idx) => {
+    if (e.type === "LINE" && lineLength(e) > tol) {
+      eps.push({ x: e.x1 ?? 0, y: e.y1 ?? 0, idx });
+      eps.push({ x: e.x2 ?? 0, y: e.y2 ?? 0, idx });
+    } else if (
+      (e.type === "LWPOLYLINE" || e.type === "POLYLINE") &&
+      e.vertices &&
+      e.vertices.length > 1 &&
+      !e.closed
+    ) {
+      const v = e.vertices;
+      eps.push({ x: v[0].x, y: v[0].y, idx });
+      eps.push({ x: v[v.length - 1].x, y: v[v.length - 1].y, idx });
+    } else if (e.type === "ARC" && (e.radius ?? 0) > tol) {
+      const r = e.radius ?? 0;
+      const a1 = ((e.startAngle ?? 0) * Math.PI) / 180;
+      const a2 = ((e.endAngle ?? 0) * Math.PI) / 180;
+      eps.push({ x: (e.cx ?? 0) + r * Math.cos(a1), y: (e.cy ?? 0) + r * Math.sin(a1), idx });
+      eps.push({ x: (e.cx ?? 0) + r * Math.cos(a2), y: (e.cy ?? 0) + r * Math.sin(a2), idx });
+    } else if (e.type === "SPLINE" && e.vertices && e.vertices.length > 1) {
+      const v = e.vertices;
+      eps.push({ x: v[0].x, y: v[0].y, idx });
+      eps.push({ x: v[v.length - 1].x, y: v[v.length - 1].y, idx });
+    }
+  });
+
+  eps.forEach((p, i) => hash.add(p.x, p.y, i));
+
+  // For each entity, check if either endpoint connects to a DIFFERENT entity
+  const entityHasConnection = new Set<number>();
+  for (let i = 0; i < eps.length; i++) {
+    const nearby = hash.near(eps[i].x, eps[i].y);
+    for (const n of nearby) {
+      if (n === i) continue;
+      if (eps[n].idx !== eps[i].idx && dist(eps[i].x, eps[i].y, eps[n].x, eps[n].y) <= cellSize) {
+        entityHasConnection.add(eps[i].idx);
+        entityHasConnection.add(eps[n].idx);
+      }
+    }
+  }
+
+  // Collect indices of entities that have NO connection at all
+  const isolated: number[] = [];
+  const seenEntities = new Set<number>();
+  for (const e of eps) {
+    if (!seenEntities.has(e.idx)) {
+      seenEntities.add(e.idx);
+      if (!entityHasConnection.has(e.idx)) {
+        isolated.push(e.idx);
+      }
+    }
+  }
+  return isolated;
+}
+
 export function detectOpenPaths(
   entities: DxfEntity[],
   opts: CleanupOptions = DEFAULT_CLEANUP_OPTIONS,

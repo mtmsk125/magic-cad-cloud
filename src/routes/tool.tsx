@@ -428,6 +428,8 @@ function DxfPreview({
   before,
   gapTolerance = 0.1,
   highlightCategory = null,
+  junctions = [],
+  isolatedStrokes = [],
 }: {
   analysis: DxfAnalysis;
   issueIndices: Set<number>;
@@ -438,6 +440,8 @@ function DxfPreview({
   before?: PreviewData;
   gapTolerance?: number;
   highlightCategory?: string | null;
+  junctions?: { x: number; y: number; entityCount: number }[];
+  isolatedStrokes?: number[];
 }) {
   const [zoom, setZoom] = useState(1);
   const [hiddenLayers, setHiddenLayers] = useState<Set<string>>(new Set());
@@ -737,16 +741,23 @@ function DxfPreview({
             </button>
           )}
           {active.bridges.length > 0 && (
-            <button
-              onClick={toggleFixMode}
-              className={`font-mono text-xs px-3 py-1 rounded-lg border transition ${
-                geometryFixMode.enabled
-                  ? "border-blue-500 bg-blue-500/20 text-blue-400"
-                  : "border-border text-muted-foreground hover:border-blue-500/50 hover:text-blue-400"
-              }`}
-            >
-              {lang === "ar" ? `🔧 وضع إصلاح الهندسة` : `🔧 Geometry Fix Mode`}
-            </button>
+            <div className="flex flex-col items-start gap-1">
+              <button
+                onClick={toggleFixMode}
+                className={`font-mono text-xs px-3 py-1 rounded-lg border transition ${
+                  geometryFixMode.enabled
+                    ? "border-blue-500 bg-blue-500/20 text-blue-400"
+                    : "border-border text-muted-foreground hover:border-blue-500/50 hover:text-blue-400"
+                }`}
+              >
+                {lang === "ar" ? `🔧 وضع إصلاح الهندسة` : `🔧 Geometry Fix Mode`}
+              </button>
+              <span className="text-[10px] text-muted-foreground px-1">
+                {lang === "ar"
+                  ? "لإغلاق الفجوات الكبيرة يدوياً بجسر (خط/قوس/ذكي)"
+                  : "Manually close large gaps with a bridge (line/arc/smart)"}
+              </span>
+            </div>
           )}
           {geometryFixMode.enabled && (
             <div className="flex rounded-lg border border-border overflow-hidden font-mono text-xs">
@@ -1039,6 +1050,77 @@ function DxfPreview({
                 />
               </g>
             ))}
+          {/* Junction indicators — cyan diamonds where 3+ entities meet */}
+          {junctions.map((j, i) => {
+            const sz = Math.max(bounds.width, bounds.height) * 0.012;
+            const jx = j.x;
+            const jy = flipY(j.y);
+            const label = lang === "ar"
+              ? `تقاء ${j.entityCount} كيانات`
+              : `Junction of ${j.entityCount} entities`;
+            return (
+              <g key={`junction-${i}`} {...focusHandlers(j.x, j.y, label)}>
+                <rect
+                  x={jx - sz}
+                  y={jy - sz}
+                  width={sz * 2}
+                  height={sz * 2}
+                  fill="#06b6d4"
+                  opacity={0.9}
+                  stroke="#0e7490"
+                  strokeWidth={strokeW}
+                  transform={`rotate(45 ${jx} ${jy})`}
+                />
+              </g>
+            );
+          })}
+          {/* Isolated stroke indicators — purple corners on unconnected entities */}
+          {(() => {
+            const isoSet = new Set(isolatedStrokes);
+            if (isoSet.size === 0) return null;
+            const markers = [];
+            active.analysis.entities.forEach((e, idx) => {
+              if (!isoSet.has(idx)) return;
+              const pts = [];
+              if (e.type === "LINE" && e.x1 != null) {
+                pts.push({ x: e.x1, y: e.y1 ?? 0 });
+                pts.push({ x: e.x2 ?? 0, y: e.y2 ?? 0 });
+              } else if ((e.type === "LWPOLYLINE" || e.type === "POLYLINE") && e.vertices) {
+                pts.push(e.vertices[0]);
+                pts.push(e.vertices[e.vertices.length - 1]);
+              } else if (e.type === "ARC" && e.cx != null && e.radius) {
+                const r = e.radius;
+                const a1 = ((e.startAngle ?? 0) * Math.PI) / 180;
+                const a2 = ((e.endAngle ?? 0) * Math.PI) / 180;
+                pts.push({ x: e.cx + r * Math.cos(a1), y: (e.cy ?? 0) + r * Math.sin(a1) });
+                pts.push({ x: e.cx + r * Math.cos(a2), y: (e.cy ?? 0) + r * Math.sin(a2) });
+              } else if (e.type === "SPLINE" && e.vertices) {
+                pts.push(e.vertices[0]);
+                pts.push(e.vertices[e.vertices.length - 1]);
+              }
+              const sz = Math.max(bounds.width, bounds.height) * 0.008;
+              pts.forEach((p, pi) => {
+                const px = p.x;
+                const py = flipY(p.y);
+                const label = lang === "ar" ? "قطعة معزولة" : "Isolated stroke";
+                markers.push(
+                  <rect
+                    key={`iso-${idx}-${pi}`}
+                    x={px - sz}
+                    y={py - sz}
+                    width={sz * 2}
+                    height={sz * 2}
+                    fill="#8b5cf6"
+                    opacity={0.9}
+                    stroke="#6d28d9"
+                    strokeWidth={strokeW}
+                    {...focusHandlers(p.x, p.y, label)}
+                  />,
+                );
+              });
+            });
+            return markers;
+          })()}
         </svg>
       </div>
 
@@ -2896,6 +2978,8 @@ function ToolPage() {
                   bridges={openLoopData.bridges}
                   gapTolerance={gapTolerance}
                   highlightCategory={highlightCategory}
+                  junctions={displayAnalysis.junctions ?? []}
+                  isolatedStrokes={displayAnalysis.isolatedStrokes ?? []}
                   before={
                     stage === "repaired" && analysis
                       ? {
@@ -2947,6 +3031,8 @@ function ToolPage() {
                 duplicate: ["duplicate_line"],
                 overlap: ["overlapping_lines"],
                 intersect: ["self_intersect"],
+                junctions: [],
+                isolated: [],
               };
               const CATS: { key: string; ar: string; en: string }[] = [
                 { key: "open", ar: "مخططات مفتوحة", en: "Open contours" },
@@ -2954,6 +3040,8 @@ function ToolPage() {
                 { key: "duplicate", ar: "خطوط مكررة", en: "Duplicates" },
                 { key: "overlap", ar: "تداخل خطوط", en: "Overlapping strokes" },
                 { key: "intersect", ar: "تقاطعات ذاتية", en: "Self-intersections" },
+                { key: "junctions", ar: "نقاط تقاء (3+ كيانات)", en: "Junctions (3+ entities)" },
+                { key: "isolated", ar: "قطع معزولة", en: "Isolated strokes" },
               ];
               const CAT_COLORS: Record<string, string> = {
                 open: "#ef4444",
@@ -2961,9 +3049,14 @@ function ToolPage() {
                 duplicate: "#f97316",
                 overlap: "#a855f7",
                 intersect: "#ec4899",
+                junctions: "#06b6d4",
+                isolated: "#8b5cf6",
               };
-              const catCount = (key: string) =>
-                src.issues.filter((i) => (TYPE_MAP[key] ?? []).includes(i.type)).length;
+              const catCount = (key: string) => {
+                if (key === "junctions") return src.junctions?.length ?? 0;
+                if (key === "isolated") return src.isolatedStrokes?.length ?? 0;
+                return src.issues.filter((i) => (TYPE_MAP[key] ?? []).includes(i.type)).length;
+              };
               return (
                 <div className="rounded-2xl border border-border bg-card p-5">
                   <div className="flex items-center justify-between mb-3">
@@ -3875,6 +3968,11 @@ function ToolPage() {
                   >
                     🔧 {t.repairBtn}
                   </button>
+                  <p className="text-[11px] text-muted-foreground mt-1.5 max-w-xs">
+                    {lang === "ar"
+                      ? "ينظّف الملف تلقائياً: يحذف المكررات ويغلق الفجوات الصغيرة"
+                      : "Auto-clean: removes duplicates and closes small gaps"}
+                  </p>
                 </>
               )}
               {stage === "result" && analysis.issues.length === 0 && (
