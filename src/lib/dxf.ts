@@ -15,13 +15,20 @@ export interface DxfEntity {
   handle: string;
   rawLines: string[];
   // LINE
-  x1?: number; y1?: number; z1?: number;
-  x2?: number; y2?: number; z2?: number;
+  x1?: number;
+  y1?: number;
+  z1?: number;
+  x2?: number;
+  y2?: number;
+  z2?: number;
   // ARC / CIRCLE
-  cx?: number; cy?: number; cz?: number;
+  cx?: number;
+  cy?: number;
+  cz?: number;
   radius?: number;
   ratio?: number; // ELLIPSE: minor/major axis ratio
-  startAngle?: number; endAngle?: number;
+  startAngle?: number;
+  endAngle?: number;
   // LWPOLYLINE
   vertices?: DxfVertex[];
   closed?: boolean;
@@ -30,7 +37,14 @@ export interface DxfEntity {
 
 export interface DxfIssue {
   id: string;
-  type: "duplicate_line" | "open_polyline" | "tiny_entity" | "zero_length" | "overlapping_lines" | "self_intersect" | "open_loop";
+  type:
+    | "duplicate_line"
+    | "open_polyline"
+    | "tiny_entity"
+    | "zero_length"
+    | "overlapping_lines"
+    | "self_intersect"
+    | "open_loop";
   severity: "error" | "warning";
   ar: string;
   en: string;
@@ -65,7 +79,7 @@ export interface DxfAnalysis {
   originalFileSize?: number;
   processedFileSize?: number;
   sizeReductionPercent?: number;
-    manufacturing?: ManufacturingScan;
+  manufacturing?: ManufacturingScan;
 }
 export type ManufacturingCategory = "confirmed" | "potential" | "safe";
 
@@ -107,7 +121,14 @@ export interface FixSummaryItem {
   detail: string;
 }
 
-import { cleanupEntities, DEFAULT_CLEANUP_OPTIONS, detectOpenPaths, effectiveTinyTolerance } from "./dxf-cleanup";
+import {
+  cleanupEntities,
+  closeSafeGaps,
+  removeResidues,
+  DEFAULT_CLEANUP_OPTIONS,
+  detectOpenPaths,
+  effectiveTinyTolerance,
+} from "./dxf-cleanup";
 import { classifyManufacturing } from "./manufacturing";
 
 function parseGroups(content: string): DxfGroup[] {
@@ -126,7 +147,7 @@ function parseGroups(content: string): DxfGroup[] {
 }
 
 function groupsToLines(groups: DxfGroup[]): string {
-  return groups.map(g => `${g.code}\n${g.value}`).join("\n");
+  return groups.map((g) => `${g.code}\n${g.value}`).join("\n");
 }
 
 function dist(x1: number, y1: number, x2: number, y2: number): number {
@@ -152,7 +173,11 @@ export function snapOpenEndpoints(entities: DxfEntity[], tolerance: number = 0.0
     if (e.type === "LINE") {
       endpoints.push({ x: e.x1 ?? 0, y: e.y1 ?? 0, entityIndex: i, isStart: true });
       endpoints.push({ x: e.x2 ?? 0, y: e.y2 ?? 0, entityIndex: i, isStart: false });
-    } else if ((e.type === "LWPOLYLINE" || e.type === "POLYLINE") && e.vertices && e.vertices.length > 0) {
+    } else if (
+      (e.type === "LWPOLYLINE" || e.type === "POLYLINE") &&
+      e.vertices &&
+      e.vertices.length > 0
+    ) {
       endpoints.push({ x: e.vertices[0].x, y: e.vertices[0].y, entityIndex: i, isStart: true });
       const last = e.vertices[e.vertices.length - 1];
       if (!e.closed) {
@@ -205,12 +230,16 @@ export function snapOpenEndpoints(entities: DxfEntity[], tolerance: number = 0.0
     } else if ((entity.type === "LWPOLYLINE" || entity.type === "POLYLINE") && entity.vertices) {
       const startKey = `${idx}-start`;
       const endKey = `${idx}-end`;
-      let verts = [...entity.vertices];
+      const verts = [...entity.vertices];
       if (snapped.has(startKey) && verts.length > 0) {
         verts[0] = { ...verts[0], x: snapped.get(startKey)!.x, y: snapped.get(startKey)!.y };
       }
       if (snapped.has(endKey) && verts.length > 0) {
-        verts[verts.length - 1] = { ...verts[verts.length - 1], x: snapped.get(endKey)!.x, y: snapped.get(endKey)!.y };
+        verts[verts.length - 1] = {
+          ...verts[verts.length - 1],
+          x: snapped.get(endKey)!.x,
+          y: snapped.get(endKey)!.y,
+        };
       }
       entity = { ...entity, vertices: verts };
     }
@@ -222,7 +251,11 @@ export function snapOpenEndpoints(entities: DxfEntity[], tolerance: number = 0.0
  * Structural Purge & Cleanup: Strip unused blocks, empty layers, duplicate text,
  * and redundant vector lines from the output.
  */
-export function structuralPurge(analysis: DxfAnalysis): { purgedEntities: DxfEntity[]; purgedCount: number; sizeReductionPercent: number } {
+export function structuralPurge(analysis: DxfAnalysis): {
+  purgedEntities: DxfEntity[];
+  purgedCount: number;
+  sizeReductionPercent: number;
+} {
   const entities = analysis.entities;
   const keptEntities: DxfEntity[] = [];
   let purgedCount = 0;
@@ -286,12 +319,16 @@ export function calculateTotalPerimeter(entities: DxfEntity[]): number {
       total += 2 * Math.PI * r;
     } else if (e.type === "ARC") {
       const r = e.radius ?? 0;
-      const start = (e.startAngle ?? 0) * Math.PI / 180;
-      const end = (e.endAngle ?? 0) * Math.PI / 180;
+      const start = ((e.startAngle ?? 0) * Math.PI) / 180;
+      const end = ((e.endAngle ?? 0) * Math.PI) / 180;
       let sweep = end - start;
       if (sweep < 0) sweep += 2 * Math.PI;
       total += r * sweep;
-    } else if ((e.type === "LWPOLYLINE" || e.type === "POLYLINE") && e.vertices && e.vertices.length > 1) {
+    } else if (
+      (e.type === "LWPOLYLINE" || e.type === "POLYLINE") &&
+      e.vertices &&
+      e.vertices.length > 1
+    ) {
       for (let i = 0; i < e.vertices.length - 1; i++) {
         total += dist(e.vertices[i].x, e.vertices[i].y, e.vertices[i + 1].x, e.vertices[i + 1].y);
       }
@@ -317,13 +354,13 @@ export function calculateTotalPerimeter(entities: DxfEntity[]): number {
       const b = a * Math.min(e.ratio ?? 1, 1);
       if (a > 0 && b > 0) {
         const h = ((a - b) * (a - b)) / ((a + b) * (a + b));
-        const fullPerimeter = Math.PI * (a + b) * (1 + 3 * h / (10 + Math.sqrt(4 - 3 * h)));
+        const fullPerimeter = Math.PI * (a + b) * (1 + (3 * h) / (10 + Math.sqrt(4 - 3 * h)));
         // Scale by sweep for partial ellipses (start/end angles stored in degrees).
-        const start = (e.startAngle ?? 0) * Math.PI / 180;
-        const end = (e.endAngle ?? 360) * Math.PI / 180;
+        const start = ((e.startAngle ?? 0) * Math.PI) / 180;
+        const end = ((e.endAngle ?? 360) * Math.PI) / 180;
         let sweep = Math.abs(end - start);
         if (sweep < 0.01) sweep = 2 * Math.PI;
-        total += fullPerimeter * Math.min(sweep, 2 * Math.PI) / (2 * Math.PI);
+        total += (fullPerimeter * Math.min(sweep, 2 * Math.PI)) / (2 * Math.PI);
       }
     }
   }
@@ -334,7 +371,10 @@ export function calculateTotalPerimeter(entities: DxfEntity[]): number {
 /**
  * Detect open loops - vertices that fail to connect to other geometry
  */
-export function detectOpenLoops(entities: DxfEntity[], minGap: number = 0.1): { count: number; openPoints: { x: number; y: number }[] } {
+export function detectOpenLoops(
+  entities: DxfEntity[],
+  minGap: number = 0.1,
+): { count: number; openPoints: { x: number; y: number }[] } {
   const endpoints: { x: number; y: number }[] = [];
   const openPoints: { x: number; y: number }[] = [];
   const TOLERANCE = 0.1;
@@ -400,7 +440,10 @@ export function sortInsideFirst(entities: DxfEntity[]): DxfEntity[] {
 }
 
 function getEntityBounds(e: DxfEntity): { width: number; height: number } | null {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
   let found = false;
 
   function expand(x: number, y: number) {
@@ -415,7 +458,9 @@ function getEntityBounds(e: DxfEntity): { width: number; height: number } | null
     expand(e.x1 ?? 0, e.y1 ?? 0);
     expand(e.x2 ?? 0, e.y2 ?? 0);
   } else if (e.type === "CIRCLE" || e.type === "ARC") {
-    const cx = e.cx ?? 0, cy = e.cy ?? 0, r = e.radius ?? 0;
+    const cx = e.cx ?? 0,
+      cy = e.cy ?? 0,
+      r = e.radius ?? 0;
     expand(cx - r, cy - r);
     expand(cx + r, cy + r);
   } else if (e.type === "LWPOLYLINE" && e.vertices) {
@@ -432,13 +477,17 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
 
   const normalized = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
-  const entitiesMatch = normalized.match(/\s*0\s*\nSECTION\s*\n\s*2\s*\nENTITIES([\s\S]*?)\s*0\s*\nENDSEC/i);
+  const entitiesMatch = normalized.match(
+    /\s*0\s*\nSECTION\s*\n\s*2\s*\nENTITIES([\s\S]*?)\s*0\s*\nENDSEC/i,
+  );
   const headerEnd = entitiesMatch ? normalized.indexOf(entitiesMatch[0]) : normalized.length;
   const headerSection = normalized.slice(0, headerEnd);
-  const tailStart = entitiesMatch ? normalized.indexOf(entitiesMatch[0]) + entitiesMatch[0].length : normalized.length;
+  const tailStart = entitiesMatch
+    ? normalized.indexOf(entitiesMatch[0]) + entitiesMatch[0].length
+    : normalized.length;
   const tailSection = normalized.slice(tailStart);
 
-    const entitiesRaw = (entitiesMatch ? entitiesMatch[1] : "").trim();
+  const entitiesRaw = (entitiesMatch ? entitiesMatch[1] : "").trim();
   const entities: DxfEntity[] = [];
 
   // Split the ENTITIES section into entity blocks using the parsed group
@@ -493,44 +542,44 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
   for (const block of entityBlocks) {
     const groups = parseGroups(block.trim());
     if (!groups.length) continue;
-    const typeGroup = groups.find(g => g.code === 0);
+    const typeGroup = groups.find((g) => g.code === 0);
     if (!typeGroup) continue;
     const type = typeGroup.value.toUpperCase();
     if (type === "ENDSEC" || type === "SECTION") continue;
 
     const entity: DxfEntity = {
       type,
-      layer: groups.find(g => g.code === 8)?.value ?? "0",
-      handle: groups.find(g => g.code === 5)?.value ?? "",
+      layer: groups.find((g) => g.code === 8)?.value ?? "0",
+      handle: groups.find((g) => g.code === 5)?.value ?? "",
       rawLines: block.trim().split("\n"),
     };
 
     if (type === "LINE") {
-      entity.x1 = parseFloat(groups.find(g => g.code === 10)?.value ?? "0");
-      entity.y1 = parseFloat(groups.find(g => g.code === 20)?.value ?? "0");
-      entity.z1 = parseFloat(groups.find(g => g.code === 30)?.value ?? "0");
-      entity.x2 = parseFloat(groups.find(g => g.code === 11)?.value ?? "0");
-      entity.y2 = parseFloat(groups.find(g => g.code === 21)?.value ?? "0");
-      entity.z2 = parseFloat(groups.find(g => g.code === 31)?.value ?? "0");
+      entity.x1 = parseFloat(groups.find((g) => g.code === 10)?.value ?? "0");
+      entity.y1 = parseFloat(groups.find((g) => g.code === 20)?.value ?? "0");
+      entity.z1 = parseFloat(groups.find((g) => g.code === 30)?.value ?? "0");
+      entity.x2 = parseFloat(groups.find((g) => g.code === 11)?.value ?? "0");
+      entity.y2 = parseFloat(groups.find((g) => g.code === 21)?.value ?? "0");
+      entity.z2 = parseFloat(groups.find((g) => g.code === 31)?.value ?? "0");
     } else if (type === "ARC") {
-      entity.cx = parseFloat(groups.find(g => g.code === 10)?.value ?? "0");
-      entity.cy = parseFloat(groups.find(g => g.code === 20)?.value ?? "0");
-      entity.radius = parseFloat(groups.find(g => g.code === 40)?.value ?? "0");
-      entity.startAngle = parseFloat(groups.find(g => g.code === 50)?.value ?? "0");
-      entity.endAngle = parseFloat(groups.find(g => g.code === 51)?.value ?? "0");
+      entity.cx = parseFloat(groups.find((g) => g.code === 10)?.value ?? "0");
+      entity.cy = parseFloat(groups.find((g) => g.code === 20)?.value ?? "0");
+      entity.radius = parseFloat(groups.find((g) => g.code === 40)?.value ?? "0");
+      entity.startAngle = parseFloat(groups.find((g) => g.code === 50)?.value ?? "0");
+      entity.endAngle = parseFloat(groups.find((g) => g.code === 51)?.value ?? "0");
     } else if (type === "CIRCLE") {
-      entity.cx = parseFloat(groups.find(g => g.code === 10)?.value ?? "0");
-      entity.cy = parseFloat(groups.find(g => g.code === 20)?.value ?? "0");
-      entity.radius = parseFloat(groups.find(g => g.code === 40)?.value ?? "0");
+      entity.cx = parseFloat(groups.find((g) => g.code === 10)?.value ?? "0");
+      entity.cy = parseFloat(groups.find((g) => g.code === 20)?.value ?? "0");
+      entity.radius = parseFloat(groups.find((g) => g.code === 40)?.value ?? "0");
     } else if (type === "LWPOLYLINE") {
-      const flagGroup = groups.find(g => g.code === 70);
+      const flagGroup = groups.find((g) => g.code === 70);
       const flags = parseInt(flagGroup?.value ?? "0", 10);
       entity.closed = (flags & 1) === 1;
-      entity.vertexCount = parseInt(groups.find(g => g.code === 90)?.value ?? "0", 10);
+      entity.vertexCount = parseInt(groups.find((g) => g.code === 90)?.value ?? "0", 10);
       entity.vertices = [];
-      const xGroups = groups.filter(g => g.code === 10);
-      const yGroups = groups.filter(g => g.code === 20);
-      const bulgeGroups = groups.filter(g => g.code === 42);
+      const xGroups = groups.filter((g) => g.code === 10);
+      const yGroups = groups.filter((g) => g.code === 20);
+      const bulgeGroups = groups.filter((g) => g.code === 42);
       for (let i = 0; i < xGroups.length; i++) {
         entity.vertices.push({
           x: parseFloat(xGroups[i].value),
@@ -542,7 +591,7 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
       // Legacy (AC1009) POLYLINE — the block splitter folded the VERTEX /
       // SEQEND sub-records into this block. Rebuild vertices from them so a
       // valid legacy POLYLINE never reports an empty vertex list.
-      const flagGroup = groups.find(g => g.code === 70);
+      const flagGroup = groups.find((g) => g.code === 70);
       const flags = parseInt(flagGroup?.value ?? "0", 10);
       entity.closed = (flags & 1) === 1;
       entity.vertices = [];
@@ -573,28 +622,28 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
       entity.vertexCount = entity.vertices.length;
     } else if (type === "VERTEX") {
       // VERTEX entity for POLYLINE — coordinates in codes 10,20,30; bulge in 42
-      const x = parseFloat(groups.find(g => g.code === 10)?.value ?? "NaN");
-      const y = parseFloat(groups.find(g => g.code === 20)?.value ?? "NaN");
-      const bulge = parseFloat(groups.find(g => g.code === 42)?.value ?? "0");
+      const x = parseFloat(groups.find((g) => g.code === 10)?.value ?? "NaN");
+      const y = parseFloat(groups.find((g) => g.code === 20)?.value ?? "NaN");
+      const bulge = parseFloat(groups.find((g) => g.code === 42)?.value ?? "0");
       if (!isNaN(x) && !isNaN(y)) {
         entity.vertices = entity.vertices || [];
         entity.vertices.push({ x, y, bulge });
       }
     } else if (type === "SPLINE") {
       // SPLINE — control points or fit points
-      const flagGroup = groups.find(g => g.code === 70);
-      entity.closed = (flagGroup && (parseInt(flagGroup.value, 10) & 1) === 1) ? true : false;
+      const flagGroup = groups.find((g) => g.code === 70);
+      entity.closed = flagGroup && (parseInt(flagGroup.value, 10) & 1) === 1 ? true : false;
       entity.vertices = [];
-      const xGroups = groups.filter(g => g.code === 10);
-      const yGroups = groups.filter(g => g.code === 20);
+      const xGroups = groups.filter((g) => g.code === 10);
+      const yGroups = groups.filter((g) => g.code === 20);
       // Control points
-      const ctrlX = groups.filter(g => g.code === 11);
-      const ctrlY = groups.filter(g => g.code === 21);
-      const fitX = groups.filter(g => g.code === 12);
-      const fitY = groups.filter(g => g.code === 22);
+      const ctrlX = groups.filter((g) => g.code === 11);
+      const ctrlY = groups.filter((g) => g.code === 21);
+      const fitX = groups.filter((g) => g.code === 12);
+      const fitY = groups.filter((g) => g.code === 22);
       // Prefer fit points, then control points, then raw 10/20 coords
-      let useX = fitX.length > 0 ? fitX : (ctrlX.length > 0 ? ctrlX : xGroups);
-      let useY = fitY.length > 0 ? fitY : (ctrlY.length > 0 ? ctrlY : yGroups);
+      const useX = fitX.length > 0 ? fitX : ctrlX.length > 0 ? ctrlX : xGroups;
+      const useY = fitY.length > 0 ? fitY : ctrlY.length > 0 ? ctrlY : yGroups;
       for (let i = 0; i < useX.length; i++) {
         entity.vertices.push({
           x: parseFloat(useX[i].value),
@@ -603,20 +652,20 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
       }
     } else if (type === "ELLIPSE") {
       // ELLIPSE — center (10,20), major axis endpoint (11,21), axis ratio (40), start/end param (41,42)
-      const cx = parseFloat(groups.find(g => g.code === 10)?.value ?? "0");
-      const cy = parseFloat(groups.find(g => g.code === 20)?.value ?? "0");
-      const mx = parseFloat(groups.find(g => g.code === 11)?.value ?? "0");
-      const my = parseFloat(groups.find(g => g.code === 21)?.value ?? "0");
-      const ratio = parseFloat(groups.find(g => g.code === 40)?.value ?? "1");
-      const startParam = parseFloat(groups.find(g => g.code === 41)?.value ?? "0");
-      const endParam = parseFloat(groups.find(g => g.code === 42)?.value ?? String(2 * Math.PI));
+      const cx = parseFloat(groups.find((g) => g.code === 10)?.value ?? "0");
+      const cy = parseFloat(groups.find((g) => g.code === 20)?.value ?? "0");
+      const mx = parseFloat(groups.find((g) => g.code === 11)?.value ?? "0");
+      const my = parseFloat(groups.find((g) => g.code === 21)?.value ?? "0");
+      const ratio = parseFloat(groups.find((g) => g.code === 40)?.value ?? "1");
+      const startParam = parseFloat(groups.find((g) => g.code === 41)?.value ?? "0");
+      const endParam = parseFloat(groups.find((g) => g.code === 42)?.value ?? String(2 * Math.PI));
       // Store as approximation points for preview
       entity.cx = cx;
       entity.cy = cy;
       entity.radius = Math.sqrt(mx * mx + my * my);
       entity.ratio = ratio > 0 ? Math.min(ratio, 1) : 1;
-      entity.startAngle = startParam * 180 / Math.PI;
-      entity.endAngle = endParam === (2 * Math.PI) ? 360 : (endParam * 180 / Math.PI);
+      entity.startAngle = (startParam * 180) / Math.PI;
+      entity.endAngle = endParam === 2 * Math.PI ? 360 : (endParam * 180) / Math.PI;
       // For bounds, use center +/- major axis
       entity.x1 = cx - entity.radius;
       entity.y1 = cy - entity.radius;
@@ -624,20 +673,20 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
       entity.y2 = cy + entity.radius;
     } else if (type === "INSERT") {
       // BLOCK reference — we store the block name and insertion point for bounds
-      entity.cx = parseFloat(groups.find(g => g.code === 10)?.value ?? "0");
-      entity.cy = parseFloat(groups.find(g => g.code === 20)?.value ?? "0");
+      entity.cx = parseFloat(groups.find((g) => g.code === 10)?.value ?? "0");
+      entity.cy = parseFloat(groups.find((g) => g.code === 20)?.value ?? "0");
     } else if (type === "POINT") {
       // POINT entity — has 10/20 codes
-      entity.x1 = parseFloat(groups.find(g => g.code === 10)?.value ?? "0");
-      entity.y1 = parseFloat(groups.find(g => g.code === 20)?.value ?? "0");
+      entity.x1 = parseFloat(groups.find((g) => g.code === 10)?.value ?? "0");
+      entity.y1 = parseFloat(groups.find((g) => g.code === 20)?.value ?? "0");
       entity.x2 = entity.x1;
       entity.y2 = entity.y1;
     } else if (type === "SOLID") {
       // SOLID (3D or 2D filled area) — has 4 corners: 10/20, 11/21, 12/22, 13/23
       const corners: { x: number; y: number }[] = [];
       for (const code of [10, 11, 12, 13]) {
-        const x = parseFloat(groups.find(g => g.code === code)?.value ?? "NaN");
-        const y = parseFloat(groups.find(g => g.code === code + 10)?.value ?? "NaN");
+        const x = parseFloat(groups.find((g) => g.code === code)?.value ?? "NaN");
+        const y = parseFloat(groups.find((g) => g.code === code + 10)?.value ?? "NaN");
         if (!isNaN(x) && !isNaN(y)) corners.push({ x, y });
       }
       if (corners.length >= 2) {
@@ -651,8 +700,8 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
       // 3DFACE — has 4 corners: 10/20, 11/21, 12/22, 13/23
       const corners: { x: number; y: number }[] = [];
       for (const code of [10, 11, 12, 13]) {
-        const x = parseFloat(groups.find(g => g.code === code)?.value ?? "NaN");
-        const y = parseFloat(groups.find(g => g.code === code + 10)?.value ?? "NaN");
+        const x = parseFloat(groups.find((g) => g.code === code)?.value ?? "NaN");
+        const y = parseFloat(groups.find((g) => g.code === code + 10)?.value ?? "NaN");
         if (!isNaN(x) && !isNaN(y)) corners.push({ x, y });
       }
       if (corners.length >= 2) {
@@ -664,15 +713,15 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
       }
     } else if (type === "HATCH") {
       // HATCH boundaries — store for possible preview
-      entity.cx = parseFloat(groups.find(g => g.code === 10)?.value ?? "0");
-      entity.cy = parseFloat(groups.find(g => g.code === 20)?.value ?? "0");
+      entity.cx = parseFloat(groups.find((g) => g.code === 10)?.value ?? "0");
+      entity.cy = parseFloat(groups.find((g) => g.code === 20)?.value ?? "0");
     } else if (type === "DIMENSION") {
       // DIMENSION — definition point at 10/20, text midpoint at 11/21, etc.
-      entity.x1 = parseFloat(groups.find(g => g.code === 10)?.value ?? "0");
-      entity.y1 = parseFloat(groups.find(g => g.code === 20)?.value ?? "0");
-      const dimX2Str = groups.find(g => g.code === 14)?.value;
+      entity.x1 = parseFloat(groups.find((g) => g.code === 10)?.value ?? "0");
+      entity.y1 = parseFloat(groups.find((g) => g.code === 20)?.value ?? "0");
+      const dimX2Str = groups.find((g) => g.code === 14)?.value;
       entity.x2 = dimX2Str ? parseFloat(dimX2Str) : (entity.x1 ?? 0);
-      const dimY2Str = groups.find(g => g.code === 24)?.value;
+      const dimY2Str = groups.find((g) => g.code === 24)?.value;
       entity.y2 = dimY2Str ? parseFloat(dimY2Str) : (entity.y1 ?? 0);
     }
     entities.push(entity);
@@ -738,7 +787,8 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
 
   for (let i = 0; i < snappedEntities.length; i++) {
     const e = snappedEntities[i];
-    if ((e.type !== "LWPOLYLINE" && e.type !== "POLYLINE") || !e.vertices || e.vertices.length < 2) continue;
+    if ((e.type !== "LWPOLYLINE" && e.type !== "POLYLINE") || !e.vertices || e.vertices.length < 2)
+      continue;
     if (e.closed) continue;
     const first = e.vertices[0];
     const last = e.vertices[e.vertices.length - 1];
@@ -771,7 +821,7 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
   //   gap >= 0.1mm → real open geometry, reported AND drawn as a red dot
   const MANUAL_REPAIR_GAP = 0.1;
   const openPathInfos = detectOpenPaths(snappedEntities, DEFAULT_CLEANUP_OPTIONS);
-  const manualRepairPaths = openPathInfos.filter(p => p.gap >= MANUAL_REPAIR_GAP);
+  const manualRepairPaths = openPathInfos.filter((p) => p.gap >= MANUAL_REPAIR_GAP);
   const openLoopCount = manualRepairPaths.length;
   if (openLoopCount > 0) {
     issues.push({
@@ -780,25 +830,30 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
       severity: "error",
       ar: `${openLoopCount} نقطة مفتوحة (فجوة ≥ 0.1مم) — يجب إغلاقها قبل القص`,
       en: `${openLoopCount} open endpoint(s) (gap ≥ 0.1mm) — must be closed before cutting`,
-      entityIndices: [...new Set(manualRepairPaths.map(p => p.entityIndex))],
+      entityIndices: [...new Set(manualRepairPaths.map((p) => p.entityIndex))],
       fixed: false,
     });
   }
 
-  const layerSet = new Set(snappedEntities.map(e => e.layer));
+  const layerSet = new Set(snappedEntities.map((e) => e.layer));
   const layers = [...layerSet];
 
   // VERTEX / SEQEND are bookkeeping records of legacy POLYLINEs, not standalone
   // geometry — they must not be counted as entities or reported as geometry.
-  const geometryEntities = snappedEntities.filter(e => e.type !== "VERTEX" && e.type !== "SEQEND");
+  const geometryEntities = snappedEntities.filter(
+    (e) => e.type !== "VERTEX" && e.type !== "SEQEND",
+  );
 
   const stats: DxfStats = {
     totalEntities: geometryEntities.length,
-    lines: geometryEntities.filter(e => e.type === "LINE").length,
-    polylines: geometryEntities.filter(e => e.type === "LWPOLYLINE" || e.type === "POLYLINE").length,
-    arcs: geometryEntities.filter(e => e.type === "ARC").length,
-    circles: geometryEntities.filter(e => e.type === "CIRCLE").length,
-    others: geometryEntities.filter(e => !["LINE","LWPOLYLINE","POLYLINE","ARC","CIRCLE"].includes(e.type)).length,
+    lines: geometryEntities.filter((e) => e.type === "LINE").length,
+    polylines: geometryEntities.filter((e) => e.type === "LWPOLYLINE" || e.type === "POLYLINE")
+      .length,
+    arcs: geometryEntities.filter((e) => e.type === "ARC").length,
+    circles: geometryEntities.filter((e) => e.type === "CIRCLE").length,
+    others: geometryEntities.filter(
+      (e) => !["LINE", "LWPOLYLINE", "POLYLINE", "ARC", "CIRCLE"].includes(e.type),
+    ).length,
     layers,
     originalFileSize,
     processingTimeMs: 0,
@@ -835,7 +890,7 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
     totalPerimeter,
     openLoopCount,
   };
-    const { sizeReductionPercent } = structuralPurge(tempAnalysis);
+  const { sizeReductionPercent } = structuralPurge(tempAnalysis);
 
   // Phase 3: manufacturing classification layer (detect/classify only — no repair).
   const mfg = classifyManufacturing(snappedEntities);
@@ -856,7 +911,7 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
     processingTimeMs,
     originalFileSize,
     sizeReductionPercent,
-     manufacturing: mfg,
+    manufacturing: mfg,
   };
 }
 
@@ -864,9 +919,11 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
  * تحويل ARC إلى LWPOLYLINE
  */
 function convertArcToPolyline(e: DxfEntity): DxfEntity {
-  const cx = e.cx ?? 0, cy = e.cy ?? 0, r = e.radius ?? 0;
-  const startAngle = (e.startAngle ?? 0) * Math.PI / 180;
-  const endAngle = (e.endAngle ?? 0) * Math.PI / 180;
+  const cx = e.cx ?? 0,
+    cy = e.cy ?? 0,
+    r = e.radius ?? 0;
+  const startAngle = ((e.startAngle ?? 0) * Math.PI) / 180;
+  const endAngle = ((e.endAngle ?? 0) * Math.PI) / 180;
   let sweep = endAngle - startAngle;
   if (sweep < 0) sweep += 2 * Math.PI;
 
@@ -896,7 +953,9 @@ function convertArcToPolyline(e: DxfEntity): DxfEntity {
  * تحويل CIRCLE إلى LWPOLYLINE
  */
 function convertCircleToPolyline(e: DxfEntity): DxfEntity {
-  const cx = e.cx ?? 0, cy = e.cy ?? 0, r = e.radius ?? 0;
+  const cx = e.cx ?? 0,
+    cy = e.cy ?? 0,
+    r = e.radius ?? 0;
   const segments = 36;
   const vertices: DxfVertex[] = [];
 
@@ -926,9 +985,9 @@ function convertSplineToPolyline(e: DxfEntity): DxfEntity {
   if (!e.vertices || e.vertices.length < 2) return e;
 
   // تبسيط نقاط SPLINE باستخدام خوارزمية RDP
-  const points = e.vertices.map(v => ({ x: v.x, y: v.y }));
+  const points = e.vertices.map((v) => ({ x: v.x, y: v.y }));
   const simplified = simplifyRDP(points, 0.05);
-  const vertices: DxfVertex[] = simplified.map(p => ({ x: p.x, y: p.y }));
+  const vertices: DxfVertex[] = simplified.map((p) => ({ x: p.x, y: p.y }));
 
   return {
     type: "LWPOLYLINE",
@@ -945,7 +1004,8 @@ function convertSplineToPolyline(e: DxfEntity): DxfEntity {
  * تحويل ELLIPSE إلى LWPOLYLINE
  */
 function convertEllipseToPolyline(e: DxfEntity): DxfEntity {
-  const cx = e.cx ?? 0, cy = e.cy ?? 0;
+  const cx = e.cx ?? 0,
+    cy = e.cy ?? 0;
   const r = e.radius ?? 1;
   const rx = r;
   const ry = r * 0.6; // approximate ratio
@@ -981,7 +1041,10 @@ function convertEllipseToPolyline(e: DxfEntity): DxfEntity {
 /**
  * نسخة مبسطة من simplifyRDP لتجنب مشاكل الاستيراد
  */
-function simplifyRDP(points: { x: number; y: number }[], tolerance: number): { x: number; y: number }[] {
+function simplifyRDP(
+  points: { x: number; y: number }[],
+  tolerance: number,
+): { x: number; y: number }[] {
   if (points.length <= 2) return points;
 
   let maxDist = 0;
@@ -1006,7 +1069,11 @@ function simplifyRDP(points: { x: number; y: number }[], tolerance: number): { x
   return [first, last];
 }
 
-function perpendicularDist(p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }): number {
+function perpendicularDist(
+  p: { x: number; y: number },
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): number {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const len = Math.sqrt(dx * dx + dy * dy);
@@ -1021,7 +1088,10 @@ function perpendicularDist(p: { x: number; y: number }, a: { x: number; y: numbe
  * تحويل جميع الكيانات إلى LWPOLYLINE
  * ARCS → POLYLINE, CIRCLES → POLYLINE, SPLINES → POLYLINE, ELLIPSES → POLYLINE
  */
-function convertAllToPolylines(entities: DxfEntity[]): { converted: DxfEntity[]; convertCount: number } {
+function convertAllToPolylines(entities: DxfEntity[]): {
+  converted: DxfEntity[];
+  convertCount: number;
+} {
   const result: DxfEntity[] = [];
   let convertCount = 0;
 
@@ -1058,7 +1128,7 @@ function joinConnectedEntities(entities: DxfEntity[]): { joined: DxfEntity[]; jo
 
   // أولاً: جمع كل المسارات المغلقة (Closed)
   for (let i = 0; i < entities.length; i++) {
-    if (entities[i].type !== "LWPOLYLINE" || (entities[i].closed)) {
+    if (entities[i].type !== "LWPOLYLINE" || entities[i].closed) {
       result.push(entities[i]);
       used.add(i);
     }
@@ -1066,7 +1136,10 @@ function joinConnectedEntities(entities: DxfEntity[]): { joined: DxfEntity[]; jo
 
   // ثانياً: محاولة دمج المسارات المفتوحة
   let changed = true;
-  const openIndices = entities.map((e, i) => ({ idx: i, used: used.has(i) })).filter(e => !e.used).map(e => e.idx);
+  const openIndices = entities
+    .map((e, i) => ({ idx: i, used: used.has(i) }))
+    .filter((e) => !e.used)
+    .map((e) => e.idx);
 
   while (changed) {
     changed = false;
@@ -1082,8 +1155,10 @@ function joinConnectedEntities(entities: DxfEntity[]): { joined: DxfEntity[]; jo
         const bVerts = b.vertices;
         if (!bVerts || bVerts.length < 2) continue;
 
-        const aStart = aVerts[0], aEnd = aVerts[aVerts.length - 1];
-        const bStart = bVerts[0], bEnd = bVerts[bVerts.length - 1];
+        const aStart = aVerts[0],
+          aEnd = aVerts[aVerts.length - 1];
+        const bStart = bVerts[0],
+          bEnd = bVerts[bVerts.length - 1];
 
         let merged: DxfVertex[] | null = null;
         let mergedClosed = false;
@@ -1099,7 +1174,8 @@ function joinConnectedEntities(entities: DxfEntity[]): { joined: DxfEntity[]; jo
         }
 
         if (merged) {
-          const mStart = merged[0], mEnd = merged[merged.length - 1];
+          const mStart = merged[0],
+            mEnd = merged[merged.length - 1];
           mergedClosed = dist(mStart.x, mStart.y, mEnd.x, mEnd.y) < tolerance;
           if (mergedClosed) merged = merged.slice(0, -1);
 
@@ -1137,18 +1213,27 @@ function closeAllPolylines(entities: DxfEntity[]): { closed: DxfEntity[]; closeC
   // Threshold: gap < 0.1mm → geometrically closed → set flag to 1
   const GEOMETRIC_CLOSE_TOL = 0.1; // mm
   const snapTol = DEFAULT_CLEANUP_OPTIONS.tolerance;
-  const result = entities.map(e => {
+  const result = entities.map((e) => {
     // Only LWPOLYLINE and legacy POLYLINE are closable.
-    if ((e.type !== "LWPOLYLINE" && e.type !== "POLYLINE") || e.closed || !e.vertices || e.vertices.length < 2) return e;
+    if (
+      (e.type !== "LWPOLYLINE" && e.type !== "POLYLINE") ||
+      e.closed ||
+      !e.vertices ||
+      e.vertices.length < 2
+    )
+      return e;
     // Ignore trailing vertices that merely duplicate the first (serialization
     // style), not proof of geometric closure. Measure from the last DISTINCT
     // vertex instead.
     let n = e.vertices.length - 1;
-    while (n > 0 && dist(e.vertices[n].x, e.vertices[n].y, e.vertices[0].x, e.vertices[0].y) <= snapTol) n--;
+    while (
+      n > 0 &&
+      dist(e.vertices[n].x, e.vertices[n].y, e.vertices[0].x, e.vertices[0].y) <= snapTol
+    )
+      n--;
     const lastMeaningful = e.vertices[n];
     const gap = dist(e.vertices[0].x, e.vertices[0].y, lastMeaningful.x, lastMeaningful.y);
-    if (gap > GEOMETRIC_CLOSE_TOL)
-      return e; // genuinely open → PRESERVE open state
+    if (gap > GEOMETRIC_CLOSE_TOL) return e; // genuinely open → PRESERVE open state
     return { ...e, closed: true };
   });
 
@@ -1159,12 +1244,15 @@ function closeAllPolylines(entities: DxfEntity[]): { closed: DxfEntity[]; closeC
 /**
  * إزالة النقاط المعلقة (Dangling Nodes) — نقاط منفردة لا تنتمي لأي مسار
  */
-function removeDanglingNodes(entities: DxfEntity[]): { cleaned: DxfEntity[]; removedCount: number } {
+function removeDanglingNodes(entities: DxfEntity[]): {
+  cleaned: DxfEntity[];
+  removedCount: number;
+} {
   // Phase 6A (Bug 2): scale-aware tiny threshold — a LINE shorter than the
   // drawing-relative tolerance is dangling; legitimate small geometry in
   // small-scale drawings is preserved. Unknown scale → 0 → only exact zeros.
   const tinyTol = effectiveTinyTolerance(entities);
-  const result = entities.filter(e => {
+  const result = entities.filter((e) => {
     if (e.type === "POINT") return false;
     if (e.type === "LINE") {
       const len = dist(e.x1 ?? 0, e.y1 ?? 0, e.x2 ?? 0, e.y2 ?? 0);
@@ -1197,10 +1285,16 @@ function removeDanglingNodes(entities: DxfEntity[]): { cleaned: DxfEntity[]; rem
  * إزالة العناصر المخفية (من طبقات محددة تبدأ بـ _ أو __)
  */
 function removeHiddenLayers(entities: DxfEntity[]): { cleaned: DxfEntity[]; removedCount: number } {
-  const result = entities.filter(e => {
+  const result = entities.filter((e) => {
     const layer = e.layer || "";
     // إزالة الطبقات المخفية (تبدأ بـ _ أو __ أو HIDDEN أو DEFPOINTS)
-    if (layer.startsWith("_") || layer.startsWith("__") || layer.toUpperCase() === "HIDDEN" || layer.toUpperCase() === "DEFPOINTS") return false;
+    if (
+      layer.startsWith("_") ||
+      layer.startsWith("__") ||
+      layer.toUpperCase() === "HIDDEN" ||
+      layer.toUpperCase() === "DEFPOINTS"
+    )
+      return false;
     if (layer.toUpperCase().includes("HATCH") || layer.toUpperCase().includes("TEXT")) {
       // احتفظ بها إذا كانت تحتوي على عناصر
       return true;
@@ -1242,7 +1336,8 @@ function optimizeCutOrder(entities: DxfEntity[]): DxfEntity[] {
   // Nearest Neighbor لترتيب المسارات
   const ordered: DxfEntity[] = [];
   const remaining = new Set(closedPolylines);
-  let currentX = 0, currentY = 0;
+  let currentX = 0,
+    currentY = 0;
 
   while (remaining.size > 0) {
     let nearest: DxfEntity | null = null;
@@ -1291,6 +1386,13 @@ export interface RepairOptions {
    */
   closeOpenPolylines?: boolean;
   /**
+   * Close small endpoint gaps by EXTENDING the original strokes to their
+   * meeting midpoint — NO new bridge entity is added (opt-in, default off
+   * to keep the prior always-on repair behavior unchanged). This matches
+   * dxfcleaner's "never adds geometry" guarantee for small gaps.
+   */
+  closeGapsByExtension?: boolean;
+  /**
    * Selective OVERKILL cleanup (STEP 8). Provided keys override
    * DEFAULT_CLEANUP_OPTIONS; omitted keys keep the engine defaults.
    * Booleans set to false DISABLE that cleanup pass (processing checkboxes).
@@ -1302,13 +1404,19 @@ export interface RepairOptions {
     dedupeVertices?: boolean;
     mergeCollinearOverlaps?: boolean;
     dedupeCurves?: boolean;
+    removeDanglingResidues?: boolean;
+    residueTolerance?: number;
   };
 }
 
 /**
  * pipeline المعالجة الكامل
  */
-export function repairDxf(content: string, analysis: DxfAnalysis, options: RepairOptions = {}): { fixed: string; repaired: DxfIssue[]; fixSummary: FixSummaryItem[] } {
+export function repairDxf(
+  content: string,
+  analysis: DxfAnalysis,
+  options: RepairOptions = {},
+): { fixed: string; repaired: DxfIssue[]; fixSummary: FixSummaryItem[] } {
   const startTime = performance.now();
   const repairedIssues: DxfIssue[] = [];
   const fixSummary: FixSummaryItem[] = [];
@@ -1318,8 +1426,8 @@ export function repairDxf(content: string, analysis: DxfAnalysis, options: Repai
   const { purgedEntities, purgedCount } = structuralPurge(analysis);
   if (purgedCount > 0) {
     fixSummary.push({
-      id: 'structural_purge',
-      icon: '🧹',
+      id: "structural_purge",
+      icon: "🧹",
       ar: `تمت إزالة ${purgedCount} عنصر غير ضروري (كتل فارغة، نصوص مكررة، طبقات فارغة)`,
       en: `Removed ${purgedCount} unnecessary items (empty blocks, duplicate text, empty layers)`,
       detail: `تنظيف هيكلي للملف`,
@@ -1332,11 +1440,11 @@ export function repairDxf(content: string, analysis: DxfAnalysis, options: Repai
   const { cleaned: noHidden, removedCount: hiddenRemoved } = removeHiddenLayers(entities);
   if (hiddenRemoved > 0) {
     fixSummary.push({
-      id: 'removed_hidden',
-      icon: '👁️',
+      id: "removed_hidden",
+      icon: "👁️",
       ar: `تمت إزالة ${hiddenRemoved} عنصر من الطبقات المخفية`,
       en: `Removed ${hiddenRemoved} items from hidden layers`,
-      detail: 'إزالة العناصر المخفية وغير المرئية',
+      detail: "إزالة العناصر المخفية وغير المرئية",
     });
   }
   entities = noHidden;
@@ -1345,11 +1453,11 @@ export function repairDxf(content: string, analysis: DxfAnalysis, options: Repai
   const { cleaned: noDangling, removedCount: danglingRemoved } = removeDanglingNodes(entities);
   if (danglingRemoved > 0) {
     fixSummary.push({
-      id: 'removed_dangling',
-      icon: '🔗',
+      id: "removed_dangling",
+      icon: "🔗",
       ar: `تمت إزالة ${danglingRemoved} نقطة معلقة أو عنصر تالف`,
       en: `Removed ${danglingRemoved} dangling nodes or broken items`,
-      detail: 'إزالة النقاط المعلقة والخطوط التالفة',
+      detail: "إزالة النقاط المعلقة والخطوط التالفة",
     });
   }
   entities = noDangling;
@@ -1362,11 +1470,11 @@ export function repairDxf(content: string, analysis: DxfAnalysis, options: Repai
     const { converted, convertCount } = convertAllToPolylines(entities);
     if (convertCount > 0) {
       fixSummary.push({
-        id: 'converted_to_polylines',
-        icon: '🔄',
+        id: "converted_to_polylines",
+        icon: "🔄",
         ar: `تم تحويل ${convertCount} عنصر (أقواس، دوائر، منحنيات) إلى POLYLINES`,
         en: `Converted ${convertCount} entities (arcs, circles, curves) to POLYLINES`,
-        detail: 'تحويل جميع الكيانات إلى مسارات متعددة الخطوط',
+        detail: "تحويل جميع الكيانات إلى مسارات متعددة الخطوط",
       });
     }
     entities = converted;
@@ -1380,11 +1488,11 @@ export function repairDxf(content: string, analysis: DxfAnalysis, options: Repai
   const { joined, joinCount } = joinConnectedEntities(snappedEntities);
   if (joinCount > 0) {
     fixSummary.push({
-      id: 'joined_paths',
-      icon: '🔗',
+      id: "joined_paths",
+      icon: "🔗",
       ar: `تم دمج ${joinCount} مسار متصل في مسار واحد`,
       en: `Joined ${joinCount} connected paths into single paths`,
-      detail: 'دمج الخطوط المتلامسة في مسار واحد متصل',
+      detail: "دمج الخطوط المتلامسة في مسار واحد متصل",
     });
   }
   entities = joined;
@@ -1403,11 +1511,11 @@ export function repairDxf(content: string, analysis: DxfAnalysis, options: Repai
   }
   if (doCloseOpen && closeCount > 0) {
     fixSummary.push({
-      id: 'closed_paths',
-      icon: '⭕',
+      id: "closed_paths",
+      icon: "⭕",
       ar: `تم إغلاق ${closeCount} مسار مفتوح (gap < 0.1 مم) تلقائياً`,
       en: `Auto-closed ${closeCount} open paths (gap < 0.1mm)`,
-      detail: 'إغلاق جميع المسارات المفتوحة (gap < 0.1mm)',
+      detail: "إغلاق جميع المسارات المفتوحة (gap < 0.1mm)",
     });
 
     // v1.1 SINGLE SOURCE OF TRUTH: record WHICH detected issues were actually
@@ -1422,7 +1530,11 @@ export function repairDxf(content: string, analysis: DxfAnalysis, options: Repai
       `${e.type}|${e.layer}|${e.vertices?.[0]?.x ?? "?"},${e.vertices?.[0]?.y ?? "?"}|${e.vertices?.length ?? 0}`;
     const openIssueByKey = new Map<string, DxfIssue>();
     for (const issue of analysis.issues) {
-      if (issue.type === "open_polyline" && issue.entityIndices && issue.entityIndices.length === 1) {
+      if (
+        issue.type === "open_polyline" &&
+        issue.entityIndices &&
+        issue.entityIndices.length === 1
+      ) {
         const ent = analysis.entities[issue.entityIndices[0]];
         if (ent) openIssueByKey.set(entKey(ent), issue);
       }
@@ -1430,13 +1542,54 @@ export function repairDxf(content: string, analysis: DxfAnalysis, options: Repai
     for (let j = 0; j < entities.length; j++) {
       if (entities[j] !== closedEntities[j]) {
         const issue = openIssueByKey.get(entKey(entities[j]));
-        if (issue && !repairedIssues.some(r => r.id === issue.id)) {
+        if (issue && !repairedIssues.some((r) => r.id === issue.id)) {
           repairedIssues.push({ ...issue, fixed: true });
         }
       }
     }
   }
   entities = closedEntities;
+
+  // ─── STEP 7b: Close small gaps BY EXTENSION (no new geometry added) ───
+  // Same promise as professional cleaners: unambiguous endpoint pairs within
+  // gapTolerance are closed by MOVING both endpoints to their midpoint —
+  // the original geometry is extended, never a new bridge entity added.
+  // Ambiguous or large gaps are left untouched and reported instead.
+  // Layer guarantee: endpoints on different layers are never joined.
+  // Note: runs AFTER the flag-close issue mapping above (endpoint moves would
+  // break the geometric key matching used there).
+  const cleanupOptsEarly = { ...DEFAULT_CLEANUP_OPTIONS, ...(options.cleanup ?? {}) };
+  if (options.closeGapsByExtension === true && options.closeOpenPolylines !== false) {
+    const ext = closeSafeGaps(entities, cleanupOptsEarly);
+    entities = ext.entities;
+    if (ext.closed > 0) {
+      fixSummary.push({
+        id: "closed_by_extension",
+        icon: "📐",
+        ar: `تم إغلاق ${ext.closed} فجوة صغيرة بالتمديد — بدون إضافة أي هندسة جديدة${ext.skipped > 0 ? ` (تُركت ${ext.skipped} غامضة للمراجعة)` : ""}`,
+        en: `Closed ${ext.closed} small gap(s) by extension — no new geometry added${ext.skipped > 0 ? ` (${ext.skipped} ambiguous left for review)` : ""}`,
+        detail: "تمديد الخطوط الأصلية حتى الالتقاء (≤ عتبة الإغلاق) — الطبقات لا تُخلط أبداً",
+      });
+    }
+  }
+
+  // ─── STEP 7c: Remove dangling residues (short one-end-attached spurs) ───
+  // Opt-in via the Processing checkbox — classic vectorization back-and-forth
+  // strokes that would cause double cutting. Fully-isolated short lines are
+  // preserved (may be intentional marks). Never touches other-layer geometry.
+  if (cleanupOptsEarly.removeDanglingResidues) {
+    const res = removeResidues(entities, cleanupOptsEarly);
+    entities = res.entities;
+    if (res.removed > 0) {
+      fixSummary.push({
+        id: "removed_residues",
+        icon: "🧽",
+        ar: `تم حذف ${res.removed} شوكة معلّقة (Residues) أقصر من ${cleanupOptsEarly.residueTolerance} مم`,
+        en: `Removed ${res.removed} dangling residue stroke(s) shorter than ${cleanupOptsEarly.residueTolerance}mm`,
+        detail: "حذف الشوكات المتصلة من طرف واحد فقط (بقايا الـ vectorization)",
+      });
+    }
+  }
 
   // ─── STEP 8: REAL OVERKILL-STYLE CLEANUP (deterministic geometry engine) ───
   // This actually MODIFIES the geometry: removes duplicates (both directions),
@@ -1454,68 +1607,78 @@ export function repairDxf(content: string, analysis: DxfAnalysis, options: Repai
     if (cr.zeroLengthRemoved > 0) parts.push(`${cr.zeroLengthRemoved} صفري الطول`);
     if (cr.duplicateVerticesRemoved > 0) parts.push(`${cr.duplicateVerticesRemoved} رأس مكرر`);
     if (cr.containedSegmentsRemoved > 0) parts.push(`${cr.containedSegmentsRemoved} قطعة محتواة`);
-    if (cr.overlappingSegmentsMerged > 0) parts.push(`${cr.overlappingSegmentsMerged} قطعة متداخلة`);
+    if (cr.overlappingSegmentsMerged > 0)
+      parts.push(`${cr.overlappingSegmentsMerged} قطعة متداخلة`);
     fixSummary.push({
-      id: 'real_cleanup',
-      icon: '🔧',
-      ar: `تم تنظيف الهندسة فعلياً: ${parts.join('، ')} — الكيانات (قبل: ${cr.before.totalEntities} → بعد: ${cr.after.totalEntities})`,
-      en: `Real geometry cleanup applied: ${parts.join(', ')} — entities (before: ${cr.before.totalEntities} → after: ${cr.after.totalEntities})`,
+      id: "real_cleanup",
+      icon: "🔧",
+      ar: `تم تنظيف الهندسة فعلياً: ${parts.join("، ")} — الكيانات (قبل: ${cr.before.totalEntities} → بعد: ${cr.after.totalEntities})`,
+      en: `Real geometry cleanup applied: ${parts.join(", ")} — entities (before: ${cr.before.totalEntities} → after: ${cr.after.totalEntities})`,
       detail: `إزالة ${cr.duplicateEntitiesRemoved} مكرر · ${cr.zeroLengthRemoved} صفري الطول · ${cr.duplicateVerticesRemoved} رأس مكرر · دمج ${cr.overlappingSegmentsMerged} تداخل`,
     });
   } else {
     fixSummary.push({
-      id: 'real_cleanup',
-      icon: '✅',
-      ar: 'لا توجد تكرارات أو تداخلات تحتاج تنظيفاً — لم يتم تغيير أي هندسة (لا تغييرات كاذبة)',
-      en: 'No duplicates or overlaps needed cleanup — no geometry was changed (no false changes)',
-      detail: 'نتيجة فحص هندسي حقيقي حتمي',
+      id: "real_cleanup",
+      icon: "✅",
+      ar: "لا توجد تكرارات أو تداخلات تحتاج تنظيفاً — لم يتم تغيير أي هندسة (لا تغييرات كاذبة)",
+      en: "No duplicates or overlaps needed cleanup — no geometry was changed (no false changes)",
+      detail: "نتيجة فحص هندسي حقيقي حتمي",
     });
   }
 
   // ─── STEP 9: Optimize cut order ───
   const finalEntities = optimizeCutOrder(entities);
-  
+
   fixSummary.push({
-    id: 'optimized_cut_order',
-    icon: '📐',
-    ar: 'تم ترتيب مسارات القص لتقليل حركة رأس الليزر',
-    en: 'Optimized cutting order to minimize laser head movement',
-    detail: 'تحسين سرعة الماكينة',
+    id: "optimized_cut_order",
+    icon: "📐",
+    ar: "تم ترتيب مسارات القص لتقليل حركة رأس الليزر",
+    en: "Optimized cutting order to minimize laser head movement",
+    detail: "تحسين سرعة الماكينة",
   });
 
   // ─── STEP 11: Simplify nodes ───
-  const simplifiedEntities = finalEntities.map(e => {
+  const simplifiedEntities = finalEntities.map((e) => {
     if (e.type !== "LWPOLYLINE" || !e.vertices || e.vertices.length < 5) return e;
-    const points = e.vertices.map(v => ({ x: v.x, y: v.y }));
+    const points = e.vertices.map((v) => ({ x: v.x, y: v.y }));
     const simplified = simplifyRDP(points, 0.02);
     if (simplified.length < e.vertices.length) {
       return {
         ...e,
-        vertices: simplified.map(p => ({ x: p.x, y: p.y })),
+        vertices: simplified.map((p) => ({ x: p.x, y: p.y })),
         vertexCount: simplified.length,
       };
     }
     return e;
   });
 
-  const nodeReduction = finalEntities.length > 0
-    ? Math.round((1 - simplifiedEntities.reduce((s, e) => s + (e.vertices?.length || 0), 0) / 
-        Math.max(1, finalEntities.reduce((s, e) => s + (e.vertices?.length || 0), 0))) * 100)
-    : 0;
+  const nodeReduction =
+    finalEntities.length > 0
+      ? Math.round(
+          (1 -
+            simplifiedEntities.reduce((s, e) => s + (e.vertices?.length || 0), 0) /
+              Math.max(
+                1,
+                finalEntities.reduce((s, e) => s + (e.vertices?.length || 0), 0),
+              )) *
+            100,
+        )
+      : 0;
 
   if (nodeReduction > 0) {
     fixSummary.push({
-      id: 'nodes_optimized',
-      icon: '✏️',
+      id: "nodes_optimized",
+      icon: "✏️",
       ar: `تم تقليل عدد النقاط بنسبة ${nodeReduction}% مع الحفاظ على الشكل`,
       en: `Reduced node count by ${nodeReduction}% while preserving shape`,
-      detail: 'تبسيط المنحنيات وتقليل النقاط الزائدة',
+      detail: "تبسيط المنحنيات وتقليل النقاط الزائدة",
     });
   }
 
   // Generate final DXF
   const entitiesSection = generateEntitiesSection(simplifiedEntities);
-  const fixed = analysis.headerSection +
+  const fixed =
+    analysis.headerSection +
     "\n  0\nSECTION\n  2\nENTITIES\n" +
     entitiesSection +
     "\n  0\nENDSEC" +
@@ -1523,12 +1686,13 @@ export function repairDxf(content: string, analysis: DxfAnalysis, options: Repai
 
   // Calculate metrics
   const processedFileSize = new Blob([fixed]).size;
-  const sizeReductionPercent = originalSize > 0 ? Math.round(((originalSize - processedFileSize) / originalSize) * 100) : 0;
+  const sizeReductionPercent =
+    originalSize > 0 ? Math.round(((originalSize - processedFileSize) / originalSize) * 100) : 0;
   const processingTimeMs = Math.round(performance.now() - startTime);
 
   fixSummary.push({
-    id: 'processing_metrics',
-    icon: '⚡',
+    id: "processing_metrics",
+    icon: "⚡",
     ar: `تمت المعالجة في ${processingTimeMs} مللي ثانية — تقليص حجم الملف ${sizeReductionPercent}%`,
     en: `Processed in ${processingTimeMs}ms — file size reduced by ${sizeReductionPercent}%`,
     detail: `الوقت المستغرق للمعالجة: ${processingTimeMs}ms · تقليص الحجم: ${sizeReductionPercent}%`,
@@ -1538,19 +1702,25 @@ export function repairDxf(content: string, analysis: DxfAnalysis, options: Repai
 }
 
 function generateEntitiesSection(entities: DxfEntity[]): string {
-  return entities.map(e => generateEntityText(e)).join("\n");
+  return entities.map((e) => generateEntityText(e)).join("\n");
 }
 
 function generateEntityText(e: DxfEntity): string {
   if (e.type === "LWPOLYLINE" && e.vertices) {
     const flags = e.closed ? 1 : 0;
     const lines: string[] = [
-      "  0", "LWPOLYLINE",
-      "  8", e.layer,
-      " 90", String(e.vertices.length),
-      " 70", String(flags),
+      "  0",
+      "LWPOLYLINE",
+      "  8",
+      e.layer,
+      " 90",
+      String(e.vertices.length),
+      " 70",
+      String(flags),
     ];
-    if (e.handle) { lines.push("  5", e.handle); }
+    if (e.handle) {
+      lines.push("  5", e.handle);
+    }
     for (const v of e.vertices) {
       lines.push(" 10", v.x.toFixed(6));
       lines.push(" 20", v.y.toFixed(6));
@@ -1638,12 +1808,19 @@ export function scoreLabel(score: number, lang: "ar" | "en"): string {
 }
 
 export interface DxfBounds {
-  minX: number; minY: number; maxX: number; maxY: number;
-  width: number; height: number;
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  width: number;
+  height: number;
 }
 
 export function getDxfBounds(entities: DxfEntity[]): DxfBounds | null {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
   let found = false;
 
   function expand(x: number, y: number) {
@@ -1659,7 +1836,9 @@ export function getDxfBounds(entities: DxfEntity[]): DxfBounds | null {
       expand(e.x1 ?? 0, e.y1 ?? 0);
       expand(e.x2 ?? 0, e.y2 ?? 0);
     } else if (e.type === "CIRCLE" || e.type === "ARC") {
-      const cx = e.cx ?? 0, cy = e.cy ?? 0, r = e.radius ?? 0;
+      const cx = e.cx ?? 0,
+        cy = e.cy ?? 0,
+        r = e.radius ?? 0;
       expand(cx - r, cy - r);
       expand(cx + r, cy + r);
     } else if (e.type === "LWPOLYLINE" && e.vertices) {
@@ -1669,7 +1848,9 @@ export function getDxfBounds(entities: DxfEntity[]): DxfBounds | null {
     } else if (e.type === "SPLINE" && e.vertices) {
       for (const v of e.vertices) expand(v.x, v.y);
     } else if (e.type === "ELLIPSE") {
-      const cx = e.cx ?? 0, cy = e.cy ?? 0, r = e.radius ?? 0;
+      const cx = e.cx ?? 0,
+        cy = e.cy ?? 0,
+        r = e.radius ?? 0;
       expand(cx - r, cy - r);
       expand(cx + r, cy + r);
     } else if ((e.type === "SOLID" || e.type === "3DFACE") && e.vertices) {
@@ -1703,7 +1884,9 @@ export function buildSvgPaths(entities: DxfEntity[], bounds: DxfBounds): SvgPath
   const paths: SvgPath[] = [];
   const { maxY } = bounds;
 
-  function flipY(y: number) { return maxY - y + bounds.minY; }
+  function flipY(y: number) {
+    return maxY - y + bounds.minY;
+  }
 
   function arcPath(cx: number, cy: number, r: number, startDeg: number, endDeg: number): string {
     const s = (startDeg * Math.PI) / 180;
@@ -1720,7 +1903,7 @@ export function buildSvgPaths(entities: DxfEntity[], bounds: DxfBounds): SvgPath
 
   function polylinePath(verts: DxfVertex[], closed: boolean | undefined): string {
     if (!verts || verts.length < 1) return "";
-    const pts = verts.map(v => `${v.x},${flipY(v.y)}`);
+    const pts = verts.map((v) => `${v.x},${flipY(v.y)}`);
     let d = `M ${pts[0]} L ${pts.slice(1).join(" L ")}`;
     if (closed) d += " Z";
     return d;
@@ -1731,11 +1914,15 @@ export function buildSvgPaths(entities: DxfEntity[], bounds: DxfBounds): SvgPath
     let d = "";
 
     if (e.type === "LINE") {
-      const x1 = e.x1 ?? 0, y1 = flipY(e.y1 ?? 0);
-      const x2 = e.x2 ?? 0, y2 = flipY(e.y2 ?? 0);
+      const x1 = e.x1 ?? 0,
+        y1 = flipY(e.y1 ?? 0);
+      const x2 = e.x2 ?? 0,
+        y2 = flipY(e.y2 ?? 0);
       d = `M ${x1} ${y1} L ${x2} ${y2}`;
     } else if (e.type === "CIRCLE") {
-      const cx = e.cx ?? 0, cy = flipY(e.cy ?? 0), r = e.radius ?? 0;
+      const cx = e.cx ?? 0,
+        cy = flipY(e.cy ?? 0),
+        r = e.radius ?? 0;
       d = `M ${cx - r} ${cy} A ${r} ${r} 0 1 0 ${cx + r} ${cy} A ${r} ${r} 0 1 0 ${cx - r} ${cy}`;
     } else if (e.type === "ARC") {
       d = arcPath(e.cx ?? 0, e.cy ?? 0, e.radius ?? 0, e.startAngle ?? 0, e.endAngle ?? 0);
@@ -1746,7 +1933,8 @@ export function buildSvgPaths(entities: DxfEntity[], bounds: DxfBounds): SvgPath
     } else if (e.type === "SPLINE" && e.vertices && e.vertices.length > 0) {
       d = polylinePath(e.vertices, e.closed);
     } else if (e.type === "ELLIPSE") {
-      const cx = e.cx ?? 0, cy = flipY(e.cy ?? 0);
+      const cx = e.cx ?? 0,
+        cy = flipY(e.cy ?? 0);
       const rx = e.radius ?? 1;
       const ry = rx * 0.6; // approximate ratio
       const startDeg = e.startAngle ?? 0;
@@ -1758,13 +1946,20 @@ export function buildSvgPaths(entities: DxfEntity[], bounds: DxfBounds): SvgPath
         d = arcPath(e.cx ?? 0, e.cy ?? 0, e.radius ?? 1, startDeg, endDeg);
       }
     } else if (e.type === "POINT") {
-      const x = e.x1 ?? 0, y = flipY(e.y1 ?? 0);
+      const x = e.x1 ?? 0,
+        y = flipY(e.y1 ?? 0);
       d = `M ${x - 2} ${y} L ${x + 2} ${y} M ${x} ${y - 2} L ${x} ${y + 2}`; // small crosshair
-    } else if ((e.type === "SOLID" || e.type === "3DFACE") && e.vertices && e.vertices.length >= 2) {
+    } else if (
+      (e.type === "SOLID" || e.type === "3DFACE") &&
+      e.vertices &&
+      e.vertices.length >= 2
+    ) {
       d = polylinePath(e.vertices, true);
     } else if (e.type === "DIMENSION") {
-      const x1 = e.x1 ?? 0, y1 = flipY(e.y1 ?? 0);
-      const x2 = e.x2 ?? 0, y2 = flipY(e.y2 ?? 0);
+      const x1 = e.x1 ?? 0,
+        y1 = flipY(e.y1 ?? 0);
+      const x2 = e.x2 ?? 0,
+        y2 = flipY(e.y2 ?? 0);
       d = `M ${x1} ${y1} L ${x2} ${y2}`;
     }
 

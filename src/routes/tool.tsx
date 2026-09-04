@@ -1,26 +1,51 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { analyzeDxf, repairDxf, scoreColor, scoreBg, scoreLabel, getDxfBounds, buildSvgPaths, calculateTotalPerimeter, sortInsideFirst } from "@/lib/dxf";
-import type { DxfAnalysis, DxfIssue, FixSummaryItem, DxfBounds, SvgPath, DxfEntity } from "@/lib/dxf";
+import {
+  analyzeDxf,
+  repairDxf,
+  scoreColor,
+  scoreBg,
+  scoreLabel,
+  getDxfBounds,
+  buildSvgPaths,
+  calculateTotalPerimeter,
+  sortInsideFirst,
+} from "@/lib/dxf";
+import type {
+  DxfAnalysis,
+  DxfIssue,
+  FixSummaryItem,
+  DxfBounds,
+  SvgPath,
+  DxfEntity,
+} from "@/lib/dxf";
 // Open-path detection: consume the cleanup engine's public API only — NO engine changes.
 import { DEFAULT_CLEANUP_OPTIONS, detectOpenPaths } from "@/lib/dxf-cleanup";
 import { downloadAllAsZip, triggerSelfDestruct, isSelfDestructTriggered } from "@/lib/zip-export";
-import { track } from '@vercel/analytics';
+import { track } from "@vercel/analytics";
 import { FeedbackModal } from "@/components/feedback-modal";
 import { SafetyBadge } from "@/components/safety-badge";
 import { AdBanner } from "@/components/AdBanner";
 import { ShareToolWidget } from "@/components/share-tool-widget";
 import { parseSvg, isSvgContent, isSvgFile } from "@/lib/svg-parser";
-import { advancedSimplify, arcToPoints, circleToPoints, ellipseToPoints } from "@/lib/path-simplify";
+import {
+  advancedSimplify,
+  arcToPoints,
+  circleToPoints,
+  ellipseToPoints,
+} from "@/lib/path-simplify";
 import type { Point } from "@/lib/path-simplify";
 import { fullPathCleanup, pathLength } from "@/lib/path-union";
 import type { PathSegment } from "@/lib/path-union";
-import { pathsToCuttingPaths, advancedOptimize, generateOptimizationReport } from "@/lib/toolpath-optimizer";
+import {
+  pathsToCuttingPaths,
+  advancedOptimize,
+  generateOptimizationReport,
+} from "@/lib/toolpath-optimizer";
 import type { CuttingPath } from "@/lib/toolpath-optimizer";
 import { recordRepair, recordUpload } from "@/lib/stats";
 import { useGeometryFixMode, type GeometryFixState, type GeometryFixMethod } from "./__root";
 import { generateMaterialReport, optimizeNesting } from "@/lib/dxf-advanced";
-
 
 interface HistoryEntry {
   id: string;
@@ -56,18 +81,26 @@ interface BridgePreview {
   gap: number;
   closable: boolean;
 }
-function computeOpenLoopData(a: DxfAnalysis | null, manualRepairThreshold: number = 0.1): { count: number; openPoints: { x: number; y: number }[]; fixedCount: number; bridges: BridgePreview[] } {
+function computeOpenLoopData(
+  a: DxfAnalysis | null,
+  manualRepairThreshold: number = 0.1,
+): {
+  count: number;
+  openPoints: { x: number; y: number }[];
+  fixedCount: number;
+  bridges: BridgePreview[];
+} {
   if (!a) return { count: 0, openPoints: [], fixedCount: 0, bridges: [] };
   const openPaths = detectOpenPaths(a.entities, DEFAULT_CLEANUP_OPTIONS);
-  const fixedOpen = openPaths.filter(p => p.gap < manualRepairThreshold);
-  const needsManualRepair = openPaths.filter(p => p.gap >= manualRepairThreshold);
+  const fixedOpen = openPaths.filter((p) => p.gap < manualRepairThreshold);
+  const needsManualRepair = openPaths.filter((p) => p.gap >= manualRepairThreshold);
   const openPoints: { x: number; y: number }[] = [];
   const bridges: BridgePreview[] = [];
-  needsManualRepair.forEach(path => {
+  needsManualRepair.forEach((path) => {
     openPoints.push(path.start);
     openPoints.push(path.end);
   });
-  openPaths.forEach(path => {
+  openPaths.forEach((path) => {
     if (path.partner) {
       bridges.push({
         from: path.start,
@@ -105,14 +138,13 @@ function normaliseAngle(a: number): number {
   return n;
 }
 
-function getEndpointStyle(
-  entity: DxfEntity,
-  endpoint: { x: number; y: number },
-): EndpointStyle {
+function getEndpointStyle(entity: DxfEntity, endpoint: { x: number; y: number }): EndpointStyle {
   switch (entity.type) {
     case "LINE": {
-      const x1 = entity.x1 ?? 0, y1 = entity.y1 ?? 0;
-      const x2 = entity.x2 ?? 0, y2 = entity.y2 ?? 0;
+      const x1 = entity.x1 ?? 0,
+        y1 = entity.y1 ?? 0;
+      const x2 = entity.x2 ?? 0,
+        y2 = entity.y2 ?? 0;
       const dist1 = Math.hypot(endpoint.x - x1, endpoint.y - y1);
       const dist2 = Math.hypot(endpoint.x - x2, endpoint.y - y2);
       const angle = Math.atan2(y2 - y1, x2 - x1);
@@ -120,7 +152,8 @@ function getEndpointStyle(
       return { style: "line", exitAngle: normaliseAngle(tangent) };
     }
     case "ARC": {
-      const cx = entity.cx ?? 0, cy = entity.cy ?? 0;
+      const cx = entity.cx ?? 0,
+        cy = entity.cy ?? 0;
       const r = entity.radius ?? 1;
       const start = entity.startAngle ?? 0;
       const end = entity.endAngle ?? Math.PI * 2;
@@ -136,7 +169,8 @@ function getEndpointStyle(
       };
     }
     case "CIRCLE": {
-      const cx = entity.cx ?? 0, cy = entity.cy ?? 0;
+      const cx = entity.cx ?? 0,
+        cy = entity.cy ?? 0;
       const epAngle = Math.atan2(endpoint.y - cy, endpoint.x - cx);
       return { style: "circle", exitAngle: normaliseAngle(epAngle + Math.PI / 2) };
     }
@@ -148,10 +182,14 @@ function getEndpointStyle(
 function entityPointDistance(e: DxfEntity, pt: { x: number; y: number }): number {
   switch (e.type) {
     case "LINE": {
-      const x1 = e.x1 ?? 0, y1 = e.y1 ?? 0;
-      const x2 = e.x2 ?? 0, y2 = e.y2 ?? 0;
-      const A = pt.x - x1, B = pt.y - y1;
-      const C = x2 - x1, D = y2 - y1;
+      const x1 = e.x1 ?? 0,
+        y1 = e.y1 ?? 0;
+      const x2 = e.x2 ?? 0,
+        y2 = e.y2 ?? 0;
+      const A = pt.x - x1,
+        B = pt.y - y1;
+      const C = x2 - x1,
+        D = y2 - y1;
       const dot = A * C + B * D;
       const lenSq = C * C + D * D;
       if (lenSq === 0) return Math.hypot(A, B);
@@ -160,7 +198,8 @@ function entityPointDistance(e: DxfEntity, pt: { x: number; y: number }): number
     }
     case "ARC":
     case "CIRCLE": {
-      const cx = e.cx ?? 0, cy = e.cy ?? 0;
+      const cx = e.cx ?? 0,
+        cy = e.cy ?? 0;
       return Math.abs(Math.hypot(pt.x - cx, pt.y - cy) - (e.radius ?? 1));
     }
     case "LWPOLYLINE":
@@ -168,13 +207,20 @@ function entityPointDistance(e: DxfEntity, pt: { x: number; y: number }): number
       if (!e.vertices || e.vertices.length === 0) return Infinity;
       let minDist = Infinity;
       for (let i = 0; i < e.vertices.length - 1; i++) {
-        const x1 = e.vertices[i].x, y1 = e.vertices[i].y;
-        const x2 = e.vertices[i + 1].x, y2 = e.vertices[i + 1].y;
-        const A = pt.x - x1, B = pt.y - y1;
-        const C = x2 - x1, D = y2 - y1;
+        const x1 = e.vertices[i].x,
+          y1 = e.vertices[i].y;
+        const x2 = e.vertices[i + 1].x,
+          y2 = e.vertices[i + 1].y;
+        const A = pt.x - x1,
+          B = pt.y - y1;
+        const C = x2 - x1,
+          D = y2 - y1;
         const dot = A * C + B * D;
         const lenSq = C * C + D * D;
-        if (lenSq === 0) { minDist = Math.min(minDist, Math.hypot(A, B)); continue; }
+        if (lenSq === 0) {
+          minDist = Math.min(minDist, Math.hypot(A, B));
+          continue;
+        }
         const t = Math.max(0, Math.min(1, dot / lenSq));
         minDist = Math.min(minDist, Math.hypot(pt.x - (x1 + t * C), pt.y - (y1 + t * D)));
       }
@@ -185,11 +231,21 @@ function entityPointDistance(e: DxfEntity, pt: { x: number; y: number }): number
   }
 }
 
-function makeLine(from: { x: number; y: number }, to: { x: number; y: number }, layer: string, handle: string): DxfEntity {
+function makeLine(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  layer: string,
+  handle: string,
+): DxfEntity {
   return { type: "LINE", layer, handle, rawLines: [], x1: from.x, y1: from.y, x2: to.x, y2: to.y };
 }
 
-function makeArcBlend(from: { x: number; y: number }, to: { x: number; y: number }, layer: string, handle: string): DxfEntity {
+function makeArcBlend(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  layer: string,
+  handle: string,
+): DxfEntity {
   const mx = (from.x + to.x) / 2;
   const my = (from.y + to.y) / 2;
   const dx = to.x - from.x;
@@ -225,7 +281,10 @@ function smartBridgeEntity(
     let bestDist = Infinity;
     for (const e of entities) {
       const dist = entityPointDistance(e, pt);
-      if (dist < bestDist) { bestDist = dist; best = e; }
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = e;
+      }
     }
     return bestDist < len * 5 ? best : null;
   }
@@ -241,7 +300,8 @@ function smartBridgeEntity(
 
   if (fromStyle?.style === "arc" && toStyle?.style === "arc") {
     if (
-      fromStyle.radius != null && toStyle.radius != null &&
+      fromStyle.radius != null &&
+      toStyle.radius != null &&
       Math.abs(fromStyle.radius - toStyle.radius) < 0.01
     ) {
       return makeArcBlend(from, to, layer, handle);
@@ -262,7 +322,7 @@ function buildFixBridgeEntities(
 ): FixBridgeEntity[] {
   if (!analysis || method === "skip") return [];
   const openPaths = detectOpenPaths(analysis.entities, DEFAULT_CLEANUP_OPTIONS);
-  const manual = openPaths.filter(p => p.gap >= manualRepairThreshold && p.partner);
+  const manual = openPaths.filter((p) => p.gap >= manualRepairThreshold && p.partner);
   const used = new Set<string>();
   const out: FixBridgeEntity[] = [];
   const layer = analysis.entities[0]?.layer ?? "0";
@@ -275,8 +335,8 @@ function buildFixBridgeEntities(
     const from = path.start;
     const to = path.partner!;
     // Key both orientations so each gap is bridged exactly once.
-    const key = [from.x, from.y, to.x, to.y].map(n => n.toFixed(6)).join(",");
-    const revKey = [to.x, to.y, from.x, from.y].map(n => n.toFixed(6)).join(",");
+    const key = [from.x, from.y, to.x, to.y].map((n) => n.toFixed(6)).join(",");
+    const revKey = [to.x, to.y, from.x, from.y].map((n) => n.toFixed(6)).join(",");
     if (used.has(key) || used.has(revKey)) return;
     used.add(key);
     used.add(revKey);
@@ -305,10 +365,14 @@ function buildFixBridgeEntities(
 function serializeFixEntity(e: DxfEntity): string {
   if (e.type === "LWPOLYLINE" && e.vertices) {
     const lines: string[] = [
-      "  0", "LWPOLYLINE",
-      "  8", e.layer,
-      " 90", String(e.vertices.length),
-      " 70", e.closed ? "1" : "0",
+      "  0",
+      "LWPOLYLINE",
+      "  8",
+      e.layer,
+      " 90",
+      String(e.vertices.length),
+      " 70",
+      e.closed ? "1" : "0",
     ];
     if (e.handle) lines.push("  5", e.handle);
     for (const v of e.vertices) {
@@ -330,12 +394,9 @@ function serializeFixEntity(e: DxfEntity): string {
 
 // Append applied fix bridge entities into an existing DXF string, inserted just
 // before the ENTITIES ENDSEC. Returns the original content when nothing to add.
-function appendFixEntitiesToDxf(
-  content: string,
-  fixEntities: FixBridgeEntity[],
-): string {
+function appendFixEntitiesToDxf(content: string, fixEntities: FixBridgeEntity[]): string {
   if (!content || fixEntities.length === 0) return content;
-  const block = fixEntities.map(f => serializeFixEntity(f.entity)).join("\n");
+  const block = fixEntities.map((f) => serializeFixEntity(f.entity)).join("\n");
   // Insert before "\n  0\nENDSEC" inside the ENTITIES section (the first ENDSEC).
   const endSecIdx = content.indexOf("\n  0\nENDSEC");
   if (endSecIdx === -1) {
@@ -357,7 +418,17 @@ interface PreviewData {
   gapTolerance?: number;
 }
 
-function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridges, before, gapTolerance = 0.1, highlightCategory = null }: {
+function DxfPreview({
+  analysis,
+  issueIndices,
+  lang,
+  openPoints,
+  pathCount,
+  bridges,
+  before,
+  gapTolerance = 0.1,
+  highlightCategory = null,
+}: {
   analysis: DxfAnalysis;
   issueIndices: Set<number>;
   lang: "ar" | "en";
@@ -383,10 +454,10 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
   // over an open point / bridge so the user sees the gap detail clearly.
 
   const [magnifier, setMagnifier] = useState<{
-    cx: number;   // world-X of the focus point
-    cy: number;   // world-Y of the focus point
-    mx: number;   // client-X (screen) where the loupe should follow
-    my: number;   // client-Y (screen)
+    cx: number; // world-X of the focus point
+    cy: number; // world-Y of the focus point
+    mx: number; // client-X (screen) where the loupe should follow
+    my: number; // client-Y (screen)
     label: string; // e.g. "فجوة 0.23 مم"
   } | null>(null);
 
@@ -394,45 +465,58 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
   const { geometryFixMode, setGeometryFixMode } = useGeometryFixMode();
 
   // Active dataset = "after" (default) or "before" (original file) view.
-  const active: PreviewData = showBefore && before
-    ? before
-    : { analysis, issueIndices, openPoints: openPoints ?? [], pathCount: pathCount ?? 0, bridges: bridges ?? [] };
+  const active: PreviewData =
+    showBefore && before
+      ? before
+      : {
+          analysis,
+          issueIndices,
+          openPoints: openPoints ?? [],
+          pathCount: pathCount ?? 0,
+          bridges: bridges ?? [],
+        };
 
   // Applied bridge entities (live preview of the fix, with Undo support).
   const [fixEntities, setFixEntities] = useState<FixBridgeEntity[]>([]);
   // Rebuild proposed fix entities whenever the file / method / mode changes.
   const proposedFixes = useMemo(
-    () => (geometryFixMode.enabled ? buildFixBridgeEntities(active.analysis, geometryFixMode.method, gapTolerance) : []),
+    () =>
+      geometryFixMode.enabled
+        ? buildFixBridgeEntities(active.analysis, geometryFixMode.method, gapTolerance)
+        : [],
     [geometryFixMode.enabled, geometryFixMode.method, active.analysis, gapTolerance],
   );
   const applyFix = useCallback(() => {
     setFixEntities(proposedFixes);
-    setGeometryFixMode(prev => ({ ...prev, applied: proposedFixes.length > 0 }));
+    setGeometryFixMode((prev) => ({ ...prev, applied: proposedFixes.length > 0 }));
   }, [proposedFixes, setGeometryFixMode]);
   const undoFix = useCallback(() => {
     setFixEntities([]);
-    setGeometryFixMode(prev => ({ ...prev, applied: false }));
+    setGeometryFixMode((prev) => ({ ...prev, applied: false }));
   }, [setGeometryFixMode]);
   // Switching mode off clears both the applied mark and the live entities.
   const toggleFixMode = useCallback(() => {
-    setGeometryFixMode(prev => {
+    setGeometryFixMode((prev) => {
       const enabled = !prev.enabled;
-      return enabled
-        ? { ...prev, enabled }
-        : { enabled, method: prev.method, applied: false };
+      return enabled ? { ...prev, enabled } : { enabled, method: prev.method, applied: false };
     });
     if (geometryFixMode.enabled) setFixEntities([]);
   }, [geometryFixMode.enabled, setGeometryFixMode]);
-  const changeFixMethod = useCallback((method: GeometryFixMethod) => {
-    setGeometryFixMode(prev => ({ ...prev, method, applied: false }));
-    setFixEntities([]);
-  }, [setGeometryFixMode]);
+  const changeFixMethod = useCallback(
+    (method: GeometryFixMethod) => {
+      setGeometryFixMode((prev) => ({ ...prev, method, applied: false }));
+      setFixEntities([]);
+    },
+    [setGeometryFixMode],
+  );
 
   const bounds = getDxfBounds(active.analysis.entities);
   if (!bounds || bounds.width === 0 || bounds.height === 0) {
     return (
       <p className="text-center font-mono text-xs text-muted-foreground py-8">
-        {lang === "ar" ? "لا يمكن رسم معاينة — الملف لا يحتوي على إحداثيات" : "Cannot render preview — no geometry found"}
+        {lang === "ar"
+          ? "لا يمكن رسم معاينة — الملف لا يحتوي على إحداثيات"
+          : "Cannot render preview — no geometry found"}
       </p>
     );
   }
@@ -452,14 +536,15 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
   }
 
   function toggleLayer(layer: string) {
-    setHiddenLayers(prev => {
+    setHiddenLayers((prev) => {
       const next = new Set(prev);
-      if (next.has(layer)) next.delete(layer); else next.add(layer);
+      if (next.has(layer)) next.delete(layer);
+      else next.add(layer);
       return next;
     });
   }
 
-  const visiblePaths = allPaths.filter(p => {
+  const visiblePaths = allPaths.filter((p) => {
     if (hiddenLayers.has(p.layer)) return false;
     if (issuesOnly && !active.issueIndices.has(p.entityIndex)) return false;
     return true;
@@ -499,15 +584,15 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
   // Gap magnifier window: zoom the area around the cursor (K× relative to the
   // base render). MAG_WIN = the world-unit width of the loupe viewBox window.
 
-  const MAG_K = 12;                     // relative magnification factor
-  const MAG_SIZE = 224;                  // loupe diameter in px
-  const magWin = vw / MAG_K;             // world-units across the loupe window
+  const MAG_K = 12; // relative magnification factor
+  const MAG_SIZE = 224; // loupe diameter in px
+  const magWin = vw / MAG_K; // world-units across the loupe window
   const magHalf = magWin / 2;
 
   // Calculate open loop points in SVG coordinates
   const { maxY } = bounds;
   const flipY = (y: number) => maxY - y + bounds.minY;
-  const svgOpenPoints = active.openPoints.map(p => ({
+  const svgOpenPoints = active.openPoints.map((p) => ({
     x: p.x,
     y: flipY(p.y),
   }));
@@ -515,9 +600,10 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
   // Hover handlers for the gap magnifier — reuse for dots, dashed bridges and
   // blue fix geometry. Stores client coords so the loupe follows the cursorه
   const focusHandlers = (cx: number, cy: number, label: string) => ({
-    onMouseEnter: (e: { clientX: number; clientY: number }) => setMagnifier({ cx, cy, mx: e.clientX, my: e.clientY, label }),
+    onMouseEnter: (e: { clientX: number; clientY: number }) =>
+      setMagnifier({ cx, cy, mx: e.clientX, my: e.clientY, label }),
     onMouseMove: (e: { clientX: number; clientY: number }) =>
-      setMagnifier(m => (m ? { ...m, mx: e.clientX, my: e.clientY } : m)),
+      setMagnifier((m) => (m ? { ...m, mx: e.clientX, my: e.clientY } : m)),
     onMouseLeave: () => setMagnifier(null),
   });
 
@@ -582,11 +668,14 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
       <div className="flex items-center justify-between px-5 py-3 border-b border-border gap-3 flex-wrap">
         <span className="font-display font-semibold text-sm">
           {lang === "ar" ? "🖼 معاينة الرسم" : "🖼 Drawing Preview"}
-          {before && (
-            showBefore
-              ? (lang === "ar" ? " — قبل الإصلاح" : " — Before fix")
-              : (lang === "ar" ? " — بعد الإصلاح" : " — After fix")
-          )}
+          {before &&
+            (showBefore
+              ? lang === "ar"
+                ? " — قبل الإصلاح"
+                : " — Before fix"
+              : lang === "ar"
+                ? " — بعد الإصلاح"
+                : " — After fix")}
         </span>
         <div className="flex items-center gap-2 flex-wrap">
           {/* Before/After toggle: compare the ORIGINAL file against the repaired one */}
@@ -625,32 +714,40 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
             }`}
           >
             {simulating
-              ? (lang === "ar" ? `⏳ ${simProgress}%` : `⏳ ${simProgress}%`)
-              : (lang === "ar" ? "▶ تشغيل المحاكاة" : "▶ Play Simulation")}
+              ? lang === "ar"
+                ? `⏳ ${simProgress}%`
+                : `⏳ ${simProgress}%`
+              : lang === "ar"
+                ? "▶ تشغيل المحاكاة"
+                : "▶ Play Simulation"}
           </button>
           {active.openPoints.length > 0 && (
             <button
-              onClick={() => setShowOpenLoops(v => !v)}
+              onClick={() => setShowOpenLoops((v) => !v)}
               className={`font-mono text-xs px-3 py-1 rounded-lg border transition ${
                 showOpenLoops
                   ? "border-red-500 bg-red-500/20 text-red-400"
                   : "border-border text-muted-foreground hover:border-red-500/50 hover:text-red-400"
               }`}
             >
-              {lang === "ar" ? `🟡 ${active.pathCount} نقطة تحتاج إصلاح` : `🔴 Open points (${active.pathCount})`}
+              {lang === "ar"
+                ? `🟡 ${active.pathCount} نقطة تحتاج إصلاح`
+                : `🔴 Open points (${active.pathCount})`}
             </button>
           )}
           {active.bridges.length > 0 && (
             <button
-              onClick={() => setShowOpenLoops(v => !v)}
+              onClick={() => setShowOpenLoops((v) => !v)}
               className={`font-mono text-xs px-3 py-1 rounded-lg border transition ${
                 showOpenLoops
                   ? "border-green-500 bg-green-500/20 text-green-400"
                   : "border-border text-muted-foreground hover:border-green-500/50 hover:text-green-400"
               }`}
             >
-              {lang === "ar" ? `🔗 ${active.bridges.length} خطوط توصيل` : `🔗 Bridges (${active.bridges.length})`}
-                        </button>
+              {lang === "ar"
+                ? `🔗 ${active.bridges.length} خطوط توصيل`
+                : `🔗 Bridges (${active.bridges.length})`}
+            </button>
           )}
           {active.bridges.length > 0 && (
             <button
@@ -673,9 +770,11 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
                     ? "bg-purple-500/20 text-purple-400 font-bold"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
-                title={lang === "ar"
-                  ? "يحلل أسلوب الرسم ويكمل بنفس النمط (خط/قوس/منحنى)"
-                  : "Analyzes the drawing style and continues in the same pattern (line/arc/curve)"}
+                title={
+                  lang === "ar"
+                    ? "يحلل أسلوب الرسم ويكمل بنفس النمط (خط/قوس/منحنى)"
+                    : "Analyzes the drawing style and continues in the same pattern (line/arc/curve)"
+                }
               >
                 {lang === "ar" ? `🧠 ذكي` : `🧠 Smart`}
               </button>
@@ -727,7 +826,9 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
                   onClick={applyFix}
                   className="font-mono text-xs px-3 py-1 rounded-lg border border-cyan-500/50 bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 transition font-bold"
                 >
-                  {lang === "ar" ? `✔ تطبيق ${proposedFixes.length} إصلاح` : `✔ Apply ${proposedFixes.length} fixes`}
+                  {lang === "ar"
+                    ? `✔ تطبيق ${proposedFixes.length} إصلاح`
+                    : `✔ Apply ${proposedFixes.length} fixes`}
                 </button>
               )}
               {fixEntities.length > 0 && !geometryFixMode.applied && (
@@ -742,7 +843,7 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
           )}
           {hasIssues && (
             <button
-              onClick={() => setIssuesOnly(v => !v)}
+              onClick={() => setIssuesOnly((v) => !v)}
               className={`font-mono text-xs px-3 py-1 rounded-lg border transition ${
                 issuesOnly
                   ? "border-red-500 bg-red-500/20 text-red-400"
@@ -752,10 +853,25 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
               {lang === "ar" ? "المشاكل فقط" : "Issues only"}
             </button>
           )}
-          <button onClick={() => setZoom(z => Math.max(0.5, z - 0.25))} className="w-7 h-7 rounded-lg bg-muted text-sm font-bold hover:bg-muted/80 transition">−</button>
-          <span className="font-mono text-xs text-muted-foreground w-10 text-center">{Math.round(zoom * 100)}%</span>
-          <button onClick={() => setZoom(z => Math.min(4, z + 0.25))} className="w-7 h-7 rounded-lg bg-muted text-sm font-bold hover:bg-muted/80 transition">+</button>
-          <button onClick={() => setZoom(1)} className="font-mono text-xs text-muted-foreground/60 hover:text-foreground transition px-2">
+          <button
+            onClick={() => setZoom((z) => Math.max(0.5, z - 0.25))}
+            className="w-7 h-7 rounded-lg bg-muted text-sm font-bold hover:bg-muted/80 transition"
+          >
+            −
+          </button>
+          <span className="font-mono text-xs text-muted-foreground w-10 text-center">
+            {Math.round(zoom * 100)}%
+          </span>
+          <button
+            onClick={() => setZoom((z) => Math.min(4, z + 0.25))}
+            className="w-7 h-7 rounded-lg bg-muted text-sm font-bold hover:bg-muted/80 transition"
+          >
+            +
+          </button>
+          <button
+            onClick={() => setZoom(1)}
+            className="font-mono text-xs text-muted-foreground/60 hover:text-foreground transition px-2"
+          >
             {lang === "ar" ? "ملاءمة" : "Fit"}
           </button>
         </div>
@@ -787,7 +903,7 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
                 stroke={color}
                 strokeWidth={strokeW}
                 fill="none"
-                opacity={opacity !== 1 ? opacity : (isIssue ? 1 : 0.85)}
+                opacity={opacity !== 1 ? opacity : isIssue ? 1 : 0.85}
                 strokeLinecap="round"
                 strokeLinejoin="round"
               />
@@ -815,51 +931,67 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
             </g>
           )}
           {/* Bridge preview lines - dashed lines showing how open endpoints will be connected */}
-          {showOpenLoops && active.bridges.map((bridge, i) => {
-            const { from, to, closable } = bridge;
-            const fx = from.x, fy = flipY(from.y);
-            const tx = to.x, ty = flipY(to.y);
-            const mcx = (from.x + to.x) / 2;
-            const mcy = (from.y + to.y) / 2;
-            const color = closable ? "#22c55e" : "#ef4444"; // green for auto-closable, red for manual
-            const opacity = closable ? 0.7 : 0.5;
-            const dash = closable ? "4,2" : "8,4";
-            const label = lang === "ar"
-              ? `فجوة ${bridge.gap.toFixed(3)} مم`
-              : `Gap ${bridge.gap.toFixed(3)} mm`;
-            return (
-              <line
-                key={`bridge-${i}`}
-                x1={fx} y1={fy} x2={tx} y2={ty}
-                stroke={color}
-                strokeWidth={strokeW * 1.2}
-                strokeDasharray={dash}
-                opacity={opacity}
-                strokeLinecap="round"
-                {...focusHandlers(mcx, mcy, label)}
-              />
-            );
-          })}
+          {showOpenLoops &&
+            active.bridges.map((bridge, i) => {
+              const { from, to, closable } = bridge;
+              const fx = from.x,
+                fy = flipY(from.y);
+              const tx = to.x,
+                ty = flipY(to.y);
+              const mcx = (from.x + to.x) / 2;
+              const mcy = (from.y + to.y) / 2;
+              const color = closable ? "#22c55e" : "#ef4444"; // green for auto-closable, red for manual
+              const opacity = closable ? 0.7 : 0.5;
+              const dash = closable ? "4,2" : "8,4";
+              const label =
+                lang === "ar"
+                  ? `فجوة ${bridge.gap.toFixed(3)} مم`
+                  : `Gap ${bridge.gap.toFixed(3)} mm`;
+              return (
+                <line
+                  key={`bridge-${i}`}
+                  x1={fx}
+                  y1={fy}
+                  x2={tx}
+                  y2={ty}
+                  stroke={color}
+                  strokeWidth={strokeW * 1.2}
+                  strokeDasharray={dash}
+                  opacity={opacity}
+                  strokeLinecap="round"
+                  {...focusHandlers(mcx, mcy, label)}
+                />
+              );
+            })}
           {/* Applied / proposed Geometry-Fix bridges — solid blue so the user
               sees EXACTLY where the new connecting geometry will be drawn. */}
           {(fixEntities.length > 0 || (geometryFixMode.enabled && proposedFixes.length > 0)) && (
             <g>
               {(fixEntities.length > 0 ? fixEntities : proposedFixes).map((fix, i) => {
                 const { from, to } = fix.bridge;
-                const fx = from.x, fy = flipY(from.y);
-                const tx = to.x, ty = flipY(to.y);
+                const fx = from.x,
+                  fy = flipY(from.y);
+                const tx = to.x,
+                  ty = flipY(to.y);
                 const mcx = (from.x + to.x) / 2;
                 const mcy = (from.y + to.y) / 2;
-                const label = lang === "ar"
-                  ? `ربط ${fix.bridge.gap.toFixed(3)} مم`
-                  : `Bridge ${fix.bridge.gap.toFixed(3)} mm`;
-                if (fix.entity.type === "LWPOLYLINE" && fix.entity.vertices && fix.entity.vertices.length > 2) {
+                const label =
+                  lang === "ar"
+                    ? `ربط ${fix.bridge.gap.toFixed(3)} مم`
+                    : `Bridge ${fix.bridge.gap.toFixed(3)} mm`;
+                if (
+                  fix.entity.type === "LWPOLYLINE" &&
+                  fix.entity.vertices &&
+                  fix.entity.vertices.length > 2
+                ) {
                   const pts = [
                     { x: fx, y: fy },
-                    ...fix.entity.vertices.slice(1, -1).map(v => ({ x: v.x, y: flipY(v.y) })),
+                    ...fix.entity.vertices.slice(1, -1).map((v) => ({ x: v.x, y: flipY(v.y) })),
                     { x: tx, y: ty },
                   ];
-                  const d = pts.map((p, j) => `${j === 0 ? "M" : "L"} ${p.x.toFixed(4)} ${p.y.toFixed(4)}`).join(" ");
+                  const d = pts
+                    .map((p, j) => `${j === 0 ? "M" : "L"} ${p.x.toFixed(4)} ${p.y.toFixed(4)}`)
+                    .join(" ");
                   return (
                     <path
                       key={`fix-arc-${i}`}
@@ -877,7 +1009,10 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
                 return (
                   <line
                     key={`fix-line-${i}`}
-                    x1={fx} y1={fy} x2={tx} y2={ty}
+                    x1={fx}
+                    y1={fy}
+                    x2={tx}
+                    y2={ty}
                     stroke="#3b82f6"
                     strokeWidth={strokeW * 1.4}
                     opacity={0.95}
@@ -889,33 +1024,34 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
             </g>
           )}
           {/* Open loop indicators - bright red circles */}
-          {showOpenLoops && svgOpenPoints.map((pt, i) => (
-            <g
-              key={`open-${i}`}
-              {...focusHandlers(
-                active.openPoints[i]?.x ?? pt.x,
-                active.openPoints[i]?.y ?? pt.y,
-                lang === "ar" ? "نقطة مفتوحة" : "Open point",
-              )}
-            >
-              <circle
-                cx={pt.x}
-                cy={pt.y}
-                r={Math.max(bounds.width, bounds.height) * 0.015}
-                fill="none"
-                stroke="#ef4444"
-                strokeWidth={strokeW * 2}
-                opacity={0.9}
-              />
-              <circle
-                cx={pt.x}
-                cy={pt.y}
-                r={Math.max(bounds.width, bounds.height) * 0.005}
-                fill="#ef4444"
-                opacity={1}
-              />
-            </g>
-          ))}
+          {showOpenLoops &&
+            svgOpenPoints.map((pt, i) => (
+              <g
+                key={`open-${i}`}
+                {...focusHandlers(
+                  active.openPoints[i]?.x ?? pt.x,
+                  active.openPoints[i]?.y ?? pt.y,
+                  lang === "ar" ? "نقطة مفتوحة" : "Open point",
+                )}
+              >
+                <circle
+                  cx={pt.x}
+                  cy={pt.y}
+                  r={Math.max(bounds.width, bounds.height) * 0.015}
+                  fill="none"
+                  stroke="#ef4444"
+                  strokeWidth={strokeW * 2}
+                  opacity={0.9}
+                />
+                <circle
+                  cx={pt.x}
+                  cy={pt.y}
+                  r={Math.max(bounds.width, bounds.height) * 0.005}
+                  fill="#ef4444"
+                  opacity={1}
+                />
+              </g>
+            ))}
         </svg>
       </div>
 
@@ -956,30 +1092,37 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
               />
             ))}
             {/* Dashed bridge lines */}
-            {showOpenLoops && active.bridges.map((bridge, i) => (
-              <line
-                key={`mag-bridge-${i}`}
-                x1={bridge.from.x}
-                y1={flipY(bridge.from.y)}
-                x2={bridge.to.x}
-                y2={flipY(bridge.to.y)}
-                stroke={bridge.closable ? "#22c55e" : "#ef4444"}
-                strokeWidth={1.8}
-                strokeDasharray={bridge.closable ? "4,2" : "8,4"}
-                opacity={0.95}
-              />
-            ))}
+            {showOpenLoops &&
+              active.bridges.map((bridge, i) => (
+                <line
+                  key={`mag-bridge-${i}`}
+                  x1={bridge.from.x}
+                  y1={flipY(bridge.from.y)}
+                  x2={bridge.to.x}
+                  y2={flipY(bridge.to.y)}
+                  stroke={bridge.closable ? "#22c55e" : "#ef4444"}
+                  strokeWidth={1.8}
+                  strokeDasharray={bridge.closable ? "4,2" : "8,4"}
+                  opacity={0.95}
+                />
+              ))}
             {/* Blue fix bridges (proposed or applied) */}
             {(fixEntities.length > 0 || (geometryFixMode.enabled && proposedFixes.length > 0)) &&
               (fixEntities.length > 0 ? fixEntities : proposedFixes).map((fix, i) => {
                 const { from, to } = fix.bridge;
-                if (fix.entity.type === "LWPOLYLINE" && fix.entity.vertices && fix.entity.vertices.length > 2) {
+                if (
+                  fix.entity.type === "LWPOLYLINE" &&
+                  fix.entity.vertices &&
+                  fix.entity.vertices.length > 2
+                ) {
                   const pts = [
                     { x: from.x, y: flipY(from.y) },
-                    ...fix.entity.vertices.slice(1, -1).map(v => ({ x: v.x, y: flipY(v.y) })),
+                    ...fix.entity.vertices.slice(1, -1).map((v) => ({ x: v.x, y: flipY(v.y) })),
                     { x: to.x, y: flipY(to.y) },
                   ];
-                  const d = pts.map((p, j) => `${j === 0 ? "M" : "L"} ${p.x.toFixed(4)} ${p.y.toFixed(4)}`).join(" ");
+                  const d = pts
+                    .map((p, j) => `${j === 0 ? "M" : "L"} ${p.x.toFixed(4)} ${p.y.toFixed(4)}`)
+                    .join(" ");
                   return (
                     <path
                       key={`mag-fix-arc-${i}`}
@@ -1005,20 +1148,21 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
                 );
               })}
             {/* Open point dots */}
-            {showOpenLoops && svgOpenPoints.map((pt, i) => (
-              <g key={`mag-open-${i}`}>
-                <circle
-                  cx={pt.x}
-                  cy={pt.y}
-                  r={3.5}
-                  fill="none"
-                  stroke="#ef4444"
-                  strokeWidth={2}
-                  opacity={0.95}
-                />
-                <circle cx={pt.x} cy={pt.y} r={1.5} fill="#ef4444" />
-              </g>
-            ))}
+            {showOpenLoops &&
+              svgOpenPoints.map((pt, i) => (
+                <g key={`mag-open-${i}`}>
+                  <circle
+                    cx={pt.x}
+                    cy={pt.y}
+                    r={3.5}
+                    fill="none"
+                    stroke="#ef4444"
+                    strokeWidth={2}
+                    opacity={0.95}
+                  />
+                  <circle cx={pt.x} cy={pt.y} r={1.5} fill="#ef4444" />
+                </g>
+              ))}
             {/* Center crosshair */}
             <line
               x1={magnifier.cx - magHalf * 0.08}
@@ -1057,7 +1201,7 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
               }}
             >
               {magnifier.label}
-              </span>
+            </span>
           </div>
         </div>
       )}
@@ -1089,9 +1233,15 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
             <button
               key={layer}
               onClick={() => toggleLayer(layer)}
-              title={hidden
-                ? (lang === "ar" ? "اضغط لإظهار الطبقة" : "Click to show layer")
-                : (lang === "ar" ? "اضغط لإخفاء الطبقة" : "Click to hide layer")}
+              title={
+                hidden
+                  ? lang === "ar"
+                    ? "اضغط لإظهار الطبقة"
+                    : "Click to show layer"
+                  : lang === "ar"
+                    ? "اضغط لإخفاء الطبقة"
+                    : "Click to hide layer"
+              }
               className={`flex items-center gap-1.5 font-mono text-xs px-2.5 py-1 rounded-lg border transition select-none ${
                 hidden
                   ? "border-border/40 text-muted-foreground/30 line-through"
@@ -1141,10 +1291,21 @@ export const Route = createFileRoute("/tool")({
   head: () => ({
     meta: [
       { title: "DXFix — أداة إصلاح وفحص ملفات DXF اونلاين | مجاني" },
-      { name: "description", content: "ارفع ملف DXF، نكشف الأخطاء ونصلحها تلقائياً، ونعطيك تقييم جاهزية القص. حمّل ملفاً نظيفاً جاهزاً للماكينة خلال ثوانٍ. مجاني." },
-      { name: "keywords", content: "إصلاح DXF, فحص DXF, أداة DXF اونلاين, DXF repair tool, CNC, laser cutting, تصليح ملفات DXF" },
+      {
+        name: "description",
+        content:
+          "ارفع ملف DXF، نكشف الأخطاء ونصلحها تلقائياً، ونعطيك تقييم جاهزية القص. حمّل ملفاً نظيفاً جاهزاً للماكينة خلال ثوانٍ. مجاني.",
+      },
+      {
+        name: "keywords",
+        content:
+          "إصلاح DXF, فحص DXF, أداة DXF اونلاين, DXF repair tool, CNC, laser cutting, تصليح ملفات DXF",
+      },
       { property: "og:title", content: "DXFix — أداة إصلاح وفحص ملفات DXF اونلاين" },
-      { property: "og:description", content: "ارفع ملف DXF، نصلح الأخطاء تلقائياً وتحمّل ملفاً نظيفاً جاهزاً للقص. مجاني." },
+      {
+        property: "og:description",
+        content: "ارفع ملف DXF، نصلح الأخطاء تلقائياً وتحمّل ملفاً نظيفاً جاهزاً للقص. مجاني.",
+      },
       { property: "og:type", content: "website" },
       { property: "og:url", content: "https://dxfix.com/tool" },
       { name: "robots", content: "index, follow" },
@@ -1163,10 +1324,7 @@ function StepIndicator({ stage, lang }: { stage: Stage; lang: "ar" | "en" }) {
   const steps = ar
     ? ["رفع الملف", "فحص DXF", "مراجعة النتائج", "تنزيل الملف"]
     : ["Upload", "Scan DXF", "Review results", "Download"];
-  const current =
-    stage === "upload" ? 0 :
-    stage === "analyzing" ? 1 :
-    stage === "result" ? 2 : 3;
+  const current = stage === "upload" ? 0 : stage === "analyzing" ? 1 : stage === "result" ? 2 : 3;
   return (
     <div className="max-w-3xl mx-auto mb-10 px-2" dir={ar ? "rtl" : "ltr"}>
       <ol className="flex items-center justify-between gap-1 select-none">
@@ -1179,9 +1337,11 @@ function StepIndicator({ stage, lang }: { stage: Stage; lang: "ar" | "en" }) {
                 <span
                   className={[
                     "w-8 h-8 rounded-full grid place-items-center font-mono text-xs border transition",
-                    done ? "bg-primary text-primary-foreground border-primary"
-                      : active ? "border-accent text-accent bg-accent/10 ring-2 ring-accent/30"
-                      : "border-border text-muted-foreground",
+                    done
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : active
+                        ? "border-accent text-accent bg-accent/10 ring-2 ring-accent/30"
+                        : "border-border text-muted-foreground",
                   ].join(" ")}
                 >
                   {done ? "✓" : `0${i + 1}`}
@@ -1189,7 +1349,11 @@ function StepIndicator({ stage, lang }: { stage: Stage; lang: "ar" | "en" }) {
                 <span
                   className={[
                     "text-[11px] leading-tight text-center whitespace-nowrap",
-                    active ? "text-accent font-semibold" : done ? "text-foreground" : "text-muted-foreground",
+                    active
+                      ? "text-accent font-semibold"
+                      : done
+                        ? "text-foreground"
+                        : "text-muted-foreground",
                   ].join(" ")}
                 >
                   {label}
@@ -1238,7 +1402,7 @@ function ToolPage() {
 
   // ── Manufacturing time estimate (⏱) ──
   const [showTimeEstimate, setShowTimeEstimate] = useState(false);
-  const [cutSpeed, setCutSpeed] = useState(0.5);       // m/min
+  const [cutSpeed, setCutSpeed] = useState(0.5); // m/min
   const [cutPricePerMin, setCutPricePerMin] = useState(10); // $/min
 
   // ── Nesting / Layout optimization (🧩) ──
@@ -1260,18 +1424,20 @@ function ToolPage() {
     dedupeVertices: true,
     mergeOverlaps: true,
     dedupeCurves: true,
+    removeResidues: false,
+    closeByExtension: false,
   });
 
   // ── Scope C: Advanced tolerances (industry-conservative defaults,
   // mirroring the engine's DEFAULT values — user-tunable).
-  const [advTol, setAdvTol] = useState({ snap: 0.001, vertex: 0.001, close: 0.05 });
-  const ADV_TOL_DEFAULTS = { snap: 0.001, vertex: 0.001, close: 0.05 };
+  const [advTol, setAdvTol] = useState({ snap: 0.001, vertex: 0.001, close: 0.05, residue: 2 });
+  const ADV_TOL_DEFAULTS = { snap: 0.001, vertex: 0.001, close: 0.05, residue: 2 };
 
   // ── Scope A: Diagnosis category isolation — when set, the preview
   // highlights ONLY entities belonging to this issue category.
   const [highlightCategory, setHighlightCategory] = useState<string | null>(null);
 
-    // Self-destruct state
+  // Self-destruct state
   const [selfDestructEnabled, setSelfDestructEnabled] = useState(false);
   const [selfDestructTriggered, setSelfDestructTriggered] = useState(false);
 
@@ -1322,15 +1488,18 @@ function ToolPage() {
       `File size reduction: ${analysis.sizeReductionPercent ?? 0}%`,
       "",
       "=== ISSUES ===",
-      ...analysis.issues.map(i => `[${i.severity.toUpperCase()}] ${lang === "ar" ? i.ar : i.en}`),
+      ...analysis.issues.map((i) => `[${i.severity.toUpperCase()}] ${lang === "ar" ? i.ar : i.en}`),
       analysis.issues.length === 0 ? "No issues found." : "",
     ];
-    navigator.clipboard.writeText(lines.join("\n")).then(() => {
-      setCopiedReport(true);
-      setTimeout(() => setCopiedReport(false), 2000);
-    }).catch((err) => {
-      console.warn("Clipboard write failed:", err);
-    });
+    navigator.clipboard
+      .writeText(lines.join("\n"))
+      .then(() => {
+        setCopiedReport(true);
+        setTimeout(() => setCopiedReport(false), 2000);
+      })
+      .catch((err) => {
+        console.warn("Clipboard write failed:", err);
+      });
   }, [analysis, fileName, lang]);
 
   // Tool is 100% free — no subscription checks needed
@@ -1354,7 +1523,7 @@ function ToolPage() {
       layers: result.stats.layers.length,
       wasRepaired: repaired,
     };
-    setHistory(prev => {
+    setHistory((prev) => {
       const next = [entry, ...prev].slice(0, 5);
       localStorage.setItem("dxfix_history", JSON.stringify(next));
       return next;
@@ -1547,13 +1716,16 @@ function ToolPage() {
       bulkProcessing: "Processing files...",
       // Self-Destruct
       selfDestructToggle: "Enable file self-destruct for confidentiality",
-      selfDestructNotice: "Files will be permanently deleted from servers immediately after download",
+      selfDestructNotice:
+        "Files will be permanently deleted from servers immediately after download",
       selfDestructTriggered: "✓ Self-destruct enabled — files have been permanently deleted",
       // Trust Notice
       trustTitle: "Engineering Data Confidentiality Agreement",
-      trustPoint1: "Engineering drawings are never stored on our servers after processing — deleted immediately",
+      trustPoint1:
+        "Engineering drawings are never stored on our servers after processing — deleted immediately",
       trustPoint2: "We do not share, sell, or transfer any engineering data to third parties",
-      trustPoint3: "We use HTTPS encryption to protect your data during transmission and processing",
+      trustPoint3:
+        "We use HTTPS encryption to protect your data during transmission and processing",
       trustBtn: "Privacy Policy",
       // Processing Metrics
       processingTime: "Processing Time",
@@ -1565,7 +1737,8 @@ function ToolPage() {
       safetyCompliant: "Compliant with industrial safety standards",
       // Subscribe Modal
       subscribeRequired: "This feature is for subscribers only",
-      subscribePrompt: "Subscribe now to fix your file and download it immediately to your machine!",
+      subscribePrompt:
+        "Subscribe now to fix your file and download it immediately to your machine!",
       subscribeBtn: "Subscribe Now",
       // Lock icons
       proFeature: "Pro Feature",
@@ -1575,114 +1748,143 @@ function ToolPage() {
 
   const t = T[lang];
 
-  const processFile = useCallback((file: File) => {
-    const isSvg = file.name.toLowerCase().endsWith(".svg");
-    const isDxf = file.name.toLowerCase().endsWith(".dxf");
-    
-    if (!isDxf && !isSvg) {
-      alert(lang === "ar" ? "يرجى رفع ملف بصيغة .dxf أو .svg فقط" : "Please upload a .dxf or .svg file only");
-      return;
-    }
+  const processFile = useCallback(
+    (file: File) => {
+      const isSvg = file.name.toLowerCase().endsWith(".svg");
+      const isDxf = file.name.toLowerCase().endsWith(".dxf");
 
-    // Track file upload (excluding localhost and admin users)
-    const isLocalhost = typeof window !== "undefined" && window.location.hostname === "localhost";
-    const isAdmin = typeof window !== "undefined" && window.location.search.includes("admin=true");
-    if (!isLocalhost && !isAdmin) {
-      track('Used DXF Fixer', { timestamp: new Date().toISOString() });
-    }
+      if (!isDxf && !isSvg) {
+        alert(
+          lang === "ar"
+            ? "يرجى رفع ملف بصيغة .dxf أو .svg فقط"
+            : "Please upload a .dxf or .svg file only",
+        );
+        return;
+      }
 
-    setFileName(file.name);
-    setStage("analyzing");
-    setProgress(0);
+      // Track file upload (excluding localhost and admin users)
+      const isLocalhost = typeof window !== "undefined" && window.location.hostname === "localhost";
+      const isAdmin =
+        typeof window !== "undefined" && window.location.search.includes("admin=true");
+      if (!isLocalhost && !isAdmin) {
+        track("Used DXF Fixer", { timestamp: new Date().toISOString() });
+      }
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const content = e.target?.result as string;
-      setFileContent(content);
+      setFileName(file.name);
+      setStage("analyzing");
+      setProgress(0);
 
-      let p = 0;
-      const interval = setInterval(() => {
-        p += Math.random() * 25;
-        if (p >= 90) { clearInterval(interval); p = 90; }
-        setProgress(Math.min(90, p));
-      }, 120);
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const content = e.target?.result as string;
+        setFileContent(content);
 
-      setTimeout(() => {
-        let result: DxfAnalysis;
-
-        if (isSvg) {
-          // Parse SVG and convert to DXF entities
-          const svgResult = parseSvg(content);
-          if (svgResult.errors.length > 0) {
-            alert(lang === "ar" 
-              ? `خطأ في تحليل SVG: ${svgResult.errors.join(", ")}` 
-              : `SVG parse error: ${svgResult.errors.join(", ")}`);
+        let p = 0;
+        const interval = setInterval(() => {
+          p += Math.random() * 25;
+          if (p >= 90) {
             clearInterval(interval);
-            setStage("upload");
-            return;
+            p = 90;
           }
-          // Create a temporary DXF content from SVG entities
-          const tempHeader = "  0\nSECTION\n  2\nHEADER\n  9\n$ACADVER\n  1\nAC1015\n  0\nENDSEC\n";
-          const tempTail = "  0\nEOF\n";
-          const tempContent = tempHeader + "\n  0\nSECTION\n  2\nENTITIES\n" + 
-            svgResult.entities.map(e => e.rawLines.join("\n")).join("\n") + 
-            "\n  0\nENDSEC\n" + tempTail;
-          
-          result = analyzeDxf(tempContent);
-        } else {
-          result = analyzeDxf(content);
-        }
+          setProgress(Math.min(90, p));
+        }, 120);
 
-        clearInterval(interval);
-        setProgress(100);
-        saveToHistory(file.name, result, false);
         setTimeout(() => {
-          setAnalysis(result);
-          setStage("result");
-        }, 400);
-      }, 800);
-    };
-    reader.readAsText(file, "utf-8");
-  }, [lang, userIsSubscribed]);
+          let result: DxfAnalysis;
 
-  const onDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) { recordUpload(); processFile(file); }
-  }, [processFile]);
+          if (isSvg) {
+            // Parse SVG and convert to DXF entities
+            const svgResult = parseSvg(content);
+            if (svgResult.errors.length > 0) {
+              alert(
+                lang === "ar"
+                  ? `خطأ في تحليل SVG: ${svgResult.errors.join(", ")}`
+                  : `SVG parse error: ${svgResult.errors.join(", ")}`,
+              );
+              clearInterval(interval);
+              setStage("upload");
+              return;
+            }
+            // Create a temporary DXF content from SVG entities
+            const tempHeader =
+              "  0\nSECTION\n  2\nHEADER\n  9\n$ACADVER\n  1\nAC1015\n  0\nENDSEC\n";
+            const tempTail = "  0\nEOF\n";
+            const tempContent =
+              tempHeader +
+              "\n  0\nSECTION\n  2\nENTITIES\n" +
+              svgResult.entities.map((e) => e.rawLines.join("\n")).join("\n") +
+              "\n  0\nENDSEC\n" +
+              tempTail;
+
+            result = analyzeDxf(tempContent);
+          } else {
+            result = analyzeDxf(content);
+          }
+
+          clearInterval(interval);
+          setProgress(100);
+          saveToHistory(file.name, result, false);
+          setTimeout(() => {
+            setAnalysis(result);
+            setStage("result");
+          }, 400);
+        }, 800);
+      };
+      reader.readAsText(file, "utf-8");
+    },
+    [lang, userIsSubscribed],
+  );
+
+  const onDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragging(false);
+      const file = e.dataTransfer.files[0];
+      if (file) {
+        recordUpload();
+        processFile(file);
+      }
+    },
+    [processFile],
+  );
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) { recordUpload(); processFile(file); }
+    if (file) {
+      recordUpload();
+      processFile(file);
+    }
   };
 
   const handleRepair = () => {
     if (!analysis) return;
     // 1) Repair using the real engine.
-    const { fixed, repaired, fixSummary: summary } = repairDxf(
-      fileContent,
-      analysis,
-      {
-        convertCurvesToPolylines: convertCurves,
-        // Scope C: advanced user-tunable tolerances
-        snapTolerance: advTol.snap,
-        // Scope B: selective processing passes (all ON = previous behavior)
-        closeOpenPolylines: processing.closeOpen,
-        cleanup: {
-          tolerance: advTol.vertex,
-          gapTolerance: advTol.close,
-          removeZeroLength: processing.removeZeroLength,
-          dedupeVertices: processing.dedupeVertices,
-          mergeCollinearOverlaps: processing.mergeOverlaps,
-          dedupeCurves: processing.dedupeCurves,
-        },
-      }
-    );
+    const {
+      fixed,
+      repaired,
+      fixSummary: summary,
+    } = repairDxf(fileContent, analysis, {
+      convertCurvesToPolylines: convertCurves,
+      // Scope C: advanced user-tunable tolerances
+      snapTolerance: advTol.snap,
+      // Scope B: selective processing passes (all ON = previous behavior)
+      closeOpenPolylines: processing.closeOpen,
+      closeGapsByExtension: processing.closeByExtension,
+      cleanup: {
+        tolerance: advTol.vertex,
+        gapTolerance: advTol.close,
+        removeZeroLength: processing.removeZeroLength,
+        dedupeVertices: processing.dedupeVertices,
+        mergeCollinearOverlaps: processing.mergeOverlaps,
+        dedupeCurves: processing.dedupeCurves,
+        removeDanglingResidues: processing.removeResidues,
+        residueTolerance: advTol.residue,
+      },
+    });
     setRepairedContent(fixed);
     setRepairedIssues(repaired);
     setFixSummary(summary);
-    setRepairHadChanges(repaired && summary.some(s => s.id === "real_cleanup"));
+    setRepairHadChanges(repaired && summary.some((s) => s.id === "real_cleanup"));
     saveToHistory(fileName, analysis, true);
 
     // 2) RE-SCAN: re-parse and re-analyze the ACTUAL repaired DXF.
@@ -1711,7 +1913,12 @@ function ToolPage() {
     // DXF so the downloaded file actually contains the new connecting geometry.
     let content = repairedContent;
     const fixAnalysis = repairedAnalysis ?? analysis;
-    if (geometryFixMode.applied && geometryFixMode.enabled && geometryFixMode.method !== "skip" && fixAnalysis) {
+    if (
+      geometryFixMode.applied &&
+      geometryFixMode.enabled &&
+      geometryFixMode.method !== "skip" &&
+      fixAnalysis
+    ) {
       const fixes = buildFixBridgeEntities(fixAnalysis, geometryFixMode.method, gapTolerance);
       if (fixes.length > 0) {
         content = appendFixEntitiesToDxf(content, fixes);
@@ -1767,7 +1974,7 @@ function ToolPage() {
       `File size reduction: ${analysis.sizeReductionPercent ?? 0}%`,
       "",
       "=== ISSUES ===",
-      ...analysis.issues.map(i => `[${i.severity.toUpperCase()}] ${lang === "ar" ? i.ar : i.en}`),
+      ...analysis.issues.map((i) => `[${i.severity.toUpperCase()}] ${lang === "ar" ? i.ar : i.en}`),
       analysis.issues.length === 0 ? "No issues found." : "",
     ];
     downloadFile(lines.join("\n"), fileName.replace(".dxf", "_report.txt"));
@@ -1803,60 +2010,76 @@ function ToolPage() {
         });
       }
     }
-    setBulkFiles(prev => [...prev, ...entries]);
+    setBulkFiles((prev) => [...prev, ...entries]);
   }, []);
 
   const processBulkFiles = useCallback(async () => {
     setBulkProcessing(true);
-    const pending = bulkFiles.filter(f => f.status === "pending");
-    
+    const pending = bulkFiles.filter((f) => f.status === "pending");
+
     for (const entry of pending) {
-      setBulkFiles(prev => prev.map(f => f.id === entry.id ? { ...f, status: "analyzing" as const } : f));
-      
+      setBulkFiles((prev) =>
+        prev.map((f) => (f.id === entry.id ? { ...f, status: "analyzing" as const } : f)),
+      );
+
       try {
         const content = await entry.file.text();
         const result = analyzeDxf(content);
         const { fixed, fixSummary: summary } = repairDxf(content, result);
-        
-        setBulkFiles(prev => prev.map(f => f.id === entry.id ? {
-          ...f,
-          content,
-          status: "done" as const,
-          analysis: result,
-          fixedContent: fixed,
-          fixSummary: summary,
-        } : f));
+
+        setBulkFiles((prev) =>
+          prev.map((f) =>
+            f.id === entry.id
+              ? {
+                  ...f,
+                  content,
+                  status: "done" as const,
+                  analysis: result,
+                  fixedContent: fixed,
+                  fixSummary: summary,
+                }
+              : f,
+          ),
+        );
       } catch (err: any) {
-        setBulkFiles(prev => prev.map(f => f.id === entry.id ? {
-          ...f,
-          status: "error" as const,
-          error: err.message,
-        } : f));
+        setBulkFiles((prev) =>
+          prev.map((f) =>
+            f.id === entry.id
+              ? {
+                  ...f,
+                  status: "error" as const,
+                  error: err.message,
+                }
+              : f,
+          ),
+        );
       }
     }
-    
+
     setBulkProcessing(false);
   }, [bulkFiles]);
 
   const downloadAllBulk = async () => {
     // No gate — bulk download is free for everyone
-    const doneFiles = bulkFiles.filter(f => f.status === "done" && f.fixedContent);
-    const filesToZip = doneFiles.map(f => ({
+    const doneFiles = bulkFiles.filter((f) => f.status === "done" && f.fixedContent);
+    const filesToZip = doneFiles.map((f) => ({
       name: f.file.name.replace(".dxf", "_fixed.dxf"),
       content: f.fixedContent!,
       type: "application/dxf",
     }));
-    
+
     await downloadAllAsZip(filesToZip, "dxfix-bulk-processed.zip");
 
     if (selfDestructEnabled) {
-      triggerSelfDestruct(filesToZip.map(f => f.name));
+      triggerSelfDestruct(filesToZip.map((f) => f.name));
       setSelfDestructTriggered(true);
     }
   };
 
   // Calculate perimeter for cost estimator
-  const perimeter = analysis ? (analysis.totalPerimeter ?? calculateTotalPerimeter(analysis.entities)) : 0;
+  const perimeter = analysis
+    ? (analysis.totalPerimeter ?? calculateTotalPerimeter(analysis.entities))
+    : 0;
   const perimeterMeters = perimeter / 1000;
   const estimatedCost = perimeterMeters * pricePerMeter;
 
@@ -1865,9 +2088,7 @@ function ToolPage() {
   // dots, report card, time report, nesting). computeOpenLoopData uses the SAME
   // engine (detectOpenPaths) and threshold (0.1mm) as analyzeDxf, so the preview
   // can never contradict the report again.
-  const displayAnalysis = stage === "repaired" && repairedAnalysis
-    ? repairedAnalysis
-    : analysis;
+  const displayAnalysis = stage === "repaired" && repairedAnalysis ? repairedAnalysis : analysis;
 
   // ⏱ Manufacturing time estimate — uses the advanced report generator.
   const timeReport = useMemo(() => {
@@ -1881,7 +2102,9 @@ function ToolPage() {
         sheetWidth: sheetW,
         sheetHeight: sheetH,
       });
-    } catch { return null; }
+    } catch {
+      return null;
+    }
   }, [displayAnalysis, analysis, pricePerMeter, cutPricePerMin, cutSpeed, sheetW, sheetH]);
 
   // 🧩 Nesting optimization — minimize material waste on sheets.
@@ -1896,7 +2119,9 @@ function ToolPage() {
         margin: 5,
         rotationStep: 15,
       });
-    } catch { return null; }
+    } catch {
+      return null;
+    }
   }, [displayAnalysis, analysis, sheetW, sheetH, nestSpacing]);
 
   // ── Open loop detection: unified pipeline (v1.2 consistency fix) ───────────
@@ -1956,14 +2181,19 @@ function ToolPage() {
           <>
             <div
               onDrop={onDrop}
-              onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragging(true);
+              }}
               onDragLeave={() => setDragging(false)}
               onClick={() => fileRef.current?.click()}
               className={`
                 cursor-pointer rounded-2xl border-2 border-dashed transition-all p-16 text-center
-                ${dragging
-                  ? "border-accent bg-accent/10 scale-[1.01]"
-                  : "border-border hover:border-primary/50 hover:bg-card/60"}
+                ${
+                  dragging
+                    ? "border-accent bg-accent/10 scale-[1.01]"
+                    : "border-border hover:border-primary/50 hover:bg-card/60"
+                }
               `}
             >
               <div className="text-6xl mb-5">📁</div>
@@ -1991,9 +2221,11 @@ function ToolPage() {
                     selfDestructEnabled ? "bg-red-500" : "bg-border"
                   }`}
                 >
-                  <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
-                    selfDestructEnabled ? "translate-x-6" : "translate-x-0.5"
-                  }`} />
+                  <div
+                    className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+                      selfDestructEnabled ? "translate-x-6" : "translate-x-0.5"
+                    }`}
+                  />
                 </div>
                 <span className="text-sm text-muted-foreground group-hover:text-foreground transition">
                   🔒 {t.selfDestructToggle}
@@ -2027,13 +2259,16 @@ function ToolPage() {
               {showBulkUpload && (
                 <div className="mt-4 rounded-2xl border border-border bg-card p-6">
                   <div
-                    onDrop={(e) => { e.preventDefault(); handleBulkFiles(e.dataTransfer.files); }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      handleBulkFiles(e.dataTransfer.files);
+                    }}
                     onDragOver={(e) => e.preventDefault()}
                     className="border-2 border-dashed border-border rounded-xl p-8 text-center hover:border-primary/50 transition cursor-pointer"
                     onClick={() => {
-                      const input = document.createElement('input');
-                      input.type = 'file';
-                      input.accept = '.dxf,.zip';
+                      const input = document.createElement("input");
+                      input.type = "file";
+                      input.accept = ".dxf,.zip";
                       input.multiple = true;
                       input.onchange = (e) => {
                         const files = (e.target as HTMLInputElement).files;
@@ -2050,9 +2285,11 @@ function ToolPage() {
                   {bulkFiles.length > 0 && (
                     <div className="mt-6">
                       <div className="flex items-center justify-between mb-3">
-                        <h3 className="font-display font-semibold">{t.bulkTableTitle} ({bulkFiles.length})</h3>
+                        <h3 className="font-display font-semibold">
+                          {t.bulkTableTitle} ({bulkFiles.length})
+                        </h3>
                         <div className="flex gap-2">
-                          {bulkFiles.some(f => f.status === "pending") && (
+                          {bulkFiles.some((f) => f.status === "pending") && (
                             <button
                               onClick={processBulkFiles}
                               disabled={bulkProcessing}
@@ -2061,7 +2298,7 @@ function ToolPage() {
                               {bulkProcessing ? "⏳ ..." : "🔧 معالجة"}
                             </button>
                           )}
-                          {bulkFiles.some(f => f.status === "done") && (
+                          {bulkFiles.some((f) => f.status === "done") && (
                             <button
                               onClick={downloadAllBulk}
                               className="px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition"
@@ -2073,29 +2310,53 @@ function ToolPage() {
                       </div>
                       <div className="space-y-2 max-h-60 overflow-y-auto">
                         {bulkFiles.map((entry) => (
-                          <div key={entry.id} className="flex items-center gap-3 p-3 rounded-xl border border-border/60 bg-background">
-                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                              entry.status === "done" ? "bg-green-400" :
-                              entry.status === "analyzing" ? "bg-yellow-400 animate-pulse" :
-                              entry.status === "error" ? "bg-red-400" : "bg-muted-foreground/30"
-                            }`} />
-                            <span className="flex-1 font-mono text-sm truncate">{entry.file.name}</span>
-                            <span className={`font-mono text-xs px-2 py-0.5 rounded ${
-                              entry.status === "done" ? "bg-green-500/10 text-green-400" :
-                              entry.status === "analyzing" ? "bg-yellow-500/10 text-yellow-400" :
-                              entry.status === "error" ? "bg-red-500/10 text-red-400" :
-                              "bg-muted/30 text-muted-foreground"
-                            }`}>
-                              {entry.status === "done" ? t.bulkStatusDone :
-                               entry.status === "analyzing" ? t.bulkStatusAnalyzing :
-                               entry.status === "error" ? t.bulkStatusError :
-                               t.bulkStatusPending}
+                          <div
+                            key={entry.id}
+                            className="flex items-center gap-3 p-3 rounded-xl border border-border/60 bg-background"
+                          >
+                            <div
+                              className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                                entry.status === "done"
+                                  ? "bg-green-400"
+                                  : entry.status === "analyzing"
+                                    ? "bg-yellow-400 animate-pulse"
+                                    : entry.status === "error"
+                                      ? "bg-red-400"
+                                      : "bg-muted-foreground/30"
+                              }`}
+                            />
+                            <span className="flex-1 font-mono text-sm truncate">
+                              {entry.file.name}
+                            </span>
+                            <span
+                              className={`font-mono text-xs px-2 py-0.5 rounded ${
+                                entry.status === "done"
+                                  ? "bg-green-500/10 text-green-400"
+                                  : entry.status === "analyzing"
+                                    ? "bg-yellow-500/10 text-yellow-400"
+                                    : entry.status === "error"
+                                      ? "bg-red-500/10 text-red-400"
+                                      : "bg-muted/30 text-muted-foreground"
+                              }`}
+                            >
+                              {entry.status === "done"
+                                ? t.bulkStatusDone
+                                : entry.status === "analyzing"
+                                  ? t.bulkStatusAnalyzing
+                                  : entry.status === "error"
+                                    ? t.bulkStatusError
+                                    : t.bulkStatusPending}
                             </span>
                             {entry.analysis && (
-                              <span className={`font-mono text-xs ${
-                                entry.analysis.score >= 80 ? "text-green-400" :
-                                entry.analysis.score >= 50 ? "text-yellow-400" : "text-red-400"
-                              }`}>
+                              <span
+                                className={`font-mono text-xs ${
+                                  entry.analysis.score >= 80
+                                    ? "text-green-400"
+                                    : entry.analysis.score >= 50
+                                      ? "text-yellow-400"
+                                      : "text-red-400"
+                                }`}
+                              >
                                 {entry.analysis.score}/100
                               </span>
                             )}
@@ -2126,181 +2387,341 @@ function ToolPage() {
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {/* Feature 1 */}
                 <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-green-500/20 to-green-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">✏️</div>
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-green-500/20 to-green-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">
+                    ✏️
+                  </div>
                   <div>
-                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "تقليل النقاط" : "Node Reduction"}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "حذف النقاط الزائدة بدون تغيير الشكل — حتى 70% أقل" : "Remove excess nodes without changing shape — up to 70% less"}</p>
+                    <h4 className="font-display font-semibold text-sm">
+                      {lang === "ar" ? "تقليل النقاط" : "Node Reduction"}
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {lang === "ar"
+                        ? "حذف النقاط الزائدة بدون تغيير الشكل — حتى 70% أقل"
+                        : "Remove excess nodes without changing shape — up to 70% less"}
+                    </p>
                   </div>
                 </div>
 
                 {/* Feature 2 */}
                 <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500/20 to-blue-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">🔗</div>
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500/20 to-blue-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">
+                    🔗
+                  </div>
                   <div>
-                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "دمج الخطوط" : "Merge Paths"}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "دمج جميع الخطوط المتلامسة في مسار واحد متصل" : "Join all touching lines into a single continuous path"}</p>
+                    <h4 className="font-display font-semibold text-sm">
+                      {lang === "ar" ? "دمج الخطوط" : "Merge Paths"}
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {lang === "ar"
+                        ? "دمج جميع الخطوط المتلامسة في مسار واحد متصل"
+                        : "Join all touching lines into a single continuous path"}
+                    </p>
                   </div>
                 </div>
 
                 {/* Feature 3 */}
                 <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500/20 to-purple-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">⭕</div>
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500/20 to-purple-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">
+                    ⭕
+                  </div>
                   <div>
-                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "إغلاق المسارات" : "Close Paths"}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "إغلاق المسارات المفتوحة عند الحاجة — قبل القطع" : "Close open paths where needed — before cutting"}</p>
+                    <h4 className="font-display font-semibold text-sm">
+                      {lang === "ar" ? "إغلاق المسارات" : "Close Paths"}
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {lang === "ar"
+                        ? "إغلاق المسارات المفتوحة عند الحاجة — قبل القطع"
+                        : "Close open paths where needed — before cutting"}
+                    </p>
                   </div>
                 </div>
 
                 {/* Feature 4 */}
                 <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-red-500/20 to-red-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">🔀</div>
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-red-500/20 to-red-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">
+                    🔀
+                  </div>
                   <div>
-                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "إزالة التكرارات" : "Remove Duplicates"}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "كشف وحذف العناصر المكررة — يمنع القطع المزدوج" : "Detect & delete duplicate entities — prevents double-cutting"}</p>
+                    <h4 className="font-display font-semibold text-sm">
+                      {lang === "ar" ? "إزالة التكرارات" : "Remove Duplicates"}
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {lang === "ar"
+                        ? "كشف وحذف العناصر المكررة — يمنع القطع المزدوج"
+                        : "Detect & delete duplicate entities — prevents double-cutting"}
+                    </p>
                   </div>
                 </div>
 
                 {/* Feature 5 */}
                 <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-yellow-500/20 to-yellow-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">🧹</div>
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-yellow-500/20 to-yellow-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">
+                    🧹
+                  </div>
                   <div>
-                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "تنظيف الملف" : "File Cleaning"}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "إزالة النقاط المعلقة، الخطوط التالفة، الطبقات المخفية" : "Remove dangling nodes, broken lines, hidden layers"}</p>
+                    <h4 className="font-display font-semibold text-sm">
+                      {lang === "ar" ? "تنظيف الملف" : "File Cleaning"}
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {lang === "ar"
+                        ? "إزالة النقاط المعلقة، الخطوط التالفة، الطبقات المخفية"
+                        : "Remove dangling nodes, broken lines, hidden layers"}
+                    </p>
                   </div>
                 </div>
 
                 {/* Feature 6 */}
                 <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-pink-500/20 to-pink-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">🔄</div>
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-pink-500/20 to-pink-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">
+                    🔄
+                  </div>
                   <div>
-                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "تحويل المنحنيات" : "Curve Conversion"}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "تحويل ARCS, CIRCLES, SPLINES, ELLIPSES إلى POLYLINES" : "Convert ARCS, CIRCLES, SPLINES, ELLIPSES to POLYLINES"}</p>
+                    <h4 className="font-display font-semibold text-sm">
+                      {lang === "ar" ? "تحويل المنحنيات" : "Curve Conversion"}
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {lang === "ar"
+                        ? "تحويل ARCS, CIRCLES, SPLINES, ELLIPSES إلى POLYLINES"
+                        : "Convert ARCS, CIRCLES, SPLINES, ELLIPSES to POLYLINES"}
+                    </p>
                   </div>
                 </div>
 
                 {/* Feature 7 */}
                 <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-cyan-500/20 to-cyan-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">🔍</div>
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-cyan-500/20 to-cyan-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">
+                    🔍
+                  </div>
                   <div>
-                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "فحص الجودة" : "Quality Check"}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "كشف 7 أنواع من المشاكل: تقاطعات، فجوات، منحنيات مكسورة..." : "Detect 7 issue types: intersections, gaps, broken curves..."}</p>
+                    <h4 className="font-display font-semibold text-sm">
+                      {lang === "ar" ? "فحص الجودة" : "Quality Check"}
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {lang === "ar"
+                        ? "كشف 7 أنواع من المشاكل: تقاطعات، فجوات، منحنيات مكسورة..."
+                        : "Detect 7 issue types: intersections, gaps, broken curves..."}
+                    </p>
                   </div>
                 </div>
 
                 {/* Feature 8 */}
                 <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-orange-500/20 to-orange-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">📐</div>
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-orange-500/20 to-orange-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">
+                    📐
+                  </div>
                   <div>
-                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "تحسين سرعة القص" : "Speed Optimization"}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "ترتيب مسارات القص لتقليل حركة رأس الليزر حتى 40%" : "Order cut paths to minimize laser head movement up to 40%"}</p>
+                    <h4 className="font-display font-semibold text-sm">
+                      {lang === "ar" ? "تحسين سرعة القص" : "Speed Optimization"}
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {lang === "ar"
+                        ? "ترتيب مسارات القص لتقليل حركة رأس الليزر حتى 40%"
+                        : "Order cut paths to minimize laser head movement up to 40%"}
+                    </p>
                   </div>
                 </div>
 
                 {/* Feature 9 */}
                 <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-teal-500/20 to-teal-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">📊</div>
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-teal-500/20 to-teal-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">
+                    📊
+                  </div>
                   <div>
-                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "تقييم جاهزية" : "Readiness Score"}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "تقييم من 0-100 مع تقرير مفصل بالإصلاحات" : "Score 0-100 with detailed fix report"}</p>
+                    <h4 className="font-display font-semibold text-sm">
+                      {lang === "ar" ? "تقييم جاهزية" : "Readiness Score"}
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {lang === "ar"
+                        ? "تقييم من 0-100 مع تقرير مفصل بالإصلاحات"
+                        : "Score 0-100 with detailed fix report"}
+                    </p>
                   </div>
                 </div>
 
                 {/* Feature 10 */}
                 <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500/20 to-indigo-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">📁</div>
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500/20 to-indigo-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">
+                    📁
+                  </div>
                   <div>
-                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "دعم DXF + SVG" : "DXF + SVG Support"}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "ارفع DXF أو SVG — المخرجات DXF جاهز للماكينة" : "Upload DXF or SVG — output is machine-ready DXF"}</p>
+                    <h4 className="font-display font-semibold text-sm">
+                      {lang === "ar" ? "دعم DXF + SVG" : "DXF + SVG Support"}
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {lang === "ar"
+                        ? "ارفع DXF أو SVG — المخرجات DXF جاهز للماكينة"
+                        : "Upload DXF or SVG — output is machine-ready DXF"}
+                    </p>
                   </div>
                 </div>
 
                 {/* Feature 11 */}
                 <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-500/20 to-emerald-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">🖼</div>
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-500/20 to-emerald-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">
+                    🖼
+                  </div>
                   <div>
-                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "معاينة تفاعلية" : "Interactive Preview"}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "عرض الرسم مع إخفاء/إظهار الطبقات واكتشاف المشاكل بصرياً" : "View drawing with layer toggle and visual issue highlighting"}</p>
+                    <h4 className="font-display font-semibold text-sm">
+                      {lang === "ar" ? "معاينة تفاعلية" : "Interactive Preview"}
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {lang === "ar"
+                        ? "عرض الرسم مع إخفاء/إظهار الطبقات واكتشاف المشاكل بصرياً"
+                        : "View drawing with layer toggle and visual issue highlighting"}
+                    </p>
                   </div>
                 </div>
 
                 {/* Feature 12 */}
                 <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-rose-500/20 to-rose-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">▶️</div>
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-rose-500/20 to-rose-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">
+                    ▶️
+                  </div>
                   <div>
-                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "محاكاة مسار القص" : "Cut Path Simulation"}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "محاكاة متحركة لمسار رأس الليزر على الرسم" : "Animated simulation of laser head path on the drawing"}</p>
+                    <h4 className="font-display font-semibold text-sm">
+                      {lang === "ar" ? "محاكاة مسار القص" : "Cut Path Simulation"}
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {lang === "ar"
+                        ? "محاكاة متحركة لمسار رأس الليزر على الرسم"
+                        : "Animated simulation of laser head path on the drawing"}
+                    </p>
                   </div>
                 </div>
 
                 {/* Feature 13 */}
                 <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-sky-500/20 to-sky-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">💰</div>
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-sky-500/20 to-sky-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">
+                    💰
+                  </div>
                   <div>
-                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "تقدير تكلفة القص" : "Cost Estimator"}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "حساب تكلفة القص التقديرية بناءً على طول المسار والسعر" : "Calculate estimated cutting cost based on path length and rate"}</p>
+                    <h4 className="font-display font-semibold text-sm">
+                      {lang === "ar" ? "تقدير تكلفة القص" : "Cost Estimator"}
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {lang === "ar"
+                        ? "حساب تكلفة القص التقديرية بناءً على طول المسار والسعر"
+                        : "Calculate estimated cutting cost based on path length and rate"}
+                    </p>
                   </div>
                 </div>
 
                 {/* Feature 14 */}
                 <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-violet-500/20 to-violet-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">📦</div>
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-violet-500/20 to-violet-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">
+                    📦
+                  </div>
                   <div>
-                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "معالجة مجمعة" : "Batch Processing"}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "رفع عدة ملفات دفعة واحدة وتحميلها كملف ZIP مضغوط" : "Upload multiple files at once and download as ZIP archive"}</p>
+                    <h4 className="font-display font-semibold text-sm">
+                      {lang === "ar" ? "معالجة مجمعة" : "Batch Processing"}
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {lang === "ar"
+                        ? "رفع عدة ملفات دفعة واحدة وتحميلها كملف ZIP مضغوط"
+                        : "Upload multiple files at once and download as ZIP archive"}
+                    </p>
                   </div>
                 </div>
 
                 {/* Feature 15 */}
                 <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-lime-500/20 to-lime-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">🔒</div>
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-lime-500/20 to-lime-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">
+                    🔒
+                  </div>
                   <div>
-                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "التدمير الذاتي" : "Self-Destruct"}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "حذف الملفات تلقائياً من السيرفر بعد التحميل لضمان السرية" : "Auto-delete files from server after download for confidentiality"}</p>
+                    <h4 className="font-display font-semibold text-sm">
+                      {lang === "ar" ? "التدمير الذاتي" : "Self-Destruct"}
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {lang === "ar"
+                        ? "حذف الملفات تلقائياً من السيرفر بعد التحميل لضمان السرية"
+                        : "Auto-delete files from server after download for confidentiality"}
+                    </p>
                   </div>
                 </div>
 
                 {/* Feature 16 */}
                 <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-500/20 to-amber-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">📋</div>
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-500/20 to-amber-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">
+                    📋
+                  </div>
                   <div>
-                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "تقرير مفصل" : "Detailed Report"}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "تقرير كامل بالإصلاحات مع إحصائيات الملف وتقييم الجاهزية" : "Full fix report with file statistics and readiness evaluation"}</p>
+                    <h4 className="font-display font-semibold text-sm">
+                      {lang === "ar" ? "تقرير مفصل" : "Detailed Report"}
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {lang === "ar"
+                        ? "تقرير كامل بالإصلاحات مع إحصائيات الملف وتقييم الجاهزية"
+                        : "Full fix report with file statistics and readiness evaluation"}
+                    </p>
                   </div>
                 </div>
 
                 {/* Feature 17 */}
                 <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-fuchsia-500/20 to-fuchsia-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">🛡️</div>
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-fuchsia-500/20 to-fuchsia-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">
+                    🛡️
+                  </div>
                   <div>
-                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "فحص أمان الماكينة" : "Machine Safety Check"}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "التحقق من أن الملف ضمن حدود لوح العمل وبدون حركات فجائية" : "Verify file is within work bed bounds with no jerk movements"}</p>
+                    <h4 className="font-display font-semibold text-sm">
+                      {lang === "ar" ? "فحص أمان الماكينة" : "Machine Safety Check"}
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {lang === "ar"
+                        ? "التحقق من أن الملف ضمن حدود لوح العمل وبدون حركات فجائية"
+                        : "Verify file is within work bed bounds with no jerk movements"}
+                    </p>
                   </div>
                 </div>
 
                 {/* Feature 18 */}
                 <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-500/20 to-slate-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">🌐</div>
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-500/20 to-slate-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">
+                    🌐
+                  </div>
                   <div>
-                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "عربية + إنجليزية" : "Arabic + English"}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "واجهة كاملة بالعربية والإنجليزية مع دعم RTL/LTR" : "Full interface in Arabic and English with RTL/LTR support"}</p>
+                    <h4 className="font-display font-semibold text-sm">
+                      {lang === "ar" ? "عربية + إنجليزية" : "Arabic + English"}
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {lang === "ar"
+                        ? "واجهة كاملة بالعربية والإنجليزية مع دعم RTL/LTR"
+                        : "Full interface in Arabic and English with RTL/LTR support"}
+                    </p>
                   </div>
                 </div>
 
                 {/* Feature 19 */}
                 <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-stone-500/20 to-stone-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">📜</div>
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-stone-500/20 to-stone-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">
+                    📜
+                  </div>
                   <div>
-                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "سجل الملفات" : "File History"}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "حفظ آخر 5 ملفات محللة مع نتائج التقييم للإشارة السريعة" : "Save last 5 analyzed files with scores for quick reference"}</p>
+                    <h4 className="font-display font-semibold text-sm">
+                      {lang === "ar" ? "سجل الملفات" : "File History"}
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {lang === "ar"
+                        ? "حفظ آخر 5 ملفات محللة مع نتائج التقييم للإشارة السريعة"
+                        : "Save last 5 analyzed files with scores for quick reference"}
+                    </p>
                   </div>
                 </div>
 
                 {/* Feature 20 */}
                 <div className="bg-background/80 border border-border/60 rounded-xl p-4 flex items-start gap-3 hover:border-accent/40 transition group">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-neutral-500/20 to-neutral-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">🔊</div>
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-neutral-500/20 to-neutral-500/5 flex items-center justify-center text-lg flex-shrink-0 group-hover:scale-110 transition">
+                    🔊
+                  </div>
                   <div>
-                    <h4 className="font-display font-semibold text-sm">{lang === "ar" ? "مشاركة الأداة" : "Share Tool"}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">{lang === "ar" ? "مشاركة الأداة مع الأصدقاء عبر واتساب، تويتر، فيسبوك، أو نسخ الرابط" : "Share the tool via WhatsApp, Twitter, Facebook, or copy link"}</p>
+                    <h4 className="font-display font-semibold text-sm">
+                      {lang === "ar" ? "مشاركة الأداة" : "Share Tool"}
+                    </h4>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {lang === "ar"
+                        ? "مشاركة الأداة مع الأصدقاء عبر واتساب، تويتر، فيسبوك، أو نسخ الرابط"
+                        : "Share the tool via WhatsApp, Twitter, Facebook, or copy link"}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -2309,7 +2730,10 @@ function ToolPage() {
               <div className="mt-5 pt-4 border-t border-border/40 text-center">
                 <p className="text-xs text-muted-foreground/60 font-mono">
                   {lang === "ar" ? "متوافق مع:" : "Compatible with:"}
-                  <span className="text-foreground/80"> RDWorks · LightBurn · CorelDRAW · LaserGRBL · CNC · Plasma</span>
+                  <span className="text-foreground/80">
+                    {" "}
+                    RDWorks · LightBurn · CorelDRAW · LaserGRBL · CNC · Plasma
+                  </span>
                 </p>
               </div>
             </div>
@@ -2343,24 +2767,34 @@ function ToolPage() {
                 <div className="space-y-2">
                   {history.map((entry) => {
                     const color =
-                      entry.score >= 80 ? "text-green-400" :
-                      entry.score >= 50 ? "text-yellow-400" : "text-red-400";
+                      entry.score >= 80
+                        ? "text-green-400"
+                        : entry.score >= 50
+                          ? "text-yellow-400"
+                          : "text-red-400";
                     const bg =
-                      entry.score >= 80 ? "border-green-400/20 bg-green-400/5" :
-                      entry.score >= 50 ? "border-yellow-400/20 bg-yellow-400/5" :
-                                          "border-red-400/20 bg-red-400/5";
+                      entry.score >= 80
+                        ? "border-green-400/20 bg-green-400/5"
+                        : entry.score >= 50
+                          ? "border-yellow-400/20 bg-yellow-400/5"
+                          : "border-red-400/20 bg-red-400/5";
                     return (
                       <div
                         key={entry.id}
                         className={`flex items-center gap-4 rounded-xl border px-4 py-3 ${bg}`}
                       >
-                        <div className={`font-display font-bold text-2xl min-w-[3rem] text-center ${color}`}>
+                        <div
+                          className={`font-display font-bold text-2xl min-w-[3rem] text-center ${color}`}
+                        >
                           {entry.score}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-mono text-sm font-semibold truncate">{entry.fileName}</p>
+                          <p className="font-mono text-sm font-semibold truncate">
+                            {entry.fileName}
+                          </p>
                           <p className="font-mono text-xs text-muted-foreground mt-0.5">
-                            {entry.totalEntities} {t.historyEntities} · {entry.layers} {t.historyLayers}
+                            {entry.totalEntities} {t.historyEntities} · {entry.layers}{" "}
+                            {t.historyLayers}
                             {entry.issueCount > 0 && ` · ${entry.issueCount} ${t.historyIssues}`}
                             {entry.wasRepaired && (
                               <span className="mr-2 text-green-400">✓ {t.historyRepaired}</span>
@@ -2408,41 +2842,49 @@ function ToolPage() {
               const finalScore = (displayAnalysis ?? analysis).score;
               const finalLabel = scoreLabel(finalScore, lang);
               return (
-            <div className={`rounded-2xl border p-8 flex flex-col sm:flex-row items-center gap-6 ${scoreBg(finalScore)}`}>
-              <div className="text-center">
-                <div className={`font-display text-7xl font-bold ${scoreColor(finalScore)}`}>
-                  {finalScore}
-                </div>
-                <div className="font-mono text-xs text-muted-foreground mt-1">/ 100</div>
-                {stage === "repaired" && reScanFailed && (
-                  <div className="mt-2 text-xs font-bold text-red-400">⚠️ {lang === "ar" ? "فشل إعادة التحقق" : "Verification failed"}</div>
-                )}
-              </div>
-              <div className="flex-1 text-center sm:text-start">
-                <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider">{t.score}</p>
-                <h2 className="font-display text-2xl font-bold mt-1">
-                  {stage === "repaired" && reScanFailed
-                    ? (lang === "ar" ? "تعذر التحقق من الملف المُصلّح" : "Repaired file not verifiable")
-                    : finalLabel}
-                </h2>
-                <p className="text-sm text-muted-foreground mt-1 font-mono">{fileName}</p>
-                {stage === "repaired" && !reScanFailed && repairedAnalysis && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {lang === "ar"
-                      ? `أعيد فحص الملف المُصلّح: ${repairedAnalysis.stats.totalEntities} كيان · ${repairedAnalysis.issues.length} مشكلة متبقية`
-                      : `Repaired file re-scanned: ${repairedAnalysis.stats.totalEntities} entities · ${repairedAnalysis.issues.length} remaining issues`}
-                  </p>
-                )}
-              </div>
-              {stage === "repaired" && (
-                <button
-                  onClick={handleDownloadFixed}
-                  className="px-6 py-3.5 rounded-xl bg-accent text-accent-foreground font-semibold hover:opacity-90 transition shadow-[var(--shadow-spark)] whitespace-nowrap"
+                <div
+                  className={`rounded-2xl border p-8 flex flex-col sm:flex-row items-center gap-6 ${scoreBg(finalScore)}`}
                 >
-                  ⬇ {t.downloadFixed}
-                </button>
-              )}
-            </div>
+                  <div className="text-center">
+                    <div className={`font-display text-7xl font-bold ${scoreColor(finalScore)}`}>
+                      {finalScore}
+                    </div>
+                    <div className="font-mono text-xs text-muted-foreground mt-1">/ 100</div>
+                    {stage === "repaired" && reScanFailed && (
+                      <div className="mt-2 text-xs font-bold text-red-400">
+                        ⚠️ {lang === "ar" ? "فشل إعادة التحقق" : "Verification failed"}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 text-center sm:text-start">
+                    <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
+                      {t.score}
+                    </p>
+                    <h2 className="font-display text-2xl font-bold mt-1">
+                      {stage === "repaired" && reScanFailed
+                        ? lang === "ar"
+                          ? "تعذر التحقق من الملف المُصلّح"
+                          : "Repaired file not verifiable"
+                        : finalLabel}
+                    </h2>
+                    <p className="text-sm text-muted-foreground mt-1 font-mono">{fileName}</p>
+                    {stage === "repaired" && !reScanFailed && repairedAnalysis && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {lang === "ar"
+                          ? `أعيد فحص الملف المُصلّح: ${repairedAnalysis.stats.totalEntities} كيان · ${repairedAnalysis.issues.length} مشكلة متبقية`
+                          : `Repaired file re-scanned: ${repairedAnalysis.stats.totalEntities} entities · ${repairedAnalysis.issues.length} remaining issues`}
+                      </p>
+                    )}
+                  </div>
+                  {stage === "repaired" && (
+                    <button
+                      onClick={handleDownloadFixed}
+                      className="px-6 py-3.5 rounded-xl bg-accent text-accent-foreground font-semibold hover:opacity-90 transition shadow-[var(--shadow-spark)] whitespace-nowrap"
+                    >
+                      ⬇ {t.downloadFixed}
+                    </button>
+                  )}
+                </div>
               );
             })()}
 
@@ -2453,28 +2895,34 @@ function ToolPage() {
               // shows the post-repair state by default, with a toggle to view
               // the original pre-repair file.
               if (!displayAnalysis) return null;
-              const issueIndices = new Set(displayAnalysis.issues.flatMap(i => i.entityIndices));
+              const issueIndices = new Set(displayAnalysis.issues.flatMap((i) => i.entityIndices));
               const beforeIssueIndices = analysis
-                ? new Set(analysis.issues.flatMap(i => i.entityIndices))
+                ? new Set(analysis.issues.flatMap((i) => i.entityIndices))
                 : new Set<number>();
-              return <DxfPreview
-                analysis={displayAnalysis}
-                issueIndices={issueIndices}
-                lang={lang}
-                openPoints={openLoopData.openPoints}
-                pathCount={openLoopData.count}
-                bridges={openLoopData.bridges}
-                gapTolerance={gapTolerance}
-                highlightCategory={highlightCategory}
-                before={stage === "repaired" && analysis ? {
-                  analysis,
-                  issueIndices: beforeIssueIndices,
-                  openPoints: beforeLoopData.openPoints,
-                  pathCount: beforeLoopData.count,
-                  bridges: beforeLoopData.bridges,
-                  gapTolerance,
-                } : undefined}
-              />;
+              return (
+                <DxfPreview
+                  analysis={displayAnalysis}
+                  issueIndices={issueIndices}
+                  lang={lang}
+                  openPoints={openLoopData.openPoints}
+                  pathCount={openLoopData.count}
+                  bridges={openLoopData.bridges}
+                  gapTolerance={gapTolerance}
+                  highlightCategory={highlightCategory}
+                  before={
+                    stage === "repaired" && analysis
+                      ? {
+                          analysis,
+                          issueIndices: beforeIssueIndices,
+                          openPoints: beforeLoopData.openPoints,
+                          pathCount: beforeLoopData.count,
+                          bridges: beforeLoopData.bridges,
+                          gapTolerance,
+                        }
+                      : undefined
+                  }
+                />
+              );
             })()}
 
             {/* Open Loops Count */}
@@ -2482,12 +2930,12 @@ function ToolPage() {
               <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-4 text-center">
                 <p className="text-sm font-medium text-red-400">
                   {openLoopData.count > 0
-                    ? (lang === "ar"
+                    ? lang === "ar"
                       ? `🟡 ${openLoopData.count} نقطة مفتوحة (فجوة ≥ 0.1 مم) تحتاج إصلاح يدوي`
-                      : `🟡 ${openLoopData.count} open points (gap ≥ 0.1mm) need manual repair`)
-                    : (lang === "ar"
+                      : `🟡 ${openLoopData.count} open points (gap ≥ 0.1mm) need manual repair`
+                    : lang === "ar"
                       ? `✓ جميع الفجوات < 0.1 مم أُغلقت تلقائياً`
-                      : `✓ All gaps < 0.1mm auto-closed`)}
+                      : `✓ All gaps < 0.1mm auto-closed`}
                 </p>
               </div>
             )}
@@ -2511,11 +2959,14 @@ function ToolPage() {
                 { key: "intersect", ar: "تقاطعات ذاتية", en: "Self-intersections" },
               ];
               const CAT_COLORS: Record<string, string> = {
-                open: "#ef4444", micro: "#eab308", duplicate: "#f97316",
-                overlap: "#a855f7", intersect: "#ec4899",
+                open: "#ef4444",
+                micro: "#eab308",
+                duplicate: "#f97316",
+                overlap: "#a855f7",
+                intersect: "#ec4899",
               };
               const catCount = (key: string) =>
-                src.issues.filter(i => (TYPE_MAP[key] ?? []).includes(i.type)).length;
+                src.issues.filter((i) => (TYPE_MAP[key] ?? []).includes(i.type)).length;
               return (
                 <div className="rounded-2xl border border-border bg-card p-5">
                   <div className="flex items-center justify-between mb-3">
@@ -2545,16 +2996,38 @@ function ToolPage() {
                             {n === 0 ? (
                               <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-green-500" />
                             ) : (
-                              <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: CAT_COLORS[key] }} />
+                              <span
+                                className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: CAT_COLORS[key] }}
+                              />
                             )}
-                            <span>{n > 0 ? <><strong>{n}</strong> {lang === "ar" ? ar : en}</> : <>{lang === "ar" ? ar : en} <span className="font-mono text-[11px]">— {lang === "ar" ? "نظيف ✓" : "clean ✓"}</span></>}</span>
+                            <span>
+                              {n > 0 ? (
+                                <>
+                                  <strong>{n}</strong> {lang === "ar" ? ar : en}
+                                </>
+                              ) : (
+                                <>
+                                  {lang === "ar" ? ar : en}{" "}
+                                  <span className="font-mono text-[11px]">
+                                    — {lang === "ar" ? "نظيف ✓" : "clean ✓"}
+                                  </span>
+                                </>
+                              )}
+                            </span>
                           </button>
                           {n > 0 && (
                             <button
                               onClick={() => setHighlightCategory(activeCat ? null : key)}
                               className={`text-xs px-3 py-1 rounded-lg border transition flex-shrink-0 ${activeCat ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted/50"}`}
                             >
-                              {lang === "ar" ? (activeCat ? "إخفاء" : "عرض 👁") : (activeCat ? "Hide" : "Show 👁")}
+                              {lang === "ar"
+                                ? activeCat
+                                  ? "إخفاء"
+                                  : "عرض 👁"
+                                : activeCat
+                                  ? "Hide"
+                                  : "Show 👁"}
                             </button>
                           )}
                         </div>
@@ -2564,7 +3037,7 @@ function ToolPage() {
                   <p className="text-[11px] text-muted-foreground mt-2">
                     {lang === "ar"
                       ? "اضغط «عرض» لعزل الفئة وحدها على الرسمة بالألوان"
-                      : "Click \"Show\" to isolate a single category on the drawing"}
+                      : 'Click "Show" to isolate a single category on the drawing'}
                   </p>
                 </div>
               );
@@ -2576,18 +3049,45 @@ function ToolPage() {
                 {lang === "ar" ? "⚙️ المعالجة" : "⚙️ Processing"}
               </h3>
               <div className="space-y-2.5">
-                {([
-                  { key: "closeOpen", ar: "إغلاق المخططات المفتوحة", en: "Close open contours" },
-                  { key: "removeZeroLength", ar: "حذف الكيانات الصفرية والدقيقة", en: "Remove zero-length entities" },
-                  { key: "dedupeVertices", ar: "دمج الرؤوس المكررة", en: "Dedupe vertices" },
-                  { key: "mergeOverlaps", ar: "دمج التداخلات المتوازية", en: "Merge overlapping strokes" },
-                  { key: "dedupeCurves", ar: "حذف المنحنيات المكررة", en: "Remove duplicate curves" },
-                ] as const).map(({ key, ar, en }) => (
-                  <label key={key} className="flex items-center gap-3 text-sm cursor-pointer select-none">
+                {(
+                  [
+                    { key: "closeOpen", ar: "إغلاق المخططات المفتوحة", en: "Close open contours" },
+                    {
+                      key: "removeZeroLength",
+                      ar: "حذف الكيانات الصفرية والدقيقة",
+                      en: "Remove zero-length entities",
+                    },
+                    { key: "dedupeVertices", ar: "دمج الرؤوس المكررة", en: "Dedupe vertices" },
+                    {
+                      key: "mergeOverlaps",
+                      ar: "دمج التداخلات المتوازية",
+                      en: "Merge overlapping strokes",
+                    },
+                    {
+                      key: "dedupeCurves",
+                      ar: "حذف المنحنيات المكررة",
+                      en: "Remove duplicate curves",
+                    },
+                    {
+                      key: "removeResidues",
+                      ar: "حذف الشوكات المعلقة (Residues)",
+                      en: "Remove dangling residues",
+                    },
+                    {
+                      key: "closeByExtension",
+                      ar: "إغلاق الفجوات بالتمديد (بدون إضافة هندسة)",
+                      en: "Close small gaps by extension (no new geometry)",
+                    },
+                  ] as const
+                ).map(({ key, ar, en }) => (
+                  <label
+                    key={key}
+                    className="flex items-center gap-3 text-sm cursor-pointer select-none"
+                  >
                     <input
                       type="checkbox"
                       checked={processing[key]}
-                      onChange={(e) => setProcessing(p => ({ ...p, [key]: e.target.checked }))}
+                      onChange={(e) => setProcessing((p) => ({ ...p, [key]: e.target.checked }))}
                       className="w-4 h-4 accent-primary"
                     />
                     {lang === "ar" ? ar : en}
@@ -2615,11 +3115,14 @@ function ToolPage() {
                 </button>
               </div>
               <div className="space-y-2.5">
-                {([
-                  { key: "snap", ar: "التقاط النقاط (Snapping)", en: "Snapping" },
-                  { key: "vertex", ar: "تبسيط المنحنيات (Curves)", en: "Curves" },
-                  { key: "close", ar: "إغلاق الفجوات (Closing)", en: "Closing" },
-                ] as const).map(({ key, ar, en }) => (
+                {(
+                  [
+                    { key: "snap", ar: "التقاط النقاط (Snapping)", en: "Snapping" },
+                    { key: "vertex", ar: "تبسيط المنحنيات (Curves)", en: "Curves" },
+                    { key: "close", ar: "إغلاق الفجوات (Closing)", en: "Closing" },
+                    { key: "residue", ar: "الشوكات المعلقة (Residues)", en: "Residues" },
+                  ] as const
+                ).map(({ key, ar, en }) => (
                   <label key={key} className="flex items-center justify-between gap-3 text-sm">
                     <span>{lang === "ar" ? ar : en}</span>
                     <span className="flex items-center gap-1.5">
@@ -2631,7 +3134,7 @@ function ToolPage() {
                         value={advTol[key]}
                         onChange={(e) => {
                           const v = parseFloat(e.target.value);
-                          if (!Number.isNaN(v)) setAdvTol(t => ({ ...t, [key]: v }));
+                          if (!Number.isNaN(v)) setAdvTol((t) => ({ ...t, [key]: v }));
                         }}
                         className="w-24 px-2 py-1 rounded-lg border border-border bg-background text-sm font-mono text-end"
                       />
@@ -2652,7 +3155,8 @@ function ToolPage() {
               <div className="rounded-2xl border border-accent/30 bg-gradient-to-br from-accent/5 to-card p-5 text-center">
                 <div className="text-2xl mb-2">⚡</div>
                 <p className="font-display text-2xl font-bold text-accent">
-                  {analysis.processingTimeMs ?? 0} <span className="text-sm font-normal text-muted-foreground">ms</span>
+                  {analysis.processingTimeMs ?? 0}{" "}
+                  <span className="text-sm font-normal text-muted-foreground">ms</span>
                 </p>
                 <p className="font-mono text-xs text-muted-foreground mt-1">{t.processingTime}</p>
               </div>
@@ -2661,7 +3165,9 @@ function ToolPage() {
                 <p className="font-display text-2xl font-bold text-primary">
                   {analysis.sizeReductionPercent ?? 0}%
                 </p>
-                <p className="font-mono text-xs text-muted-foreground mt-1">{t.fileSizeReduction}</p>
+                <p className="font-mono text-xs text-muted-foreground mt-1">
+                  {t.fileSizeReduction}
+                </p>
               </div>
             </div>
 
@@ -2686,7 +3192,10 @@ function ToolPage() {
                 </div>
                 <div className="grid sm:grid-cols-2 gap-3">
                   {fixSummary.map((item) => (
-                    <div key={item.id} className="bg-background border border-border/60 rounded-xl p-4 flex items-start gap-3">
+                    <div
+                      key={item.id}
+                      className="bg-background border border-border/60 rounded-xl p-4 flex items-start gap-3"
+                    >
                       <span className="text-xl flex-shrink-0">{item.icon}</span>
                       <div>
                         <p className="text-sm font-medium">{lang === "ar" ? item.ar : item.en}</p>
@@ -2704,75 +3213,88 @@ function ToolPage() {
                 The separate Phase 9 card was removed — its technical counters
                 (duplicates/overlaps) live in the collapsed "تفاصيل تقنية" panel;
                 the false-positive self-intersection counter was deleted. */}
-            {stage === "repaired" && (() => {
-              // Client-only gate: skeleton until mounted (React #418 fix).
-              if (!mounted)
+            {stage === "repaired" &&
+              (() => {
+                // Client-only gate: skeleton until mounted (React #418 fix).
+                if (!mounted)
+                  return (
+                    <div className="rounded-2xl border border-border bg-card p-6">
+                      <div className="h-24 animate-pulse rounded-xl bg-muted/40" />
+                    </div>
+                  );
+                const fixedCount = mounted ? repairedIssues.length : 0;
+                // Needs-review = whatever the VERIFIED re-scan of the repaired
+                // file still reports — the same set the preview highlights
+                // (single source of truth). v11 test proved this equals
+                // original-minus-fixed for the p266 case (4 fixed → 0 review).
+                const needsReviewCount = mounted ? (displayAnalysis ?? analysis).issues.length : 0;
+                const afterScore =
+                  stage === "repaired" && repairedAnalysis
+                    ? repairedAnalysis.score
+                    : analysis.score;
                 return (
-                  <div className="rounded-2xl border border-border bg-card p-6">
-                    <div className="h-24 animate-pulse rounded-xl bg-muted/40" />
+                  <div className="rounded-2xl border border-accent/30 bg-gradient-to-br from-accent/5 to-card p-6">
+                    <div className="flex items-center gap-3 mb-5">
+                      <div className="w-10 h-10 rounded-xl bg-accent/20 flex items-center justify-center text-xl">
+                        📋
+                      </div>
+                      <div>
+                        <h3 className="font-display font-bold text-lg">{t.reportTitle}</h3>
+                        <p className="text-xs text-muted-foreground">{t.reportSub}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="rounded-2xl border border-green-500/30 bg-green-500/5 p-5 text-center">
+                        <p className="font-mono text-3xl font-bold text-green-400">{fixedCount}</p>
+                        <p className="text-sm font-semibold mt-1">✅ {t.reportFixedAuto}</p>
+                      </div>
+                      <div
+                        className={`rounded-2xl border p-5 text-center ${needsReviewCount > 0 ? "border-yellow-500/30 bg-yellow-500/5" : "border-border bg-card"}`}
+                      >
+                        <p
+                          className={`font-mono text-3xl font-bold ${needsReviewCount > 0 ? "text-yellow-400" : "text-muted-foreground"}`}
+                        >
+                          {needsReviewCount}
+                        </p>
+                        <p className="text-sm font-semibold mt-1">👁 {t.reportNeedsReview}</p>
+                      </div>
+                      <div className="rounded-2xl border border-border bg-card p-5 text-center">
+                        <p className="font-mono text-2xl font-bold text-accent" dir="ltr">
+                          {analysis.score} → {afterScore}
+                        </p>
+                        <p className="text-sm font-semibold mt-1">
+                          {t.reportFileState} {t.reportOf100}
+                        </p>
+                      </div>
+                    </div>
+
+                    {needsReviewCount === 0 ? (
+                      <div className="mt-5 rounded-2xl border border-green-500/40 bg-green-500/10 p-6 text-center">
+                        <p className="font-display text-2xl font-bold text-green-400">
+                          {t.reportReadyCut}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">{t.reportReadyCutSub}</p>
+                        <button
+                          onClick={handleDownloadFixed}
+                          className="mt-4 w-full sm:w-auto px-8 py-4 rounded-xl bg-green-500 text-white font-bold text-lg hover:opacity-90 transition shadow-[var(--shadow-spark)]"
+                        >
+                          ⬇ {t.downloadFixed}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="mt-5 rounded-2xl border border-yellow-500/40 bg-yellow-500/10 p-4 text-center">
+                        <p className="text-sm font-semibold text-yellow-400">
+                          ⚠️{" "}
+                          {lang === "ar"
+                            ? `${needsReviewCount} حالة لم تُعدَّل تلقائياً حفاظاً على هندسة الرسم — راجعها قبل القص`
+                            : `${needsReviewCount} item(s) were left unchanged to preserve the original geometry — review before cutting`}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 );
-              const fixedCount = mounted ? repairedIssues.length : 0;
-              // Needs-review = whatever the VERIFIED re-scan of the repaired
-              // file still reports — the same set the preview highlights
-              // (single source of truth). v11 test proved this equals
-              // original-minus-fixed for the p266 case (4 fixed → 0 review).
-              const needsReviewCount = mounted ? (displayAnalysis ?? analysis).issues.length : 0;
-              const afterScore = stage === "repaired" && repairedAnalysis ? repairedAnalysis.score : analysis.score;
-              return (
-                <div className="rounded-2xl border border-accent/30 bg-gradient-to-br from-accent/5 to-card p-6">
-                  <div className="flex items-center gap-3 mb-5">
-                    <div className="w-10 h-10 rounded-xl bg-accent/20 flex items-center justify-center text-xl">
-                      📋
-                    </div>
-                    <div>
-                      <h3 className="font-display font-bold text-lg">{t.reportTitle}</h3>
-                      <p className="text-xs text-muted-foreground">{t.reportSub}</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="rounded-2xl border border-green-500/30 bg-green-500/5 p-5 text-center">
-                      <p className="font-mono text-3xl font-bold text-green-400">{fixedCount}</p>
-                      <p className="text-sm font-semibold mt-1">✅ {t.reportFixedAuto}</p>
-                    </div>
-                    <div className={`rounded-2xl border p-5 text-center ${needsReviewCount > 0 ? "border-yellow-500/30 bg-yellow-500/5" : "border-border bg-card"}`}>
-                      <p className={`font-mono text-3xl font-bold ${needsReviewCount > 0 ? "text-yellow-400" : "text-muted-foreground"}`}>
-                        {needsReviewCount}
-                      </p>
-                      <p className="text-sm font-semibold mt-1">👁 {t.reportNeedsReview}</p>
-                    </div>
-                    <div className="rounded-2xl border border-border bg-card p-5 text-center">
-                      <p className="font-mono text-2xl font-bold text-accent" dir="ltr">
-                        {analysis.score} → {afterScore}
-                      </p>
-                      <p className="text-sm font-semibold mt-1">{t.reportFileState} {t.reportOf100}</p>
-                    </div>
-                  </div>
-
-                  {needsReviewCount === 0 ? (
-                    <div className="mt-5 rounded-2xl border border-green-500/40 bg-green-500/10 p-6 text-center">
-                      <p className="font-display text-2xl font-bold text-green-400">{t.reportReadyCut}</p>
-                      <p className="text-xs text-muted-foreground mt-1">{t.reportReadyCutSub}</p>
-                      <button
-                        onClick={handleDownloadFixed}
-                        className="mt-4 w-full sm:w-auto px-8 py-4 rounded-xl bg-green-500 text-white font-bold text-lg hover:opacity-90 transition shadow-[var(--shadow-spark)]"
-                      >
-                        ⬇ {t.downloadFixed}
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="mt-5 rounded-2xl border border-yellow-500/40 bg-yellow-500/10 p-4 text-center">
-                      <p className="text-sm font-semibold text-yellow-400">
-                        ⚠️ {lang === "ar"
-                          ? `${needsReviewCount} حالة لم تُعدَّل تلقائياً حفاظاً على هندسة الرسم — راجعها قبل القص`
-                          : `${needsReviewCount} item(s) were left unchanged to preserve the original geometry — review before cutting`}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
+              })()}
 
             {/* Phase 7 (UI only): conservative-behavior trust box */}
             <div className="rounded-2xl border border-accent/20 bg-accent/5 p-5">
@@ -2790,35 +3312,67 @@ function ToolPage() {
                 <div className="flex items-center gap-3 mb-5">
                   <span className="text-xl">🔍</span>
                   <h3 className="font-display font-bold text-lg">
-                    {lang === "ar" ? "المقارنة قبل/بعد (إعادة فحص حقيقية)" : "Before / After (verified re-scan)"}
+                    {lang === "ar"
+                      ? "المقارنة قبل/بعد (إعادة فحص حقيقية)"
+                      : "Before / After (verified re-scan)"}
                   </h3>
                 </div>
                 {(() => {
                   const beforeIssues = analysis.issues;
                   const afterIssues = repairedAnalysis.issues;
-                  const beforeErrors = beforeIssues.filter(i => i.severity === "error").length;
-                  const beforeWarnings = beforeIssues.filter(i => i.severity === "warning").length;
-                  const afterErrors = afterIssues.filter(i => i.severity === "error").length;
-                  const afterWarnings = afterIssues.filter(i => i.severity === "warning").length;
+                  const beforeErrors = beforeIssues.filter((i) => i.severity === "error").length;
+                  const beforeWarnings = beforeIssues.filter(
+                    (i) => i.severity === "warning",
+                  ).length;
+                  const afterErrors = afterIssues.filter((i) => i.severity === "error").length;
+                  const afterWarnings = afterIssues.filter((i) => i.severity === "warning").length;
                   const fixed = Math.max(0, beforeIssues.length - afterIssues.length);
                   const rows = [
-                    { label: lang === "ar" ? "مشاكل مكتشفة قبل الإصلاح" : "Issues detected before", before: beforeIssues.length, after: null },
-                    { label: lang === "ar" ? "حرجة قبل" : "Critical before", before: beforeErrors, after: null },
-                    { label: lang === "ar" ? "تحذيرات قبل" : "Warnings before", before: beforeWarnings, after: null },
-                    { label: lang === "ar" ? "مشاكل متبقية بعد" : "Issues remaining after", before: null, after: afterIssues.length },
-                    { label: lang === "ar" ? "حرجة متبقية" : "Critical remaining", before: null, after: afterErrors },
-                    { label: lang === "ar" ? "تحذيرات متبقية" : "Warnings remaining", before: null, after: afterWarnings },
+                    {
+                      label: lang === "ar" ? "مشاكل مكتشفة قبل الإصلاح" : "Issues detected before",
+                      before: beforeIssues.length,
+                      after: null,
+                    },
+                    {
+                      label: lang === "ar" ? "حرجة قبل" : "Critical before",
+                      before: beforeErrors,
+                      after: null,
+                    },
+                    {
+                      label: lang === "ar" ? "تحذيرات قبل" : "Warnings before",
+                      before: beforeWarnings,
+                      after: null,
+                    },
+                    {
+                      label: lang === "ar" ? "مشاكل متبقية بعد" : "Issues remaining after",
+                      before: null,
+                      after: afterIssues.length,
+                    },
+                    {
+                      label: lang === "ar" ? "حرجة متبقية" : "Critical remaining",
+                      before: null,
+                      after: afterErrors,
+                    },
+                    {
+                      label: lang === "ar" ? "تحذيرات متبقية" : "Warnings remaining",
+                      before: null,
+                      after: afterWarnings,
+                    },
                   ];
                   return (
                     <div className="grid sm:grid-cols-2 gap-3">
                       <div className="p-4 rounded-xl border border-border/60">
-                        <p className="text-xs text-muted-foreground font-mono mb-2">{lang === "ar" ? "المشاكل المُصلّحة" : "Issues fixed"}</p>
+                        <p className="text-xs text-muted-foreground font-mono mb-2">
+                          {lang === "ar" ? "المشاكل المُصلّحة" : "Issues fixed"}
+                        </p>
                         <p className="font-display text-3xl font-bold text-accent">{fixed}</p>
                       </div>
                       {rows.map((r, i) => (
                         <div key={i} className="p-4 rounded-xl border border-border/60">
                           <p className="text-xs text-muted-foreground font-mono mb-2">{r.label}</p>
-                          <p className="font-display text-3xl font-bold">{r.after !== null ? r.after : r.before}</p>
+                          <p className="font-display text-3xl font-bold">
+                            {r.after !== null ? r.after : r.before}
+                          </p>
                         </div>
                       ))}
                     </div>
@@ -2831,8 +3385,6 @@ function ToolPage() {
                 </p>
               </div>
             )}
-
-
 
             {/* Cost Estimator */}
             <div className="rounded-2xl border border-border bg-card overflow-hidden">
@@ -2849,19 +3401,24 @@ function ToolPage() {
               {showCostEstimator && (
                 <div className="px-6 pb-6 space-y-4">
                   <p className="text-sm text-muted-foreground">{t.costSub}</p>
-                  
+
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div className="bg-background border border-border/60 rounded-xl p-4">
-                      <p className="text-xs text-muted-foreground font-mono mb-1">{t.totalLength}</p>
+                      <p className="text-xs text-muted-foreground font-mono mb-1">
+                        {t.totalLength}
+                      </p>
                       <p className="font-display text-2xl font-bold text-primary">
-                        {perimeter.toFixed(0)} <span className="text-sm font-normal text-muted-foreground">mm</span>
+                        {perimeter.toFixed(0)}{" "}
+                        <span className="text-sm font-normal text-muted-foreground">mm</span>
                       </p>
                       <p className="font-mono text-xs text-muted-foreground">
-                        {(perimeterMeters).toFixed(2)} m
+                        {perimeterMeters.toFixed(2)} m
                       </p>
                     </div>
                     <div className="bg-background border border-border/60 rounded-xl p-4">
-                      <p className="text-xs text-muted-foreground font-mono mb-1">{t.pricePerMeter}</p>
+                      <p className="text-xs text-muted-foreground font-mono mb-1">
+                        {t.pricePerMeter}
+                      </p>
                       <div className="flex items-center gap-2">
                         <span className="text-muted-foreground">$</span>
                         <input
@@ -2878,7 +3435,9 @@ function ToolPage() {
                   </div>
 
                   <div className="bg-gradient-to-r from-accent/10 to-primary/10 border border-accent/30 rounded-xl p-5 text-center">
-                    <p className="text-xs text-muted-foreground font-mono mb-1">{t.estimatedCost}</p>
+                    <p className="text-xs text-muted-foreground font-mono mb-1">
+                      {t.estimatedCost}
+                    </p>
                     <p className="font-display text-4xl font-bold text-gradient-spark">
                       ${estimatedCost.toFixed(2)}
                     </p>
@@ -2911,9 +3470,13 @@ function ToolPage() {
                   </p>
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div className="bg-background border border-border/60 rounded-xl p-4">
-                      <p className="text-xs text-muted-foreground font-mono mb-1">{lang === "ar" ? "سرعة القص (م/دقيقة)" : "Cut speed (m/min)"}</p>
+                      <p className="text-xs text-muted-foreground font-mono mb-1">
+                        {lang === "ar" ? "سرعة القص (م/دقيقة)" : "Cut speed (m/min)"}
+                      </p>
                       <input
-                        type="number" min="0.05" step="0.05"
+                        type="number"
+                        min="0.05"
+                        step="0.05"
                         value={cutSpeed}
                         onChange={(e) => setCutSpeed(parseFloat(e.target.value) || 0)}
                         className="w-full bg-transparent border-b border-border text-foreground font-display text-2xl font-bold focus:outline-none focus:border-accent"
@@ -2921,9 +3484,13 @@ function ToolPage() {
                       />
                     </div>
                     <div className="bg-background border border-border/60 rounded-xl p-4">
-                      <p className="text-xs text-muted-foreground font-mono mb-1">{lang === "ar" ? "تكلفة الماكينة ($/دقيقة)" : "Machine cost ($/min)"}</p>
+                      <p className="text-xs text-muted-foreground font-mono mb-1">
+                        {lang === "ar" ? "تكلفة الماكينة ($/دقيقة)" : "Machine cost ($/min)"}
+                      </p>
                       <input
-                        type="number" min="0.1" step="0.5"
+                        type="number"
+                        min="0.1"
+                        step="0.5"
                         value={cutPricePerMin}
                         onChange={(e) => setCutPricePerMin(parseFloat(e.target.value) || 0)}
                         className="w-full bg-transparent border-b border-border text-foreground font-display text-2xl font-bold focus:outline-none focus:border-accent"
@@ -2933,20 +3500,36 @@ function ToolPage() {
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div className="rounded-xl border border-border p-4 text-center">
-                      <p className="font-mono text-xs text-muted-foreground">{lang === "ar" ? "الطول الكلي" : "Total length"}</p>
-                      <p className="font-display text-xl font-bold text-primary">{timeReport.totalCutLength} m</p>
+                      <p className="font-mono text-xs text-muted-foreground">
+                        {lang === "ar" ? "الطول الكلي" : "Total length"}
+                      </p>
+                      <p className="font-display text-xl font-bold text-primary">
+                        {timeReport.totalCutLength} m
+                      </p>
                     </div>
                     <div className="rounded-xl border border-accent/30 bg-accent/5 p-4 text-center">
-                      <p className="font-mono text-xs text-muted-foreground">{lang === "ar" ? "وقت القص" : "Cut time"}</p>
-                      <p className="font-display text-xl font-bold text-accent">{timeReport.totalCutTime} {lang === "ar" ? "دقيقة" : "min"}</p>
+                      <p className="font-mono text-xs text-muted-foreground">
+                        {lang === "ar" ? "وقت القص" : "Cut time"}
+                      </p>
+                      <p className="font-display text-xl font-bold text-accent">
+                        {timeReport.totalCutTime} {lang === "ar" ? "دقيقة" : "min"}
+                      </p>
                     </div>
                     <div className="rounded-xl border border-border p-4 text-center">
-                      <p className="font-mono text-xs text-muted-foreground">{lang === "ar" ? "تكلفة الماكينة" : "Machine cost"}</p>
-                      <p className="font-display text-xl font-bold">${timeReport.cuttingCost.toFixed(2)}</p>
+                      <p className="font-mono text-xs text-muted-foreground">
+                        {lang === "ar" ? "تكلفة الماكينة" : "Machine cost"}
+                      </p>
+                      <p className="font-display text-xl font-bold">
+                        ${timeReport.cuttingCost.toFixed(2)}
+                      </p>
                     </div>
                     <div className="rounded-xl border border-border p-4 text-center">
-                      <p className="font-mono text-xs text-muted-foreground">{lang === "ar" ? "الإجمالي" : "Total"}</p>
-                      <p className="font-display text-xl font-bold">${timeReport.totalCost.toFixed(2)}</p>
+                      <p className="font-mono text-xs text-muted-foreground">
+                        {lang === "ar" ? "الإجمالي" : "Total"}
+                      </p>
+                      <p className="font-display text-xl font-bold">
+                        ${timeReport.totalCost.toFixed(2)}
+                      </p>
                     </div>
                   </div>
                   <p className="font-mono text-xs text-muted-foreground">
@@ -2981,42 +3564,79 @@ function ToolPage() {
                   </p>
                   <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <label className="text-xs text-muted-foreground font-mono">{lang === "ar" ? "عرض اللوح" : "Sheet width"}</label>
-                      <input type="number" value={sheetW} onChange={(e) => setSheetW(parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent border-b border-border text-foreground font-display text-xl font-bold focus:outline-none focus:border-accent" dir="ltr" />
+                      <label className="text-xs text-muted-foreground font-mono">
+                        {lang === "ar" ? "عرض اللوح" : "Sheet width"}
+                      </label>
+                      <input
+                        type="number"
+                        value={sheetW}
+                        onChange={(e) => setSheetW(parseFloat(e.target.value) || 0)}
+                        className="w-full bg-transparent border-b border-border text-foreground font-display text-xl font-bold focus:outline-none focus:border-accent"
+                        dir="ltr"
+                      />
                     </div>
                     <div>
-                      <label className="text-xs text-muted-foreground font-mono">{lang === "ar" ? "طول اللوح" : "Sheet height"}</label>
-                      <input type="number" value={sheetH} onChange={(e) => setSheetH(parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent border-b border-border text-foreground font-display text-xl font-bold focus:outline-none focus:border-accent" dir="ltr" />
+                      <label className="text-xs text-muted-foreground font-mono">
+                        {lang === "ar" ? "طول اللوح" : "Sheet height"}
+                      </label>
+                      <input
+                        type="number"
+                        value={sheetH}
+                        onChange={(e) => setSheetH(parseFloat(e.target.value) || 0)}
+                        className="w-full bg-transparent border-b border-border text-foreground font-display text-xl font-bold focus:outline-none focus:border-accent"
+                        dir="ltr"
+                      />
                     </div>
                     <div>
-                      <label className="text-xs text-muted-foreground font-mono">{lang === "ar" ? "المسافة (مم)" : "Spacing (mm)"}</label>
-                      <input type="number" value={nestSpacing} onChange={(e) => setNestSpacing(parseFloat(e.target.value) || 0)}
-                        className="w-full bg-transparent border-b border-border text-foreground font-display text-xl font-bold focus:outline-none focus:border-accent" dir="ltr" />
+                      <label className="text-xs text-muted-foreground font-mono">
+                        {lang === "ar" ? "المسافة (مم)" : "Spacing (mm)"}
+                      </label>
+                      <input
+                        type="number"
+                        value={nestSpacing}
+                        onChange={(e) => setNestSpacing(parseFloat(e.target.value) || 0)}
+                        className="w-full bg-transparent border-b border-border text-foreground font-display text-xl font-bold focus:outline-none focus:border-accent"
+                        dir="ltr"
+                      />
                     </div>
                   </div>
                   {nestingResult ? (
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-4 text-center">
-                        <p className="font-mono text-xs text-muted-foreground">{lang === "ar" ? "استغلال الخامة" : "Utilization"}</p>
-                        <p className="font-display text-xl font-bold text-yellow-400">{nestingResult.utilization.toFixed(1)}%</p>
+                        <p className="font-mono text-xs text-muted-foreground">
+                          {lang === "ar" ? "استغلال الخامة" : "Utilization"}
+                        </p>
+                        <p className="font-display text-xl font-bold text-yellow-400">
+                          {nestingResult.utilization.toFixed(1)}%
+                        </p>
                       </div>
                       <div className="rounded-xl border border-border p-4 text-center">
-                        <p className="font-mono text-xs text-muted-foreground">{lang === "ar" ? "الهدر" : "Waste"}</p>
-                        <p className="font-display text-xl font-bold">{nestingResult.wastePercent.toFixed(1)}%</p>
+                        <p className="font-mono text-xs text-muted-foreground">
+                          {lang === "ar" ? "الهدر" : "Waste"}
+                        </p>
+                        <p className="font-display text-xl font-bold">
+                          {nestingResult.wastePercent.toFixed(1)}%
+                        </p>
                       </div>
                       <div className="rounded-xl border border-border p-4 text-center">
-                        <p className="font-mono text-xs text-muted-foreground">{lang === "ar" ? "القطع" : "Parts"}</p>
+                        <p className="font-mono text-xs text-muted-foreground">
+                          {lang === "ar" ? "القطع" : "Parts"}
+                        </p>
                         <p className="font-display text-xl font-bold">{nestingResult.totalParts}</p>
                       </div>
                       <div className="rounded-xl border border-border p-4 text-center">
-                        <p className="font-mono text-xs text-muted-foreground">{lang === "ar" ? "الألواح" : "Sheets"}</p>
-                        <p className="font-display text-xl font-bold">{nestingResult.sheetsNeeded}</p>
+                        <p className="font-mono text-xs text-muted-foreground">
+                          {lang === "ar" ? "الألواح" : "Sheets"}
+                        </p>
+                        <p className="font-display text-xl font-bold">
+                          {nestingResult.sheetsNeeded}
+                        </p>
                       </div>
                     </div>
                   ) : (
-                    <p className="text-sm text-muted-foreground">{lang === "ar" ? "تعذّر الحساب." : "Could not compute."}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {lang === "ar" ? "تعذّر الحساب." : "Could not compute."}
+                    </p>
                   )}
                 </div>
               )}
@@ -3078,7 +3698,10 @@ function ToolPage() {
                   [t.statCircles, analysis.stats.circles],
                   [t.statLayers, analysis.stats.layers.length],
                 ].map(([label, val]) => (
-                  <div key={label} className="bg-background rounded-xl p-4 text-center border border-border/60">
+                  <div
+                    key={label}
+                    className="bg-background rounded-xl p-4 text-center border border-border/60"
+                  >
                     <div className="font-display text-2xl font-bold text-primary">{val}</div>
                     <div className="font-mono text-xs text-muted-foreground mt-1">{label}</div>
                   </div>
@@ -3086,8 +3709,11 @@ function ToolPage() {
               </div>
               {analysis.stats.layers.length > 0 && (
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {analysis.stats.layers.map(l => (
-                    <span key={l} className="font-mono text-xs px-2 py-1 rounded-md bg-secondary border border-border text-muted-foreground">
+                  {analysis.stats.layers.map((l) => (
+                    <span
+                      key={l}
+                      className="font-mono text-xs px-2 py-1 rounded-md bg-secondary border border-border text-muted-foreground"
+                    >
                       {l}
                     </span>
                   ))}
@@ -3103,33 +3729,40 @@ function ToolPage() {
 
             {/* Issues */}
             <div className="rounded-2xl border border-border bg-card p-6">
-              <h3 className="font-display font-semibold mb-4">{stage === "repaired" ? t.repaired : t.issues}</h3>
+              <h3 className="font-display font-semibold mb-4">
+                {stage === "repaired" ? t.repaired : t.issues}
+              </h3>
 
               {stage === "repaired" && repairedIssues.length > 0 && (
                 <div className="space-y-3 mb-4">
                   <p className="text-xs font-semibold text-green-400 font-mono uppercase tracking-wide">
                     ✓ {lang === "ar" ? "ما تم إصلاحه" : "Fixed"}
                   </p>
-                  {repairedIssues.map(issue => (
-                    <div key={issue.id} className="flex items-start gap-3 p-4 rounded-xl border border-green-500/30 bg-green-500/5">
+                  {repairedIssues.map((issue) => (
+                    <div
+                      key={issue.id}
+                      className="flex items-start gap-3 p-4 rounded-xl border border-green-500/30 bg-green-500/5"
+                    >
                       <span className="text-green-400 text-lg flex-shrink-0">✓</span>
                       <div className="flex-1">
                         <p className="text-sm font-medium">{lang === "ar" ? issue.ar : issue.en}</p>
                       </div>
-                      <span className="font-mono text-xs px-2 py-1 rounded-md bg-green-500/20 text-green-400">{t.fixedLabel}</span>
+                      <span className="font-mono text-xs px-2 py-1 rounded-md bg-green-500/20 text-green-400">
+                        {t.fixedLabel}
+                      </span>
                     </div>
                   ))}
                 </div>
               )}
 
-              {stage === "result" && (
-                analysis.issues.length === 0 ? (
+              {stage === "result" &&
+                (analysis.issues.length === 0 ? (
                   <div className="p-6 rounded-xl border border-green-500/30 bg-green-500/5 text-center">
                     <p className="text-green-400 font-semibold">{t.noIssues}</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {analysis.issues.map(issue => (
+                    {analysis.issues.map((issue) => (
                       <div
                         key={issue.id}
                         className={`flex items-start gap-3 p-4 rounded-xl border ${
@@ -3138,42 +3771,60 @@ function ToolPage() {
                             : "border-yellow-500/30 bg-yellow-500/5"
                         }`}
                       >
-                        <span className={`text-lg flex-shrink-0 ${issue.severity === "error" ? "text-red-400" : "text-yellow-400"}`}>
+                        <span
+                          className={`text-lg flex-shrink-0 ${issue.severity === "error" ? "text-red-400" : "text-yellow-400"}`}
+                        >
                           {issue.severity === "error" ? "✕" : "⚠"}
                         </span>
                         <div className="flex-1">
-                          <p className="text-sm font-medium">{lang === "ar" ? issue.ar : issue.en}</p>
+                          <p className="text-sm font-medium">
+                            {lang === "ar" ? issue.ar : issue.en}
+                          </p>
                           <p className="font-mono text-xs text-muted-foreground mt-1">
-                            {issue.entityIndices.length} {lang === "ar" ? "عنصر متأثر" : "entity affected"}
+                            {issue.entityIndices.length}{" "}
+                            {lang === "ar" ? "عنصر متأثر" : "entity affected"}
                           </p>
                         </div>
-                        <span className={`font-mono text-xs px-2 py-1 rounded-md ${
-                          issue.severity === "error"
-                            ? "bg-red-500/20 text-red-400"
-                            : "bg-yellow-500/20 text-yellow-400"
-                        }`}>
+                        <span
+                          className={`font-mono text-xs px-2 py-1 rounded-md ${
+                            issue.severity === "error"
+                              ? "bg-red-500/20 text-red-400"
+                              : "bg-yellow-500/20 text-yellow-400"
+                          }`}
+                        >
                           {issue.severity === "error" ? t.severityError : t.severityWarn}
                         </span>
                       </div>
                     ))}
                   </div>
-                )
-              )}
+                ))}
 
               {/* Unrepaired issues in repaired stage */}
-              {stage === "repaired" && analysis.issues.filter(i => !repairedIssues.find(r => r.id === i.id)).length > 0 && (
-                <div className="space-y-3 mt-3">
-                  <p className="text-xs font-semibold text-yellow-400 font-mono uppercase tracking-wide">
-                    ⚠ {lang === "ar" ? "تم اكتشافه — يحتاج مراجعة (لم يتم تغييره)" : "Detected — needs review (unchanged)"}
-                  </p>
-                  {analysis.issues.filter(i => !repairedIssues.find(r => r.id === i.id)).map(issue => (
-                    <div key={issue.id} className="flex items-start gap-3 p-4 rounded-xl border border-yellow-500/30 bg-yellow-500/5">
-                      <span className="text-yellow-400 text-lg flex-shrink-0">⚠</span>
-                      <p className="text-sm font-medium">{lang === "ar" ? issue.ar : issue.en}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
+              {stage === "repaired" &&
+                analysis.issues.filter((i) => !repairedIssues.find((r) => r.id === i.id)).length >
+                  0 && (
+                  <div className="space-y-3 mt-3">
+                    <p className="text-xs font-semibold text-yellow-400 font-mono uppercase tracking-wide">
+                      ⚠{" "}
+                      {lang === "ar"
+                        ? "تم اكتشافه — يحتاج مراجعة (لم يتم تغييره)"
+                        : "Detected — needs review (unchanged)"}
+                    </p>
+                    {analysis.issues
+                      .filter((i) => !repairedIssues.find((r) => r.id === i.id))
+                      .map((issue) => (
+                        <div
+                          key={issue.id}
+                          className="flex items-start gap-3 p-4 rounded-xl border border-yellow-500/30 bg-yellow-500/5"
+                        >
+                          <span className="text-yellow-400 text-lg flex-shrink-0">⚠</span>
+                          <p className="text-sm font-medium">
+                            {lang === "ar" ? issue.ar : issue.en}
+                          </p>
+                        </div>
+                      ))}
+                  </div>
+                )}
             </div>
 
             {/* Actions */}
@@ -3188,7 +3839,14 @@ function ToolPage() {
                 onClick={copyReportToClipboard}
                 className="px-5 py-2.5 rounded-lg border border-border hover:border-primary/60 font-semibold text-sm transition"
               >
-                📋 {copiedReport ? (lang === "ar" ? "تم النسخ ✓" : "Copied ✓") : (lang === "ar" ? "نسخ التقرير" : "Copy Report")}
+                📋{" "}
+                {copiedReport
+                  ? lang === "ar"
+                    ? "تم النسخ ✓"
+                    : "Copied ✓"
+                  : lang === "ar"
+                    ? "نسخ التقرير"
+                    : "Copy Report"}
               </button>
               <button
                 onClick={downloadReport}
@@ -3196,7 +3854,7 @@ function ToolPage() {
               >
                 📄 {t.downloadReport}
               </button>
-                            {stage === "result" && analysis.issues.some(i => i.severity === "error") && (
+              {stage === "result" && analysis.issues.some((i) => i.severity === "error") && (
                 <>
                   {/* Phase 2: optional curve→polyline conversion toggle */}
                   <label className="flex items-center gap-2 pr-4 border-r border-border/60">
@@ -3206,7 +3864,9 @@ function ToolPage() {
                       onChange={(e) => setConvertCurves(e.target.checked)}
                       className="w-4 h-4 rounded border-border text-primary focus:ring-primary/50"
                     />
-                    <span className={`text-xs ${lang === "ar" ? "font-arabic" : ""} text-muted-foreground`}>
+                    <span
+                      className={`text-xs ${lang === "ar" ? "font-arabic" : ""} text-muted-foreground`}
+                    >
                       {lang === "ar"
                         ? "تحويل المنحنيات (قوس/دائرة/منحنى/قلب نجمة) إلى بوليلاين"
                         : "Convert curves (arc/circle/spline/ellipse) to polylines"}
@@ -3255,44 +3915,74 @@ function ToolPage() {
               {stage === "result" || stage === "repaired" ? (
                 <div className="mt-5 rounded-xl border border-border/60 overflow-hidden">
                   <button
-                    onClick={() => setShowScanDetails(v => !v)}
+                    onClick={() => setShowScanDetails((v) => !v)}
                     className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold hover:bg-muted/40 transition"
                   >
                     <span>{lang === "ar" ? "تفاصيل الفحص" : "Scan details"}</span>
                     <span className="font-mono text-xs">{showScanDetails ? "▲" : "▼"}</span>
                   </button>
-                  {showScanDetails && (() => {
-                    const src = displayAnalysis ?? analysis;
-                    const needsReview = (displayAnalysis ?? analysis).issues.length;
-                    const rows: Array<[string, string]> = [
-                      [lang === "ar" ? "عدد العناصر" : "Total entities", String(src.stats.totalEntities)],
-                      [lang === "ar" ? "المشاكل المكتشفة" : "Issues detected", String(analysis.issues.length)],
-                      ...(stage === "repaired" ? [[
-                        lang === "ar" ? "المشاكل المُصلحة" : "Issues repaired",
-                        String(repairedIssues.length),
-                      ] as [string, string]] : []),
-                      ...(stage === "repaired" ? [[
-                        lang === "ar" ? "تحتاج مراجعة (لم تُغيَّر)" : "Needs review (unchanged)",
-                        String(needsReview),
-                      ] as [string, string]] : []),
-                      [lang === "ar" ? "أنواع المشاكل" : "Issue types",
-                        analysis.issues.length > 0
-                          ? [...new Set(analysis.issues.map(i => lang === "ar" ? i.ar : i.en))].join("، ")
-                          : lang === "ar" ? "لا يوجد" : "none"],
-                      [lang === "ar" ? "حالة الملف قبل/بعد" : "File state before/after",
-                        `${analysis.score} → ${stage === "repaired" && repairedAnalysis ? repairedAnalysis.score : analysis.score} ${lang === "ar" ? "(من 100)" : "/100"}`],
-                    ];
-                    return (
-                      <div className="px-4 pb-4 space-y-2">
-                        {rows.map(([k, v]) => (
-                          <div key={k} className="flex items-start justify-between gap-4 text-xs border-b border-border/40 pb-2 last:border-0 last:pb-0">
-                            <span className="text-muted-foreground">{k}</span>
-                            <span className="font-medium text-end">{v}</span>
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })()}
+                  {showScanDetails &&
+                    (() => {
+                      const src = displayAnalysis ?? analysis;
+                      const needsReview = (displayAnalysis ?? analysis).issues.length;
+                      const rows: Array<[string, string]> = [
+                        [
+                          lang === "ar" ? "عدد العناصر" : "Total entities",
+                          String(src.stats.totalEntities),
+                        ],
+                        [
+                          lang === "ar" ? "المشاكل المكتشفة" : "Issues detected",
+                          String(analysis.issues.length),
+                        ],
+                        ...(stage === "repaired"
+                          ? [
+                              [
+                                lang === "ar" ? "المشاكل المُصلحة" : "Issues repaired",
+                                String(repairedIssues.length),
+                              ] as [string, string],
+                            ]
+                          : []),
+                        ...(stage === "repaired"
+                          ? [
+                              [
+                                lang === "ar"
+                                  ? "تحتاج مراجعة (لم تُغيَّر)"
+                                  : "Needs review (unchanged)",
+                                String(needsReview),
+                              ] as [string, string],
+                            ]
+                          : []),
+                        [
+                          lang === "ar" ? "أنواع المشاكل" : "Issue types",
+                          analysis.issues.length > 0
+                            ? [
+                                ...new Set(
+                                  analysis.issues.map((i) => (lang === "ar" ? i.ar : i.en)),
+                                ),
+                              ].join("، ")
+                            : lang === "ar"
+                              ? "لا يوجد"
+                              : "none",
+                        ],
+                        [
+                          lang === "ar" ? "حالة الملف قبل/بعد" : "File state before/after",
+                          `${analysis.score} → ${stage === "repaired" && repairedAnalysis ? repairedAnalysis.score : analysis.score} ${lang === "ar" ? "(من 100)" : "/100"}`,
+                        ],
+                      ];
+                      return (
+                        <div className="px-4 pb-4 space-y-2">
+                          {rows.map(([k, v]) => (
+                            <div
+                              key={k}
+                              className="flex items-start justify-between gap-4 text-xs border-b border-border/40 pb-2 last:border-0 last:pb-0"
+                            >
+                              <span className="text-muted-foreground">{k}</span>
+                              <span className="font-medium text-end">{v}</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
                 </div>
               ) : null}
             </div>
@@ -3307,7 +3997,9 @@ function ToolPage() {
             <button
               onClick={() => setShowTrustModal(false)}
               className="absolute top-4 end-4 text-muted-foreground hover:text-foreground transition font-mono text-lg"
-            >✕</button>
+            >
+              ✕
+            </button>
             <div className="text-4xl mb-4 text-center">🔒</div>
             <h3 className="font-display text-2xl font-bold text-center mb-6">{t.trustTitle}</h3>
             <div className="space-y-4">

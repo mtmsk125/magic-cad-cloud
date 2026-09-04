@@ -7,18 +7,30 @@ import AdvertiseWithUs from "@/components/AdvertiseWithUs";
 import { getTranslations, getLangDir, type Lang } from "@/lib/i18n";
 import { fetchSiteStats, recordVisit } from "@/lib/stats";
 import { setReferredBy, ensureReferralCode } from "@/lib/growth/growthClient";
-import { track } from '@vercel/analytics';
+import { track } from "@vercel/analytics";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "DXFix — إصلاح وفحص ملفات DXF لورش CNC | مجاني 100%" },
-      { name: "description", content: "أداة مجانية 100% لإصلاح أخطاء ملفات DXF، احصل على تقييم جاهزية القص، وصدّر ملفاً نظيفاً خلال ثوانٍ. بدون اشتراك، بدون بطاقة." },
-      { name: "keywords", content: "إصلاح ملفات DXF, أداة CNC عربية, برنامج تصليح DXF, DXF repair, CNC workshop, ورشة CNC, laser cutting, قص ليزر, DXF validator, AutoCAD, plasma cutting, قص بلازما, تحويل DXF, إصلاح أخطاء DXF اونلاين, CNC software Arabic" },
+      {
+        name: "description",
+        content:
+          "أداة مجانية 100% لإصلاح أخطاء ملفات DXF، احصل على تقييم جاهزية القص، وصدّر ملفاً نظيفاً خلال ثوانٍ. بدون اشتراك، بدون بطاقة.",
+      },
+      {
+        name: "keywords",
+        content:
+          "إصلاح ملفات DXF, أداة CNC عربية, برنامج تصليح DXF, DXF repair, CNC workshop, ورشة CNC, laser cutting, قص ليزر, DXF validator, AutoCAD, plasma cutting, قص بلازما, تحويل DXF, إصلاح أخطاء DXF اونلاين, CNC software Arabic",
+      },
       { name: "robots", content: "index, follow" },
       { name: "author", content: "DXFix" },
       { property: "og:title", content: "DXFix — إصلاح ملفات DXF لورش CNC | مجاني 100%" },
-      { property: "og:description", content: "أداة عربية مجانية لإصلاح ملفات DXF. ارفع الملف، نصلح الأخطاء، وتحمّل ملفاً نظيفاً في ثوانٍ." },
+      {
+        property: "og:description",
+        content:
+          "أداة عربية مجانية لإصلاح ملفات DXF. ارفع الملف، نصلح الأخطاء، وتحمّل ملفاً نظيفاً في ثوانٍ.",
+      },
       { property: "og:type", content: "website" },
       { property: "og:locale", content: "ar_SA" },
       { property: "og:locale:alternate", content: "en_US" },
@@ -28,9 +40,7 @@ export const Route = createFileRoute("/")({
       { name: "twitter:title", content: "DXFix — إصلاح ملفات DXF لورش CNC" },
       { name: "twitter:description", content: "أداة عربية مجانية لإصلاح ملفات DXF." },
     ],
-    links: [
-      { rel: "canonical", href: "https://dxfix.replit.app/" },
-    ],
+    links: [{ rel: "canonical", href: "https://dxfix.replit.app/" }],
     scripts: [
       {
         type: "application/ld+json",
@@ -46,7 +56,8 @@ export const Route = createFileRoute("/")({
             priceCurrency: "USD",
             name: "Free",
           },
-          description: "Arabic-first DXF file repair and validation tool for CNC, laser and plasma workshops. 100% free.",
+          description:
+            "Arabic-first DXF file repair and validation tool for CNC, laser and plasma workshops. 100% free.",
           url: "https://dxfix.replit.app/",
           inLanguage: ["ar", "en"],
         }),
@@ -94,19 +105,41 @@ const T = {
     s3d: "نزّل ملف DXF جاهز للقص مباشرةً على ماكينتك.",
     sectionRoadmap: "خارطة الطريق",
     roadmapTitle: "أدوات متقدمة قادمة قريباً",
-    roadmapSub: "نعمل على أدوات صناعية ترفع إنتاجية ورشتك وتوفّر وقت المشغّل. تابعنا لتصلك فور الإطلاق.",
+    roadmapSub:
+      "نعمل على أدوات صناعية ترفع إنتاجية ورشتك وتوفّر وقت المشغّل. تابعنا لتصلك فور الإطلاق.",
     roadmapBadge: "قريباً",
     roadmapTool1: "حاسبة تكاليف القص الفورية (ليزر و CNC)",
-    roadmapTool1Desc: "احسب تكاليف الإنتاج بناءً على طول مسار القص، سُمك المادة، وزمن تشغيل الماكينة. صدّر عروض أسعار PDF احترافية لعملائك فوراً.",
+    roadmapTool1Desc:
+      "احسب تكاليف الإنتاج بناءً على طول مسار القص، سُمك المادة، وزمن تشغيل الماكينة. صدّر عروض أسعار PDF احترافية لعملائك فوراً.",
     roadmapTool2: "محوّل الصور إلى CAD (DXF/SVG)",
-    roadmapTool2Desc: "ارفع أي صورة عادية (PNG/JPG) واستخرج تلقائياً خطوط فيكتور نظيفة خالية من التداخل، جاهزة لماكينة الليزر أو الراوتر CNC.",
+    roadmapTool2Desc:
+      "ارفع أي صورة عادية (PNG/JPG) واستخرج تلقائياً خطوط فيكتور نظيفة خالية من التداخل، جاهزة لماكينة الليزر أو الراوتر CNC.",
     roadmapTool3: "مدقق ومحسّن أكواد G-Code",
-    roadmapTool3Desc: "فحص أولي لملفات التشغيل قبل التحميل على الماكينة. اكتشف حركات خارج الحدود وقعّن زمن الدورة قبل البدء.",
+    roadmapTool3Desc:
+      "فحص أولي لملفات التشغيل قبل التحميل على الماكينة. اكتشف حركات خارج الحدود وقعّن زمن الدورة قبل البدء.",
     sectionFaq: "أسئلة شائعة",
     faqs: [
-      { q: "هل الأداة مجانية فعلاً؟", a: "نعم، 100% مجانية. لا بطاقة، لا اشتراك، لا تسجيل. فقط ارفع ملفك وابدأ." },
+      {
+        q: "هل الأداة مجانية فعلاً؟",
+        a: "نعم، 100% مجانية. لا بطاقة، لا اشتراك، لا تسجيل. فقط ارفع ملفك وابدأ.",
+      },
       { q: "هل ملفاتي بأمان؟", a: "نعالج الملف ونحذفه فوراً بعد التحميل. لا نخزّن تصاميمك أبداً." },
-      { q: "أي برامج القص يدعم الملف الناتج؟", a: "ملف DXF القياسي (R12/R2013) يعمل مع LaserCAD, RDWorks, Mach3, FastCAM، وأغلب البرامج التجارية." },
+      {
+        q: "هل تُرسل ملفاتي إلى سيرفر؟",
+        a: "لا. كل الفحص والإصلاح يعمل داخل متصفحك على جهازك — الملف لا يغادر عندك، ويمكنك قطع الإنترنت بعد فتح الصفحة.",
+      },
+      {
+        q: "هل يتم تعديل ملفي الأصلي؟",
+        a: "أبداً. النتيجة تُنزّل كملف جديد منفصل، وملفك الأصلي يبقى على جهازك دون أي تغيير — وأي عنصر لا نستطيع إصلاحه بأمان نبّهتك عليه بدل تعديله.",
+      },
+      {
+        q: "هل تختلط الطبقات أثناء الإصلاح؟",
+        a: "لا. كل طبقة تُعالج بشكل مستقل تماماً — لا يُدمج ولا يُغلق أي شيء بين طبقتين مختلفتين أبداً، وكل كيان يبقى على طبقته.",
+      },
+      {
+        q: "أي برامج القص يدعم الملف الناتج؟",
+        a: "ملف DXF القياسي (R12/R2013) يعمل مع LaserCAD, RDWorks, Mach3, FastCAM، وأغلب البرامج التجارية.",
+      },
       { q: "هل أحتاج خبرة AutoCAD؟", a: "لا. الواجهة مصممة للمشغّل، ليس للمهندس. اضغط زر واحد." },
     ],
     ctaTitle: "جاهز توفّر ساعات من إعادة العمل؟",
@@ -152,20 +185,48 @@ const T = {
     s3d: "Get a DXF that's ready to cut on your machine.",
     sectionRoadmap: "Roadmap",
     roadmapTitle: "Upcoming Advanced Tools Roadmap",
-    roadmapSub: "We're building industrial-grade tools that boost your shop's productivity and save operator time. Follow us to get notified on launch.",
+    roadmapSub:
+      "We're building industrial-grade tools that boost your shop's productivity and save operator time. Follow us to get notified on launch.",
     roadmapBadge: "Coming Soon",
     roadmapTool1: "Instant Laser & CNC Quoting Calculator",
-    roadmapTool1Desc: "Calculate production costs based on cutting path length, material thickness, and machine runtime. Generate professional PDF quotes for your clients instantly.",
+    roadmapTool1Desc:
+      "Calculate production costs based on cutting path length, material thickness, and machine runtime. Generate professional PDF quotes for your clients instantly.",
     roadmapTool2: "Image to CAD (DXF/SVG) Vector Converter",
-    roadmapTool2Desc: "Upload any standard image (PNG/JPG) and automatically extract clean, overlapping-free vector lines ready for your laser cutter or CNC router.",
+    roadmapTool2Desc:
+      "Upload any standard image (PNG/JPG) and automatically extract clean, overlapping-free vector lines ready for your laser cutter or CNC router.",
     roadmapTool3: "G-Code Error Checker & Optimizer",
-    roadmapTool3Desc: "Pre-flight check for your tooling files. Detect out-of-boundary movements and estimate cycle times before loading the machine.",
+    roadmapTool3Desc:
+      "Pre-flight check for your tooling files. Detect out-of-boundary movements and estimate cycle times before loading the machine.",
     sectionFaq: "FAQ",
     faqs: [
-      { q: "Is it really free?", a: "Yes — 100% free. No card, no signup, no registration. Just upload your file and go." },
-      { q: "Are my files safe?", a: "We process and delete each file immediately. We never store your designs." },
-      { q: "Which cutters does the output work with?", a: "Standard DXF (R12/R2013) — works with LaserCAD, RDWorks, Mach3, FastCAM and most commercial software." },
-      { q: "Do I need AutoCAD experience?", a: "No. The UI is built for operators, not engineers. One button does it." },
+      {
+        q: "Is it really free?",
+        a: "Yes — 100% free. No card, no signup, no registration. Just upload your file and go.",
+      },
+      {
+        q: "Are my files safe?",
+        a: "We process and delete each file immediately. We never store your designs.",
+      },
+      {
+        q: "Are my files uploaded to a server?",
+        a: "No. All scanning and repair runs inside your browser — your file never leaves your machine, and you can disconnect from the internet after loading the page.",
+      },
+      {
+        q: "Is my original file modified?",
+        a: "Never. The result downloads as a separate new file and your original stays untouched. Anything we can't safely fix is flagged for review instead of being changed.",
+      },
+      {
+        q: "Do layers get mixed during repair?",
+        a: "No. Every layer is processed fully independently — nothing is ever merged or closed across two different layers, and every entity stays on its own layer.",
+      },
+      {
+        q: "Which cutters does the output work with?",
+        a: "Standard DXF (R12/R2013) — works with LaserCAD, RDWorks, Mach3, FastCAM and most commercial software.",
+      },
+      {
+        q: "Do I need AutoCAD experience?",
+        a: "No. The UI is built for operators, not engineers. One button does it.",
+      },
     ],
     ctaTitle: "Ready to save hours of rework?",
     ctaSub: "The tool is completely free — upload your first file now.",
@@ -199,7 +260,14 @@ function Index() {
         fetch("/api/growth/event", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: "referral_visit", source: "referral", utm_source: params.get("utm_source"), utm_medium: params.get("utm_medium"), utm_campaign: params.get("utm_campaign"), utm_content: params.get("utm_content") }),
+          body: JSON.stringify({
+            name: "referral_visit",
+            source: "referral",
+            utm_source: params.get("utm_source"),
+            utm_medium: params.get("utm_medium"),
+            utm_campaign: params.get("utm_campaign"),
+            utm_content: params.get("utm_content"),
+          }),
         }).catch(() => {});
       }
       // Record real event for google/direct sources too
@@ -237,18 +305,25 @@ function Index() {
 
   return (
     <div dir={t.dir} className="min-h-screen bg-background text-foreground overflow-x-hidden">
-
       {/* NAV */}
       <header className="sticky top-0 z-40 backdrop-blur-xl bg-background/70 border-b border-border/60">
         <div className="max-w-7xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
           <a href="#top" className="flex items-center gap-2 font-display font-bold text-lg">
             <span className="inline-block w-2.5 h-2.5 rounded-sm bg-accent animate-spark" />
-            <span>DX<span className="text-gradient-blueprint">fix</span></span>
+            <span>
+              DX<span className="text-gradient-blueprint">fix</span>
+            </span>
           </a>
           <nav className="hidden md:flex items-center gap-7 text-sm text-muted-foreground">
-            <a href="#features" className="hover:text-foreground transition">{t.nav.features}</a>
-            <a href="#how" className="hover:text-foreground transition">{t.nav.how}</a>
-            <a href="#faq" className="hover:text-foreground transition">{t.nav.faq}</a>
+            <a href="#features" className="hover:text-foreground transition">
+              {t.nav.features}
+            </a>
+            <a href="#how" className="hover:text-foreground transition">
+              {t.nav.how}
+            </a>
+            <a href="#faq" className="hover:text-foreground transition">
+              {t.nav.faq}
+            </a>
           </nav>
           <div className="flex items-center gap-2">
             <LanguageSwitcher currentLang={lang} onLangChange={handleLangChange} />
@@ -268,36 +343,50 @@ function Index() {
         <div className="relative max-w-7xl mx-auto px-5 sm:px-8 pt-16 pb-24 lg:pt-24 lg:pb-32 grid lg:grid-cols-12 gap-12 items-center">
           <div className="lg:col-span-7 relative z-10">
             <h1 className="font-display mt-6 text-5xl sm:text-6xl lg:text-7xl font-bold leading-[1.05] tracking-tight">
-              {t.h1a}<br />
-              <span className="text-gradient-spark">{t.h1b}</span><br />
+              {t.h1a}
+              <br />
+              <span className="text-gradient-spark">{t.h1b}</span>
+              <br />
               {t.h1c}
             </h1>
             <p className="mt-6 text-lg text-muted-foreground max-w-xl leading-relaxed">{t.sub}</p>
 
-            <div className={`mt-9 flex flex-wrap gap-3 ${isRTL ? "flex-row-reverse justify-end" : ""}`}>
-              <a href="/tool"
+            <div
+              className={`mt-9 flex flex-wrap gap-3 ${isRTL ? "flex-row-reverse justify-end" : ""}`}
+            >
+              <a
+                href="/tool"
                 onClick={() => {
                   const isLocalhost = window.location.hostname === "localhost";
                   const isAdmin = window.location.search.includes("admin=true");
                   if (!isLocalhost && !isAdmin) {
-                    track('Clicked Start - Upload DXF', { timestamp: new Date().toISOString() });
+                    track("Clicked Start - Upload DXF", { timestamp: new Date().toISOString() });
                   }
                 }}
-                className="inline-flex items-center gap-2 px-6 py-3.5 rounded-md bg-accent text-accent-foreground font-semibold hover:opacity-90 transition shadow-[var(--shadow-spark)]">
+                className="inline-flex items-center gap-2 px-6 py-3.5 rounded-md bg-accent text-accent-foreground font-semibold hover:opacity-90 transition shadow-[var(--shadow-spark)]"
+              >
                 {t.primaryCta}
                 <span aria-hidden>{isRTL ? "←" : "→"}</span>
               </a>
-              <a href="#how"
-                className="inline-flex items-center px-6 py-3.5 rounded-md border border-border hover:border-primary/60 hover:text-primary transition font-semibold">
+              <a
+                href="#how"
+                className="inline-flex items-center px-6 py-3.5 rounded-md border border-border hover:border-primary/60 hover:text-primary transition font-semibold"
+              >
                 {t.secondaryCta}
               </a>
             </div>
 
             <dl className="mt-12 grid grid-cols-3 gap-6 max-w-lg">
-              {[[t.statV1, t.stat1], [t.statV2, t.stat2], [t.statV3, t.stat3]].map(([v, l]) => (
+              {[
+                [t.statV1, t.stat1],
+                [t.statV2, t.stat2],
+                [t.statV3, t.stat3],
+              ].map(([v, l]) => (
                 <div key={l} className="border-t border-border/60 pt-3">
                   <dt className="font-display text-2xl font-bold text-gradient-blueprint">{v}</dt>
-                  <dd className="text-xs text-muted-foreground mt-1 font-mono uppercase tracking-wider">{l}</dd>
+                  <dd className="text-xs text-muted-foreground mt-1 font-mono uppercase tracking-wider">
+                    {l}
+                  </dd>
                 </div>
               ))}
             </dl>
@@ -305,11 +394,19 @@ function Index() {
 
           <div className="lg:col-span-5 relative">
             <div className="relative rounded-xl overflow-hidden border border-border shadow-[var(--shadow-elegant)] scan-line">
-              <img src={heroImg} alt="CNC plasma cutting steel" width={1600} height={1024} className="w-full h-auto" />
+              <img
+                src={heroImg}
+                alt="CNC plasma cutting steel"
+                width={1600}
+                height={1024}
+                className="w-full h-auto"
+              />
               <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent" />
               <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between">
                 <div className="font-mono text-xs text-primary/90">DXFIX/SCAN_OK_98.json</div>
-                <div className="font-mono text-xs px-2 py-1 rounded bg-accent/20 text-accent border border-accent/40">SCORE 98/100</div>
+                <div className="font-mono text-xs px-2 py-1 rounded bg-accent/20 text-accent border border-accent/40">
+                  SCORE 98/100
+                </div>
               </div>
             </div>
             <div className="absolute -bottom-6 -start-6 hidden lg:block bg-card border border-border rounded-lg p-4 shadow-[var(--shadow-elegant)] font-mono text-xs">
@@ -330,7 +427,9 @@ function Index() {
               {lang === "ar" ? "ماذا تريد أن تفعل؟" : "What do you need to do?"}
             </p>
             <h2 className="font-display mt-4 text-3xl sm:text-4xl lg:text-5xl font-bold">
-              {lang === "ar" ? "اختر المهمة التي تريد إنجازها" : "Choose the task you want to accomplish"}
+              {lang === "ar"
+                ? "اختر المهمة التي تريد إنجازها"
+                : "Choose the task you want to accomplish"}
             </h2>
             <p className="mt-4 text-lg text-muted-foreground max-w-2xl mx-auto">
               {lang === "ar"
@@ -341,7 +440,8 @@ function Index() {
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {/* Task 1: Fix DXF — primary tool (Phase 7: visually strongest, honest copy) */}
-            <a href="/tool"
+            <a
+              href="/tool"
               className="group relative bg-background border-2 border-accent/40 rounded-2xl p-6 hover:border-accent/70 hover:shadow-[var(--shadow-spark)] transition-all duration-300 flex flex-col items-start text-start ring-1 ring-accent/10"
             >
               <span className="absolute top-4 end-4 font-mono text-[10px] px-2 py-0.5 rounded-full bg-accent text-accent-foreground font-bold">
@@ -354,7 +454,9 @@ function Index() {
                 {lang === "ar" ? "إصلاح ملف DXF" : "Repair a DXF File"}
               </h3>
               <p className="mt-1 text-xs font-semibold text-accent">
-                {lang === "ar" ? "نظّف ملفك قبل إرساله إلى الليزر أو CNC" : "Clean your file before sending it to laser or CNC"}
+                {lang === "ar"
+                  ? "نظّف ملفك قبل إرساله إلى الليزر أو CNC"
+                  : "Clean your file before sending it to laser or CNC"}
               </p>
               <p className="mt-2 text-sm text-muted-foreground leading-relaxed flex-1">
                 {lang === "ar"
@@ -379,7 +481,8 @@ function Index() {
             </a>
 
             {/* Task 2: Analyze & Score */}
-            <a href="/tool"
+            <a
+              href="/tool"
               className="group relative bg-background border border-border rounded-2xl p-6 hover:border-accent/50 hover:shadow-[var(--shadow-spark)] transition-all duration-300 flex flex-col items-start text-start"
             >
               <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-500/5 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
@@ -411,7 +514,8 @@ function Index() {
             </a>
 
             {/* Task 3: Simulate Toolpath */}
-            <a href="/tool"
+            <a
+              href="/tool"
               className="group relative bg-background border border-border rounded-2xl p-6 hover:border-accent/50 hover:shadow-[var(--shadow-spark)] transition-all duration-300 flex flex-col items-start text-start"
             >
               <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-rose-500/20 to-rose-500/5 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
@@ -440,7 +544,8 @@ function Index() {
             </a>
 
             {/* Task 4: Cost Estimator */}
-            <a href="/tool"
+            <a
+              href="/tool"
               className="group relative bg-background border border-border rounded-2xl p-6 hover:border-accent/50 hover:shadow-[var(--shadow-spark)] transition-all duration-300 flex flex-col items-start text-start"
             >
               <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-amber-500/20 to-amber-500/5 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
@@ -469,36 +574,38 @@ function Index() {
             </a>
 
             {/* Task 5: Batch Processing */}
-            <a href="/tool"
+            <a
+              href="/tool"
               className="group relative bg-background border border-border rounded-2xl p-6 hover:border-accent/50 hover:shadow-[var(--shadow-spark)] transition-all duration-300 flex flex-col items-start text-start"
             >
-                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-violet-500/20 to-violet-500/5 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
-                  📦
-                </div>
-                <h3 className="font-display font-bold text-lg">
-                  {lang === "ar" ? "معالجة مجمعة (Batch)" : "Batch File Processing"}
-                </h3>
-                <p className="mt-2 text-sm text-muted-foreground leading-relaxed flex-1">
-                  {lang === "ar"
-                    ? "ارفع عدة ملفات DXF دفعة واحدة، نعالجها كلها تلقائياً، وتحمّل النتائج كملف ZIP مضغوط. وفر وقتك."
-                    : "Upload multiple DXF files at once, we process them all automatically, and download the results as a ZIP archive. Save your time."}
-                </p>
-                <div className="mt-4 flex items-center gap-2 text-sm font-semibold text-accent group-hover:gap-3 transition-all">
-                  <span>{lang === "ar" ? "معالجة مجمعة" : "Batch process"}</span>
-                  <span aria-hidden>{lang === "ar" ? "←" : "→"}</span>
-                </div>
-                <div className="mt-4 flex flex-wrap gap-1.5">
-                  <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-400 border border-violet-500/20">
-                    {lang === "ar" ? "ملفات متعددة" : "Multiple files"}
-                  </span>
-                  <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-fuchsia-500/10 text-fuchsia-400 border border-fuchsia-500/20">
-                    ZIP
-                  </span>
-                </div>
-              </a>
+              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-violet-500/20 to-violet-500/5 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                📦
+              </div>
+              <h3 className="font-display font-bold text-lg">
+                {lang === "ar" ? "معالجة مجمعة (Batch)" : "Batch File Processing"}
+              </h3>
+              <p className="mt-2 text-sm text-muted-foreground leading-relaxed flex-1">
+                {lang === "ar"
+                  ? "ارفع عدة ملفات DXF دفعة واحدة، نعالجها كلها تلقائياً، وتحمّل النتائج كملف ZIP مضغوط. وفر وقتك."
+                  : "Upload multiple DXF files at once, we process them all automatically, and download the results as a ZIP archive. Save your time."}
+              </p>
+              <div className="mt-4 flex items-center gap-2 text-sm font-semibold text-accent group-hover:gap-3 transition-all">
+                <span>{lang === "ar" ? "معالجة مجمعة" : "Batch process"}</span>
+                <span aria-hidden>{lang === "ar" ? "←" : "→"}</span>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-1.5">
+                <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-400 border border-violet-500/20">
+                  {lang === "ar" ? "ملفات متعددة" : "Multiple files"}
+                </span>
+                <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-fuchsia-500/10 text-fuchsia-400 border border-fuchsia-500/20">
+                  ZIP
+                </span>
+              </div>
+            </a>
 
             {/* Task 6: SVG to DXF */}
-            <a href="/tool"
+            <a
+              href="/tool"
               className="group relative bg-background border border-border rounded-2xl p-6 hover:border-accent/50 hover:shadow-[var(--shadow-spark)] transition-all duration-300 flex flex-col items-start text-start"
             >
               <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-teal-500/20 to-teal-500/5 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
@@ -527,7 +634,8 @@ function Index() {
             </a>
 
             {/* Task 7: Image to DXF (tools/dxf-converter) */}
-            <a href="/tools/dxf-converter"
+            <a
+              href="/tools/dxf-converter"
               className="group relative bg-background border border-border rounded-2xl p-6 hover:border-accent/50 hover:shadow-[var(--shadow-spark)] transition-all duration-300 flex flex-col items-start text-start"
             >
               <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-cyan-500/20 to-cyan-500/5 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
@@ -558,14 +666,17 @@ function Index() {
 
           {/* Bottom CTA */}
           <div className="mt-10 text-center">
-            <a href="/tool"
+            <a
+              href="/tool"
               className="inline-flex items-center gap-2 px-8 py-4 rounded-xl bg-accent text-accent-foreground font-bold text-lg hover:opacity-90 transition shadow-[var(--shadow-spark)]"
             >
               {lang === "ar" ? "🚀 ابدأ الآن — مجاناً" : "🚀 Start now — for free"}
               <span aria-hidden>{lang === "ar" ? "←" : "→"}</span>
             </a>
             <p className="mt-3 font-mono text-xs text-muted-foreground/60">
-              {lang === "ar" ? "بدون تسجيل. بدون بطاقة. فقط ارفع ملفك وابدأ." : "No signup. No card. Just upload your file and go."}
+              {lang === "ar"
+                ? "بدون تسجيل. بدون بطاقة. فقط ارفع ملفك وابدأ."
+                : "No signup. No card. Just upload your file and go."}
             </p>
           </div>
         </div>
@@ -575,14 +686,24 @@ function Index() {
       <section id="features" className="max-w-7xl mx-auto px-5 sm:px-8 py-24">
         <div className="flex items-end justify-between flex-wrap gap-6 mb-14">
           <div>
-            <p className="font-mono text-xs text-primary uppercase tracking-[0.25em]">{t.sectionFeatures}</p>
-            <h2 className="font-display mt-3 text-4xl lg:text-5xl font-bold max-w-2xl">{lang === "ar" ? "كل ما تحتاجه قبل الضغط على زر START" : "Everything you need before hitting START"}</h2>
+            <p className="font-mono text-xs text-primary uppercase tracking-[0.25em]">
+              {t.sectionFeatures}
+            </p>
+            <h2 className="font-display mt-3 text-4xl lg:text-5xl font-bold max-w-2xl">
+              {lang === "ar"
+                ? "كل ما تحتاجه قبل الضغط على زر START"
+                : "Everything you need before hitting START"}
+            </h2>
           </div>
         </div>
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-px bg-border rounded-xl overflow-hidden border border-border">
           {[
-            [t.f1t, t.f1d, "01"], [t.f2t, t.f2d, "02"], [t.f3t, t.f3d, "03"],
-            [t.f4t, t.f4d, "04"], [t.f5t, t.f5d, "05"], [t.f6t, t.f6d, "06"],
+            [t.f1t, t.f1d, "01"],
+            [t.f2t, t.f2d, "02"],
+            [t.f3t, t.f3d, "03"],
+            [t.f4t, t.f4d, "04"],
+            [t.f5t, t.f5d, "05"],
+            [t.f6t, t.f6d, "06"],
           ].map(([title, desc, num]) => (
             <div key={num} className="bg-card p-8 group hover:bg-secondary/60 transition relative">
               <div className="font-mono text-xs text-primary/70">/{num}</div>
@@ -598,11 +719,19 @@ function Index() {
       <section id="how" className="relative border-y border-border/60 bg-card/30">
         <div className="absolute inset-0 blueprint-grid opacity-30" />
         <div className="relative max-w-7xl mx-auto px-5 sm:px-8 py-24">
-          <p className="font-mono text-xs text-accent uppercase tracking-[0.25em] text-center">{t.sectionHow}</p>
-          <h2 className="font-display mt-3 text-4xl lg:text-5xl font-bold text-center">{lang === "ar" ? "من ملف معطوب إلى ملف نظيف." : "From broken to clean."}</h2>
+          <p className="font-mono text-xs text-accent uppercase tracking-[0.25em] text-center">
+            {t.sectionHow}
+          </p>
+          <h2 className="font-display mt-3 text-4xl lg:text-5xl font-bold text-center">
+            {lang === "ar" ? "من ملف معطوب إلى ملف نظيف." : "From broken to clean."}
+          </h2>
 
           <div className="mt-16 grid md:grid-cols-3 gap-6">
-            {[[t.s1t, t.s1d], [t.s2t, t.s2d], [t.s3t, t.s3d]].map(([title, desc], i) => (
+            {[
+              [t.s1t, t.s1d],
+              [t.s2t, t.s2d],
+              [t.s3t, t.s3d],
+            ].map(([title, desc], i) => (
               <div key={i} className="relative bg-background border border-border rounded-xl p-8">
                 <div className="absolute -top-5 start-8 w-10 h-10 rounded-full bg-accent text-accent-foreground font-display font-bold flex items-center justify-center shadow-[var(--shadow-spark)]">
                   {i + 1}
@@ -620,41 +749,66 @@ function Index() {
         <div className="max-w-7xl mx-auto px-5 sm:px-8 text-center">
           <div className="inline-flex items-center gap-2 font-mono text-xs px-3 py-1.5 rounded-full border border-accent/40 text-accent bg-accent/5 mb-6">
             <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-            {lang === "ar" ? "إحصائيات حقيقية من خادم DXFix" : "Real statistics from the DXFix server"}
+            {lang === "ar"
+              ? "إحصائيات حقيقية من خادم DXFix"
+              : "Real statistics from the DXFix server"}
           </div>
 
           <h2 className="font-display text-3xl sm:text-4xl font-bold mb-3">
             {lang === "ar" ? "إحصائيات الملفات المصلحة لغاية الآن" : "Total Files Repaired So Far"}
           </h2>
           <p className="text-muted-foreground text-sm max-w-xl mx-auto mb-10">
-            {lang === "ar" ? "كل ملف DXF يتم إصلاحه على منصتنا يُحتسب تلقائياً في هذه الأرقام الحيّة." : "Every DXF file repaired on our platform is counted automatically in these live numbers."}
+            {lang === "ar"
+              ? "كل ملف DXF يتم إصلاحه على منصتنا يُحتسب تلقائياً في هذه الأرقام الحيّة."
+              : "Every DXF file repaired on our platform is counted automatically in these live numbers."}
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
             <div className="p-6 rounded-2xl bg-background/80 border border-border/80 shadow-[var(--shadow-elegant)] hover:border-accent/40 transition">
-              <div className="text-4xl font-bold text-gradient-spark">{repairedCount.toLocaleString()}</div>
-              <div className="mt-2 text-sm font-semibold text-foreground">{lang === "ar" ? "ملف تم إصلاحه بنجاح" : "Files Repaired"}</div>
-              <div className="mt-1 font-mono text-[11px] text-muted-foreground">{lang === "ar" ? "جاهزة للماكينة" : "Machine Ready"}</div>
+              <div className="text-4xl font-bold text-gradient-spark">
+                {repairedCount.toLocaleString()}
+              </div>
+              <div className="mt-2 text-sm font-semibold text-foreground">
+                {lang === "ar" ? "ملف تم إصلاحه بنجاح" : "Files Repaired"}
+              </div>
+              <div className="mt-1 font-mono text-[11px] text-muted-foreground">
+                {lang === "ar" ? "جاهزة للماكينة" : "Machine Ready"}
+              </div>
             </div>
             <div className="p-6 rounded-2xl bg-background/80 border border-border/80 shadow-[var(--shadow-elegant)] hover:border-accent/40 transition">
-              <div className="text-4xl font-bold text-gradient-spark">{visitorCount.toLocaleString()}</div>
-              <div className="mt-2 text-sm font-semibold text-foreground">{lang === "ar" ? "زيارة للموقع" : "Site Visits"}</div>
-              <div className="mt-1 font-mono text-[11px] text-muted-foreground">{lang === "ar" ? "احصائيات حية" : "Live Count"}</div>
+              <div className="text-4xl font-bold text-gradient-spark">
+                {visitorCount.toLocaleString()}
+              </div>
+              <div className="mt-2 text-sm font-semibold text-foreground">
+                {lang === "ar" ? "زيارة للموقع" : "Site Visits"}
+              </div>
+              <div className="mt-1 font-mono text-[11px] text-muted-foreground">
+                {lang === "ar" ? "احصائيات حية" : "Live Count"}
+              </div>
             </div>
             <div className="p-6 rounded-2xl bg-background/80 border border-border/80 shadow-[var(--shadow-elegant)] hover:border-accent/40 transition">
-              <div className="text-4xl font-bold text-gradient-spark">{uploadCount.toLocaleString()}</div>
-              <div className="mt-2 text-sm font-semibold text-foreground">{lang === "ar" ? "ملف تم رفعه" : "Files Uploaded"}</div>
-              <div className="mt-1 font-mono text-[11px] text-muted-foreground">{lang === "ar" ? "ملفات تمت معالجتها" : "Processed Files"}</div>
+              <div className="text-4xl font-bold text-gradient-spark">
+                {uploadCount.toLocaleString()}
+              </div>
+              <div className="mt-2 text-sm font-semibold text-foreground">
+                {lang === "ar" ? "ملف تم رفعه" : "Files Uploaded"}
+              </div>
+              <div className="mt-1 font-mono text-[11px] text-muted-foreground">
+                {lang === "ar" ? "ملفات تمت معالجتها" : "Processed Files"}
+              </div>
             </div>
             <div className="p-6 rounded-2xl bg-background/80 border border-border/80 shadow-[var(--shadow-elegant)] hover:border-accent/40 transition">
               <div className="text-4xl font-bold text-gradient-spark">&lt; 5s</div>
-              <div className="mt-2 text-sm font-semibold text-foreground">{lang === "ar" ? "متوسط سرعة المعالجة" : "Avg Processing Speed"}</div>
-              <div className="mt-1 font-mono text-[11px] text-muted-foreground">{lang === "ar" ? "معالجة فورية بالمتصفح" : "Instant Browser Processing"}</div>
+              <div className="mt-2 text-sm font-semibold text-foreground">
+                {lang === "ar" ? "متوسط سرعة المعالجة" : "Avg Processing Speed"}
+              </div>
+              <div className="mt-1 font-mono text-[11px] text-muted-foreground">
+                {lang === "ar" ? "معالجة فورية بالمتصفح" : "Instant Browser Processing"}
+              </div>
             </div>
           </div>
         </div>
       </section>
-
 
       {/* 📢 AdBanner */}
       <div className="max-w-6xl mx-auto px-5 sm:px-8 py-8">
@@ -664,14 +818,23 @@ function Index() {
       {/* FAQ */}
       <section id="faq" className="border-t border-border/60 bg-card/30">
         <div className="max-w-3xl mx-auto px-5 sm:px-8 py-24">
-          <p className="font-mono text-xs text-accent uppercase tracking-[0.25em] text-center">{t.sectionFaq}</p>
-          <h2 className="font-display mt-3 text-4xl font-bold text-center">{lang === "ar" ? "أسئلة يسألها المشغّلون" : "Questions operators ask"}</h2>
+          <p className="font-mono text-xs text-accent uppercase tracking-[0.25em] text-center">
+            {t.sectionFaq}
+          </p>
+          <h2 className="font-display mt-3 text-4xl font-bold text-center">
+            {lang === "ar" ? "أسئلة يسألها المشغّلون" : "Questions operators ask"}
+          </h2>
           <div className="mt-12 space-y-3">
             {t.faqs.map((f, i) => (
-              <details key={i} className="group bg-background border border-border rounded-lg p-5 open:border-primary/40 transition">
+              <details
+                key={i}
+                className="group bg-background border border-border rounded-lg p-5 open:border-primary/40 transition"
+              >
                 <summary className="cursor-pointer flex items-center justify-between gap-4 font-semibold list-none">
                   <span>{f.q}</span>
-                  <span className="text-primary transition group-open:rotate-45 font-mono text-xl">+</span>
+                  <span className="text-primary transition group-open:rotate-45 font-mono text-xl">
+                    +
+                  </span>
                 </summary>
                 <p className="mt-3 text-sm text-muted-foreground leading-relaxed">{f.a}</p>
               </details>
@@ -695,7 +858,9 @@ function Index() {
             <span aria-hidden>{isRTL ? "←" : "→"}</span>
           </a>
           <p className="mt-4 font-mono text-xs text-muted-foreground/50">
-            {lang === "ar" ? "لا بطاقة، لا تسجيل، لا اشتراك." : "No card. No signup. No subscription."}
+            {lang === "ar"
+              ? "لا بطاقة، لا تسجيل، لا اشتراك."
+              : "No card. No signup. No subscription."}
           </p>
         </div>
       </section>
