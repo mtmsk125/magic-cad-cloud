@@ -525,6 +525,35 @@ function Index() {
                 </span>
               </div>
             </a>
+
+            {/* Task 7: Image to DXF (tools/dxf-converter) */}
+            <a href="/tools/dxf-converter"
+              className="group relative bg-background border border-border rounded-2xl p-6 hover:border-accent/50 hover:shadow-[var(--shadow-spark)] transition-all duration-300 flex flex-col items-start text-start"
+            >
+              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-cyan-500/20 to-cyan-500/5 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                📷
+              </div>
+              <h3 className="font-display font-bold text-lg">
+                {lang === "ar" ? "تحويل صورة إلى DXF" : "Convert Image to DXF"}
+              </h3>
+              <p className="mt-2 text-sm text-muted-foreground leading-relaxed flex-1">
+                {lang === "ar"
+                  ? "ارفع صورة (PNG / JPG / BMP) واستخرج محيطاتها كمسارات DXF مغلقة جاهزة للقص — تتبّع تلقائي للحواف داخل متصفحك."
+                  : "Upload an image (PNG / JPG / BMP) and extract its contours as closed, machine-ready DXF paths — automatic edge tracing in your browser."}
+              </p>
+              <div className="mt-4 flex items-center gap-2 text-sm font-semibold text-accent group-hover:gap-3 transition-all">
+                <span>{lang === "ar" ? "حوّل صورة الآن" : "Convert an image now"}</span>
+                <span aria-hidden>{lang === "ar" ? "←" : "→"}</span>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-1.5">
+                <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                  {lang === "ar" ? "PNG / JPG" : "PNG / JPG"}
+                </span>
+                <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  DXF
+                </span>
+              </div>
+            </a>
           </div>
 
           {/* Bottom CTA */}

@@ -20,7 +20,6 @@ import type { CuttingPath } from "@/lib/toolpath-optimizer";
 import { recordRepair, recordUpload } from "@/lib/stats";
 import { useGeometryFixMode, type GeometryFixState, type GeometryFixMethod } from "./__root";
 import { generateMaterialReport, optimizeNesting } from "@/lib/dxf-advanced";
-import { useSubscription } from "@/hooks/use-subscription";
 
 
 interface HistoryEntry {
@@ -1251,7 +1250,6 @@ function ToolPage() {
   // ── Gap closure tolerance selector (0.1mm = manufacturing standard) ──
   // Premium gate: values ABOVE the industry standard (0.1mm) are locked for
   // non-subscribers — the ★ values are a Pro feature.
-  const { isSubscribed } = useSubscription();
   const [gapTolerance, setGapTolerance] = useState(0.1);
 
   // ── Scope B: Processing checkboxes — which repair passes actually run.
@@ -2542,10 +2540,14 @@ function ToolPage() {
                           <button
                             onClick={() => setHighlightCategory(activeCat ? null : key)}
                             disabled={n === 0}
-                            className={`flex items-center gap-2 text-sm text-start flex-1 disabled:opacity-40 disabled:cursor-default ${activeCat ? "font-bold" : ""}`}
+                            className={`flex items-center gap-2 text-sm text-start flex-1 disabled:cursor-default ${activeCat ? "font-bold" : ""} ${n === 0 ? "text-green-500" : ""}`}
                           >
-                            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: CAT_COLORS[key] }} />
-                            <span>{n > 0 ? <><strong>{n}</strong> {lang === "ar" ? ar : en}</> : (lang === "ar" ? ar : en)}</span>
+                            {n === 0 ? (
+                              <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-green-500" />
+                            ) : (
+                              <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: CAT_COLORS[key] }} />
+                            )}
+                            <span>{n > 0 ? <><strong>{n}</strong> {lang === "ar" ? ar : en}</> : <>{lang === "ar" ? ar : en} <span className="font-mono text-[11px]">— {lang === "ar" ? "نظيف ✓" : "clean ✓"}</span></>}</span>
                           </button>
                           {n > 0 && (
                             <button
@@ -3036,19 +3038,17 @@ function ToolPage() {
                 </p>
                 <div className="mt-3 flex items-center gap-2 flex-wrap">
                   {[0.05, 0.1, 0.2, 0.3, 0.5, 1.0].map((v) => {
-                    const locked = v > 0.1 && !isSubscribed;
                     return (
                       <button
                         key={v}
-                        onClick={() => { if (!locked) setGapTolerance(v); }}
-                        title={locked ? (lang === "ar" ? "متاح للمشتركين فقط" : "Subscribers only") : undefined}
+                        onClick={() => setGapTolerance(v)}
                         className={`px-3 py-1 rounded-lg font-mono text-xs border transition ${
                           gapTolerance === v
                             ? "border-accent bg-accent/20 text-accent font-bold"
                             : "border-border text-muted-foreground hover:border-accent/50"
-                        } ${locked ? "opacity-50 cursor-not-allowed" : ""}`}
+                        }`}
                       >
-                        {v} mm{v > 0.1 && " ★"}{locked && " 🔒"}
+                        {v} mm
                       </button>
                     );
                   })}
@@ -3056,14 +3056,6 @@ function ToolPage() {
                     {lang === "ar" ? "الحالي:" : "Current:"} {gapTolerance} مم
                   </span>
                 </div>
-                {!isSubscribed && (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {lang === "ar" ? "🔒 قيم أعلى من المعيار (★) متاحة للمشتركين فقط — " : "🔒 Premium tolerance values (★) are subscribers-only — "}
-                    <a href="/pricing" className="text-accent underline font-semibold">
-                      {lang === "ar" ? "اشترك الآن" : "Subscribe"}
-                    </a>
-                  </p>
-                )}
                 {gapTolerance > 0.1 && (
                   <p className="mt-2 text-xs font-bold text-amber-400">
                     {lang === "ar"

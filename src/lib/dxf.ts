@@ -20,6 +20,7 @@ export interface DxfEntity {
   // ARC / CIRCLE
   cx?: number; cy?: number; cz?: number;
   radius?: number;
+  ratio?: number; // ELLIPSE: minor/major axis ratio
   startAngle?: number; endAngle?: number;
   // LWPOLYLINE
   vertices?: DxfVertex[];
@@ -297,7 +298,32 @@ export function calculateTotalPerimeter(entities: DxfEntity[]): number {
       if (e.closed) {
         const first = e.vertices[0];
         const last = e.vertices[e.vertices.length - 1];
-        total += dist(first.x, last.y, last.x, last.y);
+        total += dist(first.x, first.y, last.x, last.y);
+      }
+    } else if (e.type === "SPLINE" && e.vertices && e.vertices.length > 1) {
+      // SPLINE length approximated by the control/fit-point chain (chord sum).
+      // Without this, spline-heavy drawings reported 0 length → 0 time & 0 cost.
+      for (let i = 0; i < e.vertices.length - 1; i++) {
+        total += dist(e.vertices[i].x, e.vertices[i].y, e.vertices[i + 1].x, e.vertices[i + 1].y);
+      }
+      if (e.closed) {
+        const first = e.vertices[0];
+        const last = e.vertices[e.vertices.length - 1];
+        total += dist(first.x, first.y, last.x, last.y);
+      }
+    } else if (e.type === "ELLIPSE" && e.radius != null) {
+      // ELLIPSE perimeter via Ramanujan's approximation (a = major, b = minor).
+      const a = e.radius;
+      const b = a * Math.min(e.ratio ?? 1, 1);
+      if (a > 0 && b > 0) {
+        const h = ((a - b) * (a - b)) / ((a + b) * (a + b));
+        const fullPerimeter = Math.PI * (a + b) * (1 + 3 * h / (10 + Math.sqrt(4 - 3 * h)));
+        // Scale by sweep for partial ellipses (start/end angles stored in degrees).
+        const start = (e.startAngle ?? 0) * Math.PI / 180;
+        const end = (e.endAngle ?? 360) * Math.PI / 180;
+        let sweep = Math.abs(end - start);
+        if (sweep < 0.01) sweep = 2 * Math.PI;
+        total += fullPerimeter * Math.min(sweep, 2 * Math.PI) / (2 * Math.PI);
       }
     }
   }
@@ -583,11 +609,12 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
       const my = parseFloat(groups.find(g => g.code === 21)?.value ?? "0");
       const ratio = parseFloat(groups.find(g => g.code === 40)?.value ?? "1");
       const startParam = parseFloat(groups.find(g => g.code === 41)?.value ?? "0");
-      const endParam = parseFloat(groups.find(g => g.code === 42)?.value ?? "2*PI");
+      const endParam = parseFloat(groups.find(g => g.code === 42)?.value ?? String(2 * Math.PI));
       // Store as approximation points for preview
       entity.cx = cx;
       entity.cy = cy;
       entity.radius = Math.sqrt(mx * mx + my * my);
+      entity.ratio = ratio > 0 ? Math.min(ratio, 1) : 1;
       entity.startAngle = startParam * 180 / Math.PI;
       entity.endAngle = endParam === (2 * Math.PI) ? 360 : (endParam * 180 / Math.PI);
       // For bounds, use center +/- major axis
