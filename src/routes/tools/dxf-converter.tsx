@@ -190,12 +190,8 @@ function generateSvgPreview(contours: Contour[], w: number, h: number): string {
     const d = c.points.map((p, i) => (i === 0 ? 'M' : 'L') + ' ' + p.x.toFixed(2) + ' ' + (h - p.y).toFixed(2)).join(' ') + (c.closed ? ' Z' : '');
     return '<path d="' + d + '" fill="none" stroke="#00d4ff" stroke-width="0.5"/>';
   });
-  return '<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="100%">
-  <rect width="100%" height="100%" fill="#0d1117"/>
-  ' + paths.join('
-  ') + '
-</svg>';
+  const pathStr = paths.join('\n  ');
+  return '<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="100%">\n  <rect width="100%" height="100%" fill="#0d1117"/>\n  ' + pathStr + '\n</svg>';
 }
 
 // ===================== GREYSCALE ENGRAVE =====================
@@ -211,12 +207,8 @@ function generateEngraveSvg(gray: Float32Array, w: number, h: number, threshold:
       }
     }
   }
-  return '<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="100%">
-  <rect width="100%" height="100%" fill="#0d1117"/>
-  ' + rects.join('
-  ') + '
-</svg>';
+  const rectStr = rects.join('\n  ');
+  return '<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="100%">\n  <rect width="100%" height="100%" fill="#0d1117"/>\n  ' + rectStr + '\n</svg>';
 }
 function DxfConverter() {
   const [imagePreviewUrl, setImagePreviewUrl] = useState(null);
