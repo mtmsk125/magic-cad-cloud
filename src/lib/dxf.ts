@@ -1253,6 +1253,29 @@ export interface RepairOptions {
    * requires every entity to be a polyline path.
    */
   convertCurvesToPolylines?: boolean;
+  /**
+   * Endpoint snap tolerance in drawing units (STEP 5).
+   * Default: 0.001 (conservative — never destroy nearby-but-distinct geometry).
+   */
+  snapTolerance?: number;
+  /**
+   * Auto-close geometrically-closed polylines (STEP 7). Default: true.
+   * When false, open polylines keep their open flag (user opt-out).
+   */
+  closeOpenPolylines?: boolean;
+  /**
+   * Selective OVERKILL cleanup (STEP 8). Provided keys override
+   * DEFAULT_CLEANUP_OPTIONS; omitted keys keep the engine defaults.
+   * Booleans set to false DISABLE that cleanup pass (processing checkboxes).
+   */
+  cleanup?: {
+    tolerance?: number;
+    gapTolerance?: number;
+    removeZeroLength?: boolean;
+    dedupeVertices?: boolean;
+    mergeCollinearOverlaps?: boolean;
+    dedupeCurves?: boolean;
+  };
 }
 
 /**
@@ -1323,8 +1346,8 @@ export function repairDxf(content: string, analysis: DxfAnalysis, options: Repai
   }
 
   // ─── STEP 5: Snap open endpoints (conservative tolerance — never destroy
-  // nearby-but-distinct geometry) ───
-  const snappedEntities = snapOpenEndpoints(entities, 0.001);
+  // nearby-but-distinct geometry). Tolerance is caller-configurable. ───
+  const snappedEntities = snapOpenEndpoints(entities, options.snapTolerance ?? 0.001);
 
   // ─── STEP 6: Join connected paths ───
   const { joined, joinCount } = joinConnectedEntities(snappedEntities);
@@ -1342,8 +1365,16 @@ export function repairDxf(content: string, analysis: DxfAnalysis, options: Repai
   // ─── STEP 7: Auto-fix closed flag for geometrically-closed polylines ───
   // If a polyline is geometrically closed (gap < 0.1mm) but flag is 0,
   // auto-set the flag to 1. This is the user's explicit requirement.
-  const { closed: closedEntities, closeCount } = closeAllPolylines(entities);
-  if (closeCount > 0) {
+  // Opt-out: processing checkbox "close open contours".
+  let closedEntities = entities;
+  let closeCount = 0;
+  const doCloseOpen = options.closeOpenPolylines !== false;
+  if (doCloseOpen) {
+    const closed = closeAllPolylines(entities);
+    closedEntities = closed.closed;
+    closeCount = closed.closeCount;
+  }
+  if (doCloseOpen && closeCount > 0) {
     fixSummary.push({
       id: 'closed_paths',
       icon: '⭕',
@@ -1384,7 +1415,9 @@ export function repairDxf(content: string, analysis: DxfAnalysis, options: Repai
   // This actually MODIFIES the geometry: removes duplicates (both directions),
   // zero-length entities, duplicate vertices, contained segments, and merges
   // collinear overlaps. The numbers in the report come from the real result.
-  const cleanupResult = cleanupEntities(entities, DEFAULT_CLEANUP_OPTIONS);
+  // Selective processing: user checkboxes override individual passes.
+  const cleanupOpts = { ...DEFAULT_CLEANUP_OPTIONS, ...(options.cleanup ?? {}) };
+  const cleanupResult = cleanupEntities(entities, cleanupOpts);
   entities = cleanupResult.entities;
 
   const cr = cleanupResult.report;

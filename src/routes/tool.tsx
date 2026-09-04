@@ -19,6 +19,8 @@ import { pathsToCuttingPaths, advancedOptimize, generateOptimizationReport } fro
 import type { CuttingPath } from "@/lib/toolpath-optimizer";
 import { recordRepair, recordUpload } from "@/lib/stats";
 import { useGeometryFixMode, type GeometryFixState, type GeometryFixMethod } from "./__root";
+import { generateMaterialReport, optimizeNesting } from "@/lib/dxf-advanced";
+import { useSubscription } from "@/hooks/use-subscription";
 
 
 interface HistoryEntry {
@@ -55,9 +57,8 @@ interface BridgePreview {
   gap: number;
   closable: boolean;
 }
-function computeOpenLoopData(a: DxfAnalysis | null): { count: number; openPoints: { x: number; y: number }[]; fixedCount: number; bridges: BridgePreview[] } {
+function computeOpenLoopData(a: DxfAnalysis | null, manualRepairThreshold: number = 0.1): { count: number; openPoints: { x: number; y: number }[]; fixedCount: number; bridges: BridgePreview[] } {
   if (!a) return { count: 0, openPoints: [], fixedCount: 0, bridges: [] };
-  const manualRepairThreshold = 0.1;
   const openPaths = detectOpenPaths(a.entities, DEFAULT_CLEANUP_OPTIONS);
   const fixedOpen = openPaths.filter(p => p.gap < manualRepairThreshold);
   const needsManualRepair = openPaths.filter(p => p.gap >= manualRepairThreshold);
@@ -258,10 +259,10 @@ interface FixBridgeEntity {
 function buildFixBridgeEntities(
   analysis: DxfAnalysis | null,
   method: GeometryFixMethod,
+  manualRepairThreshold: number = 0.1,
 ): FixBridgeEntity[] {
   if (!analysis || method === "skip") return [];
   const openPaths = detectOpenPaths(analysis.entities, DEFAULT_CLEANUP_OPTIONS);
-  const manualRepairThreshold = 0.1;
   const manual = openPaths.filter(p => p.gap >= manualRepairThreshold && p.partner);
   const used = new Set<string>();
   const out: FixBridgeEntity[] = [];
@@ -354,9 +355,10 @@ interface PreviewData {
   openPoints: { x: number; y: number }[];
   pathCount: number;
   bridges: BridgePreview[];
+  gapTolerance?: number;
 }
 
-function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridges, before }: {
+function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridges, before, gapTolerance = 0.1, highlightCategory = null }: {
   analysis: DxfAnalysis;
   issueIndices: Set<number>;
   lang: "ar" | "en";
@@ -364,6 +366,8 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
   pathCount?: number;
   bridges?: BridgePreview[];
   before?: PreviewData;
+  gapTolerance?: number;
+  highlightCategory?: string | null;
 }) {
   const [zoom, setZoom] = useState(1);
   const [hiddenLayers, setHiddenLayers] = useState<Set<string>>(new Set());
@@ -399,8 +403,8 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
   const [fixEntities, setFixEntities] = useState<FixBridgeEntity[]>([]);
   // Rebuild proposed fix entities whenever the file / method / mode changes.
   const proposedFixes = useMemo(
-    () => (geometryFixMode.enabled ? buildFixBridgeEntities(active.analysis, geometryFixMode.method) : []),
-    [geometryFixMode.enabled, geometryFixMode.method, active.analysis],
+    () => (geometryFixMode.enabled ? buildFixBridgeEntities(active.analysis, geometryFixMode.method, gapTolerance) : []),
+    [geometryFixMode.enabled, geometryFixMode.method, active.analysis, gapTolerance],
   );
   const applyFix = useCallback(() => {
     setFixEntities(proposedFixes);
@@ -461,6 +465,34 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
     if (issuesOnly && !active.issueIndices.has(p.entityIndex)) return false;
     return true;
   });
+
+  // ── Scope A: category isolation — when a diagnosis category is selected,
+  // entities of that category render in the category color and everything
+  // else dims, so the user can visually explore one problem class at a time.
+  const CATEGORY_TYPES: Record<string, string[]> = {
+    open: ["open_loop", "open_polyline"],
+    micro: ["tiny_entity", "zero_length"],
+    duplicate: ["duplicate_line"],
+    overlap: ["overlapping_lines"],
+    intersect: ["self_intersect"],
+  };
+  const CATEGORY_COLORS: Record<string, string> = {
+    open: "#ef4444",
+    micro: "#eab308",
+    duplicate: "#f97316",
+    overlap: "#a855f7",
+    intersect: "#ec4899",
+  };
+  const categoryEntities = new Set<number>();
+  if (highlightCategory) {
+    for (const type of CATEGORY_TYPES[highlightCategory] ?? []) {
+      for (const issue of active.analysis.issues) {
+        if (issue.type === type) {
+          for (const idx of issue.entityIndices) categoryEntities.add(idx);
+        }
+      }
+    }
+  }
 
   const strokeW = Math.max(bounds.width, bounds.height) * 0.004;
   const hasIssues = active.issueIndices.size > 0;
@@ -740,7 +772,15 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
         >
           {visiblePaths.map((p, i) => {
             const isIssue = active.issueIndices.has(p.entityIndex);
-            const color = isIssue ? "#ef4444" : layerColor(p.layer);
+            let color = isIssue ? "#ef4444" : layerColor(p.layer);
+            let opacity = 1;
+            if (highlightCategory && categoryEntities.size > 0) {
+              if (categoryEntities.has(p.entityIndex)) {
+                color = CATEGORY_COLORS[highlightCategory] ?? color;
+              } else {
+                opacity = 0.15;
+              }
+            }
             return (
               <path
                 key={i}
@@ -748,7 +788,7 @@ function DxfPreview({ analysis, issueIndices, lang, openPoints, pathCount, bridg
                 stroke={color}
                 strokeWidth={strokeW}
                 fill="none"
-                opacity={isIssue ? 1 : 0.85}
+                opacity={opacity !== 1 ? opacity : (isIssue ? 1 : 0.85)}
                 strokeLinecap="round"
                 strokeLinejoin="round"
               />
@@ -1197,6 +1237,42 @@ function ToolPage() {
   const [pricePerMeter, setPricePerMeter] = useState(5);
   const [showCostEstimator, setShowCostEstimator] = useState(false);
 
+  // ── Manufacturing time estimate (⏱) ──
+  const [showTimeEstimate, setShowTimeEstimate] = useState(false);
+  const [cutSpeed, setCutSpeed] = useState(0.5);       // m/min
+  const [cutPricePerMin, setCutPricePerMin] = useState(10); // $/min
+
+  // ── Nesting / Layout optimization (🧩) ──
+  const [showNesting, setShowNesting] = useState(false);
+  const [sheetW, setSheetW] = useState(1220);
+  const [sheetH, setSheetH] = useState(2440);
+  const [nestSpacing, setNestSpacing] = useState(3);
+
+  // ── Gap closure tolerance selector (0.1mm = manufacturing standard) ──
+  // Premium gate: values ABOVE the industry standard (0.1mm) are locked for
+  // non-subscribers — the ★ values are a Pro feature.
+  const { isSubscribed } = useSubscription();
+  const [gapTolerance, setGapTolerance] = useState(0.1);
+
+  // ── Scope B: Processing checkboxes — which repair passes actually run.
+  // All ON by default = identical to the previous always-on behavior (safe).
+  const [processing, setProcessing] = useState({
+    closeOpen: true,
+    removeZeroLength: true,
+    dedupeVertices: true,
+    mergeOverlaps: true,
+    dedupeCurves: true,
+  });
+
+  // ── Scope C: Advanced tolerances (industry-conservative defaults,
+  // mirroring the engine's DEFAULT values — user-tunable).
+  const [advTol, setAdvTol] = useState({ snap: 0.001, vertex: 0.001, close: 0.05 });
+  const ADV_TOL_DEFAULTS = { snap: 0.001, vertex: 0.001, close: 0.05 };
+
+  // ── Scope A: Diagnosis category isolation — when set, the preview
+  // highlights ONLY entities belonging to this issue category.
+  const [highlightCategory, setHighlightCategory] = useState<string | null>(null);
+
     // Self-destruct state
   const [selfDestructEnabled, setSelfDestructEnabled] = useState(false);
   const [selfDestructTriggered, setSelfDestructTriggered] = useState(false);
@@ -1586,10 +1662,24 @@ function ToolPage() {
   const handleRepair = () => {
     if (!analysis) return;
     // 1) Repair using the real engine.
-        const { fixed, repaired, fixSummary: summary } = repairDxf(
+    const { fixed, repaired, fixSummary: summary } = repairDxf(
       fileContent,
       analysis,
-      convertCurves ? { convertCurvesToPolylines: true } : undefined
+      {
+        convertCurvesToPolylines: convertCurves,
+        // Scope C: advanced user-tunable tolerances
+        snapTolerance: advTol.snap,
+        // Scope B: selective processing passes (all ON = previous behavior)
+        closeOpenPolylines: processing.closeOpen,
+        cleanup: {
+          tolerance: advTol.vertex,
+          gapTolerance: advTol.close,
+          removeZeroLength: processing.removeZeroLength,
+          dedupeVertices: processing.dedupeVertices,
+          mergeCollinearOverlaps: processing.mergeOverlaps,
+          dedupeCurves: processing.dedupeCurves,
+        },
+      }
     );
     setRepairedContent(fixed);
     setRepairedIssues(repaired);
@@ -1624,7 +1714,7 @@ function ToolPage() {
     let content = repairedContent;
     const fixAnalysis = repairedAnalysis ?? analysis;
     if (geometryFixMode.applied && geometryFixMode.enabled && geometryFixMode.method !== "skip" && fixAnalysis) {
-      const fixes = buildFixBridgeEntities(fixAnalysis, geometryFixMode.method);
+      const fixes = buildFixBridgeEntities(fixAnalysis, geometryFixMode.method, gapTolerance);
       if (fixes.length > 0) {
         content = appendFixEntitiesToDxf(content, fixes);
       }
@@ -1772,22 +1862,54 @@ function ToolPage() {
   const perimeterMeters = perimeter / 1000;
   const estimatedCost = perimeterMeters * pricePerMeter;
 
-  // Open loop detection: unified pipeline (v1.2 consistency fix).
-  //   gap < 0.1mm  → auto-close (count as FIXED, no red dot)
-  //   gap >= 0.1mm → real problem (draw red, needs manual repair)
   // ── SINGLE SOURCE OF TRUTH ─────────────────────────────────────────────────
   // displayAnalysis drives every UI surface (score card, SVG preview, open-point
-  // dots, report card). computeOpenLoopData uses the SAME engine (detectOpenPaths)
-  // and threshold (0.1mm) as analyzeDxf, so the preview can never contradict the
-  // report again.
+  // dots, report card, time report, nesting). computeOpenLoopData uses the SAME
+  // engine (detectOpenPaths) and threshold (0.1mm) as analyzeDxf, so the preview
+  // can never contradict the report again.
   const displayAnalysis = stage === "repaired" && repairedAnalysis
     ? repairedAnalysis
     : analysis;
 
-  const openLoopData = computeOpenLoopData(displayAnalysis);
+  // ⏱ Manufacturing time estimate — uses the advanced report generator.
+  const timeReport = useMemo(() => {
+    const ents = (displayAnalysis ?? analysis)?.entities;
+    if (!ents) return null;
+    try {
+      return generateMaterialReport(ents, {
+        materialPricePerMeter: pricePerMeter,
+        cuttingPricePerMinute: cutPricePerMin,
+        cutSpeedMetersPerMinute: cutSpeed,
+        sheetWidth: sheetW,
+        sheetHeight: sheetH,
+      });
+    } catch { return null; }
+  }, [displayAnalysis, analysis, pricePerMeter, cutPricePerMin, cutSpeed, sheetW, sheetH]);
+
+  // 🧩 Nesting optimization — minimize material waste on sheets.
+  const nestingResult = useMemo(() => {
+    const ents = (displayAnalysis ?? analysis)?.entities;
+    if (!ents) return null;
+    try {
+      return optimizeNesting(ents, {
+        sheetWidth: sheetW,
+        sheetHeight: sheetH,
+        spacing: nestSpacing,
+        margin: 5,
+        rotationStep: 15,
+      });
+    } catch { return null; }
+  }, [displayAnalysis, analysis, sheetW, sheetH, nestSpacing]);
+
+  // ── Open loop detection: unified pipeline (v1.2 consistency fix) ───────────
+  //   gap < 0.1mm  → auto-close (count as FIXED, no red dot)
+  //   gap >= 0.1mm → real problem (draw red, needs manual repair)
+  // (displayAnalysis is declared above — before the memos that consume it.)
+  const openLoopData = computeOpenLoopData(displayAnalysis, gapTolerance);
   // "Before" state: the ORIGINAL (pre-repair) file — used by the before/after
   // preview toggle so the user can visually compare both states.
-  const beforeLoopData = computeOpenLoopData(analysis);
+
+  const beforeLoopData = computeOpenLoopData(analysis, gapTolerance);
 
   return (
     <div dir={isRTL ? "rtl" : "ltr"} className="min-h-screen bg-background text-foreground">
@@ -2344,12 +2466,15 @@ function ToolPage() {
                 openPoints={openLoopData.openPoints}
                 pathCount={openLoopData.count}
                 bridges={openLoopData.bridges}
+                gapTolerance={gapTolerance}
+                highlightCategory={highlightCategory}
                 before={stage === "repaired" && analysis ? {
                   analysis,
                   issueIndices: beforeIssueIndices,
                   openPoints: beforeLoopData.openPoints,
                   pathCount: beforeLoopData.count,
                   bridges: beforeLoopData.bridges,
+                  gapTolerance,
                 } : undefined}
               />;
             })()}
@@ -2368,6 +2493,157 @@ function ToolPage() {
                 </p>
               </div>
             )}
+
+            {/* ── Scope A: Live Diagnosis — explore one issue category at a time ── */}
+            {(() => {
+              const src = displayAnalysis ?? analysis;
+              if (!src) return null;
+              const TYPE_MAP: Record<string, string[]> = {
+                open: ["open_loop", "open_polyline"],
+                micro: ["tiny_entity", "zero_length"],
+                duplicate: ["duplicate_line"],
+                overlap: ["overlapping_lines"],
+                intersect: ["self_intersect"],
+              };
+              const CATS: { key: string; ar: string; en: string }[] = [
+                { key: "open", ar: "مخططات مفتوحة", en: "Open contours" },
+                { key: "micro", ar: "مقاطع دقيقة/صفرية", en: "Micro-segments" },
+                { key: "duplicate", ar: "خطوط مكررة", en: "Duplicates" },
+                { key: "overlap", ar: "تداخل خطوط", en: "Overlapping strokes" },
+                { key: "intersect", ar: "تقاطعات ذاتية", en: "Self-intersections" },
+              ];
+              const CAT_COLORS: Record<string, string> = {
+                open: "#ef4444", micro: "#eab308", duplicate: "#f97316",
+                overlap: "#a855f7", intersect: "#ec4899",
+              };
+              const catCount = (key: string) =>
+                src.issues.filter(i => (TYPE_MAP[key] ?? []).includes(i.type)).length;
+              return (
+                <div className="rounded-2xl border border-border bg-card p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-display font-bold">
+                      {lang === "ar" ? "🔬 التشخيص الحيوي" : "🔬 Live Diagnosis"}
+                    </h3>
+                    {highlightCategory && (
+                      <button
+                        onClick={() => setHighlightCategory(null)}
+                        className="text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-muted/50 transition"
+                      >
+                        {lang === "ar" ? "عرض الكل" : "Show all"}
+                      </button>
+                    )}
+                  </div>
+                  <div className="divide-y divide-border/60">
+                    {CATS.map(({ key, ar, en }) => {
+                      const n = catCount(key);
+                      const activeCat = highlightCategory === key;
+                      return (
+                        <div key={key} className="flex items-center justify-between py-2.5">
+                          <button
+                            onClick={() => setHighlightCategory(activeCat ? null : key)}
+                            disabled={n === 0}
+                            className={`flex items-center gap-2 text-sm text-start flex-1 disabled:opacity-40 disabled:cursor-default ${activeCat ? "font-bold" : ""}`}
+                          >
+                            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: CAT_COLORS[key] }} />
+                            <span>{n > 0 ? <><strong>{n}</strong> {lang === "ar" ? ar : en}</> : (lang === "ar" ? ar : en)}</span>
+                          </button>
+                          {n > 0 && (
+                            <button
+                              onClick={() => setHighlightCategory(activeCat ? null : key)}
+                              className={`text-xs px-3 py-1 rounded-lg border transition flex-shrink-0 ${activeCat ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-muted/50"}`}
+                            >
+                              {lang === "ar" ? (activeCat ? "إخفاء" : "عرض 👁") : (activeCat ? "Hide" : "Show 👁")}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-2">
+                    {lang === "ar"
+                      ? "اضغط «عرض» لعزل الفئة وحدها على الرسمة بالألوان"
+                      : "Click \"Show\" to isolate a single category on the drawing"}
+                  </p>
+                </div>
+              );
+            })()}
+
+            {/* ── Scope B: Processing — choose which repair passes actually run ── */}
+            <div className="rounded-2xl border border-border bg-card p-5">
+              <h3 className="font-display font-bold mb-3">
+                {lang === "ar" ? "⚙️ المعالجة" : "⚙️ Processing"}
+              </h3>
+              <div className="space-y-2.5">
+                {([
+                  { key: "closeOpen", ar: "إغلاق المخططات المفتوحة", en: "Close open contours" },
+                  { key: "removeZeroLength", ar: "حذف الكيانات الصفرية والدقيقة", en: "Remove zero-length entities" },
+                  { key: "dedupeVertices", ar: "دمج الرؤوس المكررة", en: "Dedupe vertices" },
+                  { key: "mergeOverlaps", ar: "دمج التداخلات المتوازية", en: "Merge overlapping strokes" },
+                  { key: "dedupeCurves", ar: "حذف المنحنيات المكررة", en: "Remove duplicate curves" },
+                ] as const).map(({ key, ar, en }) => (
+                  <label key={key} className="flex items-center gap-3 text-sm cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={processing[key]}
+                      onChange={(e) => setProcessing(p => ({ ...p, [key]: e.target.checked }))}
+                      className="w-4 h-4 accent-primary"
+                    />
+                    {lang === "ar" ? ar : en}
+                  </label>
+                ))}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-2">
+                {lang === "ar"
+                  ? "تُطبَّق التغييرات عند الضغط على زر الإصلاح من جديد"
+                  : "Changes apply when you run Repair again"}
+              </p>
+            </div>
+
+            {/* ── Scope C: Advanced tolerances (mm) with defaults reset ── */}
+            <div className="rounded-2xl border border-border bg-card p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-display font-bold">
+                  {lang === "ar" ? "🎚️ التوليرانسات المتقدمة" : "🎚️ Advanced Tolerances"}
+                </h3>
+                <button
+                  onClick={() => setAdvTol({ ...ADV_TOL_DEFAULTS })}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-muted/50 transition"
+                >
+                  {lang === "ar" ? "القيم الافتراضية" : "Default values"}
+                </button>
+              </div>
+              <div className="space-y-2.5">
+                {([
+                  { key: "snap", ar: "التقاط النقاط (Snapping)", en: "Snapping" },
+                  { key: "vertex", ar: "تبسيط المنحنيات (Curves)", en: "Curves" },
+                  { key: "close", ar: "إغلاق الفجوات (Closing)", en: "Closing" },
+                ] as const).map(({ key, ar, en }) => (
+                  <label key={key} className="flex items-center justify-between gap-3 text-sm">
+                    <span>{lang === "ar" ? ar : en}</span>
+                    <span className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min={0.0001}
+                        max={2}
+                        step={0.001}
+                        value={advTol[key]}
+                        onChange={(e) => {
+                          const v = parseFloat(e.target.value);
+                          if (!Number.isNaN(v)) setAdvTol(t => ({ ...t, [key]: v }));
+                        }}
+                        className="w-24 px-2 py-1 rounded-lg border border-border bg-background text-sm font-mono text-end"
+                      />
+                      <span className="text-xs text-muted-foreground">mm</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-2">
+                {lang === "ar"
+                  ? "قيم متحفظة مطابقة لمعايير المحرك — التعديل يُطبَّق مع الإصلاح القادم"
+                  : "Conservative engine-default values — changes apply with the next repair"}
+              </p>
+            </div>
 
             {/* Processing Metrics Dashboard */}
             <div className="grid grid-cols-2 gap-4">
@@ -2608,6 +2884,194 @@ function ToolPage() {
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* ⏱ Manufacturing Time Estimate */}
+            <div className="rounded-2xl border border-border bg-card overflow-hidden">
+              <button
+                onClick={() => setShowTimeEstimate(!showTimeEstimate)}
+                className="w-full px-6 py-4 flex items-center justify-between hover:bg-muted/20 transition"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">⏱</span>
+                  <span className="font-display font-semibold">
+                    {lang === "ar" ? "وقت التصنيع التقديري" : "Estimated Cut Time"}
+                  </span>
+                </div>
+                <span className="text-muted-foreground">{showTimeEstimate ? "▲" : "▼"}</span>
+              </button>
+              {showTimeEstimate && timeReport && (
+                <div className="px-6 pb-6 space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    {lang === "ar"
+                      ? "احسب المدة الزمنية المتوقعة لقص هذه الرسمة حسب سرعة الماكينة — مفيد لصاحب الورشة لتقدير جدول الإنتاج وتكلفة الماكينة."
+                      : "Estimate how long this drawing takes to cut based on machine speed — useful for owners to plan production & machine cost."}
+                  </p>
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div className="bg-background border border-border/60 rounded-xl p-4">
+                      <p className="text-xs text-muted-foreground font-mono mb-1">{lang === "ar" ? "سرعة القص (م/دقيقة)" : "Cut speed (m/min)"}</p>
+                      <input
+                        type="number" min="0.05" step="0.05"
+                        value={cutSpeed}
+                        onChange={(e) => setCutSpeed(parseFloat(e.target.value) || 0)}
+                        className="w-full bg-transparent border-b border-border text-foreground font-display text-2xl font-bold focus:outline-none focus:border-accent"
+                        dir="ltr"
+                      />
+                    </div>
+                    <div className="bg-background border border-border/60 rounded-xl p-4">
+                      <p className="text-xs text-muted-foreground font-mono mb-1">{lang === "ar" ? "تكلفة الماكينة ($/دقيقة)" : "Machine cost ($/min)"}</p>
+                      <input
+                        type="number" min="0.1" step="0.5"
+                        value={cutPricePerMin}
+                        onChange={(e) => setCutPricePerMin(parseFloat(e.target.value) || 0)}
+                        className="w-full bg-transparent border-b border-border text-foreground font-display text-2xl font-bold focus:outline-none focus:border-accent"
+                        dir="ltr"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="rounded-xl border border-border p-4 text-center">
+                      <p className="font-mono text-xs text-muted-foreground">{lang === "ar" ? "الطول الكلي" : "Total length"}</p>
+                      <p className="font-display text-xl font-bold text-primary">{timeReport.totalCutLength} m</p>
+                    </div>
+                    <div className="rounded-xl border border-accent/30 bg-accent/5 p-4 text-center">
+                      <p className="font-mono text-xs text-muted-foreground">{lang === "ar" ? "وقت القص" : "Cut time"}</p>
+                      <p className="font-display text-xl font-bold text-accent">{timeReport.totalCutTime} {lang === "ar" ? "دقيقة" : "min"}</p>
+                    </div>
+                    <div className="rounded-xl border border-border p-4 text-center">
+                      <p className="font-mono text-xs text-muted-foreground">{lang === "ar" ? "تكلفة الماكينة" : "Machine cost"}</p>
+                      <p className="font-display text-xl font-bold">${timeReport.cuttingCost.toFixed(2)}</p>
+                    </div>
+                    <div className="rounded-xl border border-border p-4 text-center">
+                      <p className="font-mono text-xs text-muted-foreground">{lang === "ar" ? "الإجمالي" : "Total"}</p>
+                      <p className="font-display text-xl font-bold">${timeReport.totalCost.toFixed(2)}</p>
+                    </div>
+                  </div>
+                  <p className="font-mono text-xs text-muted-foreground">
+                    {lang === "ar"
+                      ? "تقدير تقريبي: الوقت لا يشمل الرفع/التثبيت، وسرعة القص تعتمد على سماكة الخامة ونوع الماكينة."
+                      : "Estimate only: excludes piercing/loading; actual speed depends on material & machine."}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* 🧩 Nesting / Layout optimization */}
+            <div className="rounded-2xl border border-border bg-card overflow-hidden">
+              <button
+                onClick={() => setShowNesting(!showNesting)}
+                className="w-full px-6 py-4 flex items-center justify-between hover:bg-muted/20 transition"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">🧩</span>
+                  <span className="font-display font-semibold">
+                    {lang === "ar" ? "تنظيم القطع على اللوح (Nesting)" : "Nesting / Layout"}
+                  </span>
+                </div>
+                <span className="text-muted-foreground">{showNesting ? "▲" : "▼"}</span>
+              </button>
+              {showNesting && (
+                <div className="px-6 pb-6 space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    {lang === "ar"
+                      ? "خوارزمية First-Fit لترتيب القطع على لوح خام (مثل Deepnest) لتقليل الهدر — نتيجة استرشادية."
+                      : "First-Fit layout of parts on a raw sheet (like Deepnest) to reduce waste — indicative result."}
+                  </p>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-xs text-muted-foreground font-mono">{lang === "ar" ? "عرض اللوح" : "Sheet width"}</label>
+                      <input type="number" value={sheetW} onChange={(e) => setSheetW(parseFloat(e.target.value) || 0)}
+                        className="w-full bg-transparent border-b border-border text-foreground font-display text-xl font-bold focus:outline-none focus:border-accent" dir="ltr" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground font-mono">{lang === "ar" ? "طول اللوح" : "Sheet height"}</label>
+                      <input type="number" value={sheetH} onChange={(e) => setSheetH(parseFloat(e.target.value) || 0)}
+                        className="w-full bg-transparent border-b border-border text-foreground font-display text-xl font-bold focus:outline-none focus:border-accent" dir="ltr" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground font-mono">{lang === "ar" ? "المسافة (مم)" : "Spacing (mm)"}</label>
+                      <input type="number" value={nestSpacing} onChange={(e) => setNestSpacing(parseFloat(e.target.value) || 0)}
+                        className="w-full bg-transparent border-b border-border text-foreground font-display text-xl font-bold focus:outline-none focus:border-accent" dir="ltr" />
+                    </div>
+                  </div>
+                  {nestingResult ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-4 text-center">
+                        <p className="font-mono text-xs text-muted-foreground">{lang === "ar" ? "استغلال الخامة" : "Utilization"}</p>
+                        <p className="font-display text-xl font-bold text-yellow-400">{nestingResult.utilization.toFixed(1)}%</p>
+                      </div>
+                      <div className="rounded-xl border border-border p-4 text-center">
+                        <p className="font-mono text-xs text-muted-foreground">{lang === "ar" ? "الهدر" : "Waste"}</p>
+                        <p className="font-display text-xl font-bold">{nestingResult.wastePercent.toFixed(1)}%</p>
+                      </div>
+                      <div className="rounded-xl border border-border p-4 text-center">
+                        <p className="font-mono text-xs text-muted-foreground">{lang === "ar" ? "القطع" : "Parts"}</p>
+                        <p className="font-display text-xl font-bold">{nestingResult.totalParts}</p>
+                      </div>
+                      <div className="rounded-xl border border-border p-4 text-center">
+                        <p className="font-mono text-xs text-muted-foreground">{lang === "ar" ? "الألواح" : "Sheets"}</p>
+                        <p className="font-display text-xl font-bold">{nestingResult.sheetsNeeded}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">{lang === "ar" ? "تعذّر الحساب." : "Could not compute."}</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 🔧 Gap closure tolerance selector */}
+            <div className="rounded-2xl border border-border bg-card overflow-hidden">
+              <div className="px-6 py-4">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">🔧</span>
+                  <span className="font-display font-semibold">
+                    {lang === "ar" ? "عتبة إغلاق الفجوات (Tolerance)" : "Gap Closure Tolerance"}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {lang === "ar"
+                    ? "المعيار الصناعي المتعارف عليه 0.1 مم. قيم أعلى = إغلاق أكثر للنقاط المفتوحة تلقائياً (قد يغلق فجوات مقصودة كالتبيبات). غيّر بحذر."
+                    : "Industry standard is 0.1mm. Higher values auto-close more open points (may close intentional gaps like tabs)."}
+                </p>
+                <div className="mt-3 flex items-center gap-2 flex-wrap">
+                  {[0.05, 0.1, 0.2, 0.3, 0.5, 1.0].map((v) => {
+                    const locked = v > 0.1 && !isSubscribed;
+                    return (
+                      <button
+                        key={v}
+                        onClick={() => { if (!locked) setGapTolerance(v); }}
+                        title={locked ? (lang === "ar" ? "متاح للمشتركين فقط" : "Subscribers only") : undefined}
+                        className={`px-3 py-1 rounded-lg font-mono text-xs border transition ${
+                          gapTolerance === v
+                            ? "border-accent bg-accent/20 text-accent font-bold"
+                            : "border-border text-muted-foreground hover:border-accent/50"
+                        } ${locked ? "opacity-50 cursor-not-allowed" : ""}`}
+                      >
+                        {v} mm{v > 0.1 && " ★"}{locked && " 🔒"}
+                      </button>
+                    );
+                  })}
+                  <span className="font-mono text-xs text-accent ml-2">
+                    {lang === "ar" ? "الحالي:" : "Current:"} {gapTolerance} مم
+                  </span>
+                </div>
+                {!isSubscribed && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {lang === "ar" ? "🔒 قيم أعلى من المعيار (★) متاحة للمشتركين فقط — " : "🔒 Premium tolerance values (★) are subscribers-only — "}
+                    <a href="/pricing" className="text-accent underline font-semibold">
+                      {lang === "ar" ? "اشترك الآن" : "Subscribe"}
+                    </a>
+                  </p>
+                )}
+                {gapTolerance > 0.1 && (
+                  <p className="mt-2 text-xs font-bold text-amber-400">
+                    {lang === "ar"
+                      ? "⚠ تحذير: عتبة أعلى من المعيار قد تُغلق فجوات مقصودة (تبيبات/فواصل). المعاينة تعتمدها فوراً."
+                      : "⚠ Warning: exceeding the standard may close intentional gaps (tabs). Preview updates instantly."}
+                  </p>
+                )}
+              </div>
             </div>
 
             {/* Stats */}
