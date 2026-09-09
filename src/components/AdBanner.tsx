@@ -165,8 +165,8 @@ export function AdBanner({
       <div className={`ad-banner-fallback rounded-xl border border-border/60 bg-card/30 p-4 text-center ${className}`}>
         <p className="font-mono text-xs text-muted-foreground/50">
           {lang === "ar"
-            ? "🚀 الأداة مجانية 100% — لا إعلانات حالياً"
-            : "🚀 The tool is 100% free — no ads right now"}
+            ? "🚀 الأداة مجانية وقت الانطلاق — اشترك ليصلك كل جديد"
+            : "🚀 Free during launch — subscribe to stay updated"}
         </p>
       </div>
     );
@@ -199,8 +199,8 @@ export function AdBanner({
       {/* Subtle support CTA */}
       <p className="font-mono text-[10px] text-muted-foreground/30 mt-2 leading-tight">
         {lang === "ar"
-          ? "الإعلانات تساعدنا على إبقاء الأداة مجانية"
-          : "Ads help us keep the tool free"}
+          ? "اشتراكك يساعدنا على إبقاء الأداة مجانية خلال فترة الانطلاق"
+          : "Your subscription helps keep the tool free during launch"}
       </p>
     </div>
   );

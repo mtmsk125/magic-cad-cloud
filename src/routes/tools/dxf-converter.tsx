@@ -7,6 +7,7 @@ import { createFileRoute } from "@tanstack/react-router";
 // Pipeline: Grayscale -> Blur -> Adaptive Threshold -> Contours -> RDP -> DXF
 
 interface Contour { points: Point[]; closed: boolean; }
+interface ConversionStats { contours: number; closed: number; totalPoints: number; }
 interface MaterialPreset {
   name: string; nameAr: string;
   threshold: number; blurRadius: number; rdpTolerance: number;
@@ -211,26 +212,26 @@ function generateEngraveSvg(gray: Float32Array, w: number, h: number, threshold:
   return '<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="100%">\n  <rect width="100%" height="100%" fill="#0d1117"/>\n  ' + rectStr + '\n</svg>';
 }
 function DxfConverter() {
-  const [imagePreviewUrl, setImagePreviewUrl] = useState(null);
-  const [svgPreview, setSvgPreview] = useState(null);
-  const [dxfContent, setDxfContent] = useState(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [svgPreview, setSvgPreview] = useState<string | null>(null);
+  const [dxfContent, setDxfContent] = useState<string | null>(null);
   const [materialIdx, setMaterialIdx] = useState(0);
   const [customThreshold, setCustomThreshold] = useState(128);
   const [customBlur, setCustomBlur] = useState(1);
   const [customRdp, setCustomRdp] = useState(1.0);
   const [useCustom, setUseCustom] = useState(false);
   const [processing, setProcessing] = useState(false);
-  const [error, setError] = useState(null);
-  const [stats, setStats] = useState(null);
+  const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState<ConversionStats | null>(null);
   const [mode, setMode] = useState('cut');
-  const canvasRef = useRef(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const currentPreset = MATERIAL_PRESETS[materialIdx];
   const threshold = useCustom ? customThreshold : currentPreset.threshold;
   const blurRadius = useCustom ? customBlur : currentPreset.blurRadius;
   const rdpTolerance = useCustom ? customRdp : currentPreset.rdpTolerance;
 
-  const processImage = useCallback(async (file) => {
+  const processImage = useCallback(async (file: File) => {
     setProcessing(true); setError(null); setSvgPreview(null); setDxfContent(null); setStats(null);
     try {
       const img = new Image(); const url = URL.createObjectURL(file); setImagePreviewUrl(url);
@@ -261,11 +262,11 @@ function DxfConverter() {
       setDxfContent(generateDxf(simplified, 1));
       setStats({contours: simplified.length, closed: simplified.filter(c=>c.closed).length, totalPoints: simplified.reduce((s,c)=>s+c.points.length,0)});
       URL.revokeObjectURL(url);
-    } catch(err) { setError(err.message || 'Processing error'); }
+    } catch (err: any) { setError(err.message || 'Processing error'); }
     finally { setProcessing(false); }
   }, [threshold, blurRadius, rdpTolerance, mode]);
 
-  const onFile = (e) => { const f = e.target.files?.[0]; if(f) processImage(f); };
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if(f) processImage(f); };
   const downloadDxf = () => { if(!dxfContent)return; saveAs(new Blob([dxfContent],{type:'application/dxf'}), 'laser-cut.dxf'); };
   const downloadSvg = () => { if(!svgPreview)return; saveAs(new Blob([svgPreview],{type:'image/svg+xml'}), 'preview.svg'); };
   return (

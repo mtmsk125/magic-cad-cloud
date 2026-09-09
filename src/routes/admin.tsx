@@ -104,35 +104,19 @@ const exportSubscribersCsv = createServerFn({ method: "GET" }).handler(async () 
   }
 });
 
-// Simulated data generator for admin dashboard (uses more realistic contact email mix)
-function getSimulatedStats() {
-  const now = Date.now();
-  const hours = 24 * 60 * 60 * 1000;
-  const emails = [
-    "mtmsk125@yahoo.com",
-    "support@dxfix.com",
-    "ops@cnc-shop.com",
-    "sales@metalworks.sa",
-    "admin@workshop.local",
-    "info@laser-pro.co",
-    "service@factory.sa",
-    "contact@prototype.io",
-    "orders@cutting.sa",
-    "help@machining.co",
-    "invoices@metal.sa",
-    "qa@fabrication.sa",
-  ];
+interface AdminFileEntry {
+  id: string;
+  fileName: string;
+  userEmail: string;
+  fileSize: string;
+  timestamp: string;
+  status: string;
+  score: number;
+}
 
-  const files = Array.from({ length: 12 }, (_, i) => ({
-    id: `file-${i + 1}`,
-    fileName: `part_${String.fromCharCode(65 + (i % 26))}_${String(100 + i).slice(1)}.dxf`,
-    userEmail: emails[i],
-    fileSize: `${(Math.random() * 500 + 50).toFixed(1)} KB`,
-    timestamp: new Date(now - i * (hours * 2 + Math.random() * hours)).toISOString(),
-    status: ["مكتمل", "مكتمل", "مكتمل", "قيد المعالجة", "مكتمل", "مكتمل", "فشل", "مكتمل", "مكتمل", "قيد المعالجة", "مكتمل", "مكتمل"][i],
-    score: Math.floor(Math.random() * 40 + 60),
-  }));
-  return files;
+// إزالة البيانات الوهمية نهائياً — لوحة الإدارة تعرض البيانات الحقيقية فقط
+function getSimulatedStats(): AdminFileEntry[] {
+  return [];
 }
 
 export const Route = createFileRoute("/admin")({
@@ -564,9 +548,18 @@ function AdminPage() {
             <div className="bg-card border border-border rounded-2xl overflow-hidden">
               <div className="p-6 border-b border-border/60">
                 <h2 className="font-display font-bold text-lg">الملفات المرفوعة الأخيرة</h2>
-                <p className="text-sm text-muted-foreground mt-1">آخر 12 عملية رفع ومعالجة</p>
+                <p className="text-sm text-muted-foreground mt-1">الملفات الحقيقية المرفوعة والمعالجة</p>
               </div>
               <div className="overflow-x-auto">
+                {recentFiles.length === 0 ? (
+                  <div className="p-12 text-center">
+                    <div className="text-4xl mb-4">📂</div>
+                    <p className="text-muted-foreground">لا توجد ملفات مرفوعة بعد</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      ستظهر هنا الملفات الحقيقية التي يرفعها المستخدمون — لا بيانات وهمية
+                    </p>
+                  </div>
+                ) : (
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-border/60 bg-muted/30">
@@ -628,6 +621,7 @@ function AdminPage() {
                     ))}
                   </tbody>
                 </table>
+                )}
               </div>
             </div>
           )}

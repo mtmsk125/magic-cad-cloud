@@ -79,8 +79,8 @@ export function ShareToolWidget({
     const url = encodeURIComponent(referralLink);
     const text = encodeURIComponent(
       lang === "ar"
-        ? "أداة مجانية لإصلاح ملفات DXF — جرّبها وانشرها لفريقك!"
-        : "Free DXF repair tool — try it and share with your team!"
+        ? "أداة مجانية وقت الانطلاق لإصلاح ملفات DXF — جرّبها وانشرها لفريقك!"
+        : "Free during launch DXF repair tool — try it and share with your team!"
     );
     window.open(
       `https://www.linkedin.com/sharing/share-offsite/?url=${url}&summary=${text}`,

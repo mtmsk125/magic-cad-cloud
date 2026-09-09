@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo, type ReactElement } from "react";
 import {
   analyzeDxf,
   repairDxf,
@@ -24,6 +24,7 @@ import { DEFAULT_CLEANUP_OPTIONS, detectOpenPaths } from "@/lib/dxf-cleanup";
 import { downloadAllAsZip, triggerSelfDestruct, isSelfDestructTriggered } from "@/lib/zip-export";
 import { track } from "@vercel/analytics";
 import { FeedbackModal } from "@/components/feedback-modal";
+import { SubscribeModal, isSubscribed } from "@/components/subscribe-modal";
 import { SafetyBadge } from "@/components/safety-badge";
 import { AdBanner } from "@/components/AdBanner";
 import { ShareToolWidget } from "@/components/share-tool-widget";
@@ -46,6 +47,14 @@ import type { CuttingPath } from "@/lib/toolpath-optimizer";
 import { recordRepair, recordUpload } from "@/lib/stats";
 import { useGeometryFixMode, type GeometryFixState, type GeometryFixMethod } from "./__root";
 import { generateMaterialReport, optimizeNesting } from "@/lib/dxf-advanced";
+import {
+  calculateCost,
+  compareScenarios,
+  MATERIAL_PRESETS,
+  DEFAULT_MACHINE,
+  type CostInput,
+  type MachineConfig,
+} from "@/lib/cost-calculator";
 
 interface HistoryEntry {
   id: string;
@@ -1078,7 +1087,7 @@ function DxfPreview({
           {(() => {
             const isoSet = new Set(isolatedStrokes);
             if (isoSet.size === 0) return null;
-            const markers = [];
+            const markers: ReactElement[] = [];
             active.analysis.entities.forEach((e, idx) => {
               if (!isoSet.has(idx)) return;
               const pts = [];
@@ -1469,6 +1478,15 @@ function ToolPage() {
   const [pricePerMeter, setPricePerMeter] = useState(5);
   const [showCostEstimator, setShowCostEstimator] = useState(false);
 
+  // ── Advanced cost calculator (💰) ──
+  const [showAdvancedCost, setShowAdvancedCost] = useState(false);
+  const [selectedMaterialId, setSelectedMaterialId] = useState(MATERIAL_PRESETS[0].id);
+  const [quantity, setQuantity] = useState(1);
+  const [profitMargin, setProfitMargin] = useState(20);
+  const [machineConfig, setMachineConfig] = useState<MachineConfig>({ ...DEFAULT_MACHINE });
+  const [customCutSpeed, setCustomCutSpeed] = useState<number | null>(null);
+  const [customPricePerSheet, setCustomPricePerSheet] = useState<number | null>(null);
+
   // ── Manufacturing time estimate (⏱) ──
   const [showTimeEstimate, setShowTimeEstimate] = useState(false);
   const [cutSpeed, setCutSpeed] = useState(0.5); // m/min
@@ -1530,6 +1548,11 @@ function ToolPage() {
 
   // Trust notice modal
   const [showTrustModal, setShowTrustModal] = useState(false);
+
+  // Subscribe-before-download modal
+  const [showSubscribeModal, setShowSubscribeModal] = useState(false);
+  const [pendingSingle, setPendingSingle] = useState<{ content: string; name: string } | null>(null);
+  const [pendingBulk, setPendingBulk] = useState(false);
 
   // Bulk upload state
   const [bulkFiles, setBulkFiles] = useState<BulkFileEntry[]>([]);
@@ -1644,7 +1667,7 @@ function ToolPage() {
       historyLayers: "طبقة",
       historyRepaired: "مُصلَح",
       freeBanner: (remaining: number) => `استخدام مجاني: ${remaining} متبقية`,
-      freeSubscribe: "استخدم الأداة بحرية — مجانية 100%",
+      freeSubscribe: "استخدم الأداة بحرية — مجانية وقت الانطلاق",
       unlimited: "استخدام غير محدود ✓",
       // Fix Summary
       fixSummaryTitle: "تقرير الإصلاحات والتعديلات",
@@ -1745,7 +1768,7 @@ function ToolPage() {
       historyLayers: "layers",
       historyRepaired: "Repaired",
       freeBanner: (remaining: number) => `Free usage: ${remaining} remaining`,
-      freeSubscribe: "Use the tool freely — 100% free",
+      freeSubscribe: "Use the tool freely — free during launch",
       unlimited: "Unlimited usage ✓",
       // Fix Summary
       fixSummaryTitle: "Fix Summary Report",
@@ -1997,6 +2020,16 @@ function ToolPage() {
   };
 
   const triggerMonetagAdAndDownload = (content: string, name: string) => {
+    // Subscribe gate: ask for email once before the first download.
+    if (!isSubscribed()) {
+      setPendingSingle({ content, name });
+      setShowSubscribeModal(true);
+      return;
+    }
+    proceedDownload(content, name);
+  };
+
+  const proceedDownload = (content: string, name: string) => {
     const monetagLink = import.meta.env.VITE_MONETAG_DIRECT_LINK;
     if (monetagLink && typeof window !== "undefined") {
       try {
@@ -2129,7 +2162,16 @@ function ToolPage() {
   }, [bulkFiles]);
 
   const downloadAllBulk = async () => {
-    // No gate — bulk download is free for everyone
+    // Subscribe gate: ask for email once before the first bulk download too.
+    if (!isSubscribed()) {
+      setPendingBulk(true);
+      setShowSubscribeModal(true);
+      return;
+    }
+    await runBulkDownload();
+  };
+
+  const runBulkDownload = async () => {
     const doneFiles = bulkFiles.filter((f) => f.status === "done" && f.fixedContent);
     const filesToZip = doneFiles.map((f) => ({
       name: f.file.name.replace(".dxf", "_fixed.dxf"),
@@ -2142,6 +2184,20 @@ function ToolPage() {
     if (selfDestructEnabled) {
       triggerSelfDestruct(filesToZip.map((f) => f.name));
       setSelfDestructTriggered(true);
+    }
+  };
+
+  const handleSubscribeComplete = () => {
+    setShowSubscribeModal(false);
+    if (pendingBulk) {
+      setPendingBulk(false);
+      void runBulkDownload();
+      return;
+    }
+    if (pendingSingle) {
+      const dl = pendingSingle;
+      setPendingSingle(null);
+      proceedDownload(dl.content, dl.name);
     }
   };
 
@@ -2158,6 +2214,43 @@ function ToolPage() {
   // engine (detectOpenPaths) and threshold (0.1mm) as analyzeDxf, so the preview
   // can never contradict the report again.
   const displayAnalysis = stage === "repaired" && repairedAnalysis ? repairedAnalysis : analysis;
+
+  // ── Advanced cost calculation ──
+  const advancedCost = useMemo(() => {
+    const ents = (displayAnalysis ?? analysis)?.entities;
+    if (!ents || ents.length === 0) return null;
+    try {
+      const input: CostInput = {
+        materialId: selectedMaterialId,
+        machine: machineConfig,
+        quantity: Math.max(1, quantity),
+        profitMargin,
+        customCutSpeed: customCutSpeed ?? undefined,
+        customPricePerSheet: customPricePerSheet ?? undefined,
+      };
+      return calculateCost(ents, input);
+    } catch {
+      return null;
+    }
+  }, [displayAnalysis, analysis, selectedMaterialId, machineConfig, quantity, profitMargin, customCutSpeed, customPricePerSheet]);
+
+  const scenarioResults = useMemo(() => {
+    const ents = (displayAnalysis ?? analysis)?.entities;
+    if (!ents || ents.length === 0) return null;
+    try {
+      const input: CostInput = {
+        materialId: selectedMaterialId,
+        machine: machineConfig,
+        quantity: Math.max(1, quantity),
+        profitMargin,
+        customCutSpeed: customCutSpeed ?? undefined,
+        customPricePerSheet: customPricePerSheet ?? undefined,
+      };
+      return compareScenarios(ents, input, [1, 5, 10, 50, 100]);
+    } catch {
+      return null;
+    }
+  }, [displayAnalysis, analysis, selectedMaterialId, machineConfig, quantity, profitMargin, customCutSpeed, customPricePerSheet]);
 
   // ⏱ Manufacturing time estimate — uses the advanced report generator.
   const timeReport = useMemo(() => {
@@ -3537,6 +3630,438 @@ function ToolPage() {
               )}
             </div>
 
+{/* 💰 Advanced Cost Calculator */}
+            <div className="rounded-2xl border border-border bg-card overflow-hidden">
+              <button
+                onClick={() => setShowAdvancedCost(!showAdvancedCost)}
+                className="w-full px-6 py-4 flex items-center justify-between hover:bg-muted/20 transition"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">💎</span>
+                  <span className="font-display font-semibold">
+                    {lang === "ar" ? "حاسبة التكلفة المتقدمة" : "Advanced Cost Calculator"}
+                  </span>
+                </div>
+                <span className="text-muted-foreground">{showAdvancedCost ? "▲" : "▼"}</span>
+              </button>
+              {showAdvancedCost && (
+                <div className="px-6 pb-6 space-y-5">
+                  <p className="text-sm text-muted-foreground">
+                    {lang === "ar"
+                      ? "نظام تسعير صناعي: المادة + وقت الماكينة (إهلاك+طاقة+صيانة+عمالة) + الإعداد + الاستهلاكيات + هامش الربح."
+                      : "Industry pricing: material + machine time + setup + consumables + profit."}
+                  </p>
+
+                  <div className="bg-background border border-border/60 rounded-xl p-4">
+                    <p className="text-xs text-muted-foreground font-mono mb-2">
+                      {lang === "ar" ? "المادة" : "Material"}
+                    </p>
+                    <select
+                      value={selectedMaterialId}
+                      onChange={(e) => setSelectedMaterialId(e.target.value)}
+                      className="w-full bg-transparent text-foreground font-display text-lg font-bold focus:outline-none focus:border-accent border-b border-border"
+                    >
+                      {MATERIAL_PRESETS.map((m) => (
+                        <option key={m.id} value={m.id} className="bg-card">
+                          {m.nameAr} — {m.thickness}mm
+                        </option>
+                      ))}
+                    </select>
+                    {(() => {
+                      const m = MATERIAL_PRESETS.find((x) => x.id === selectedMaterialId);
+                      return m ? (
+                        <p className="font-mono text-xs text-muted-foreground mt-2">
+                          {lang === "ar" ? "سرعة" : "Speed"}: {m.cutSpeed} m/min · $
+                          {m.pricePerSheet} · kerf {m.kerfWidth}mm
+                        </p>
+                      ) : null;
+                    })()}
+                  </div>
+<div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <div className="bg-background border border-border/60 rounded-xl p-4">
+                      <p className="text-xs text-muted-foreground font-mono mb-1">
+                        {lang === "ar" ? "الكمية" : "Quantity"}
+                      </p>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={quantity}
+                        onChange={(e) => setQuantity(Math.max(1, parseFloat(e.target.value) || 1))}
+                        className="w-full bg-transparent border-b border-border text-foreground font-display text-2xl font-bold focus:outline-none focus:border-accent"
+                        dir="ltr"
+                      />
+                    </div>
+                    <div className="bg-background border border-border/60 rounded-xl p-4">
+                      <p className="text-xs text-muted-foreground font-mono mb-1">
+                        {lang === "ar" ? "هامش الربح (%)" : "Profit margin (%)"}
+                      </p>
+                      <input
+                        type="number"
+                        min="0"
+                        max="200"
+                        step="1"
+                        value={profitMargin}
+                        onChange={(e) => setProfitMargin(parseFloat(e.target.value) || 0)}
+                        className="w-full bg-transparent border-b border-border text-foreground font-display text-2xl font-bold focus:outline-none focus:border-accent"
+                        dir="ltr"
+                      />
+                    </div>
+                    <div className="bg-background border border-border/60 rounded-xl p-4">
+                      <p className="text-xs text-muted-foreground font-mono mb-1">
+                        {lang === "ar" ? "سرعة قص مخصصة (م/دقيقة)" : "Custom cut speed (m/min)"}
+                      </p>
+                      <input
+                        type="number"
+                        min="0.05"
+                        step="0.05"
+                        value={customCutSpeed ?? ""}
+                        onChange={(e) =>
+                          setCustomCutSpeed(e.target.value ? parseFloat(e.target.value) : null)
+                        }
+                        className="w-full bg-transparent border-b border-border text-foreground font-display text-xl font-bold focus:outline-none focus:border-accent"
+                        dir="ltr"
+                        placeholder={String(MATERIAL_PRESETS[0].cutSpeed)}
+                      />
+                    </div>
+                    <div className="bg-background border border-border/60 rounded-xl p-4">
+                      <p className="text-xs text-muted-foreground font-mono mb-1">
+                        {lang === "ar" ? "سعر لوح مخصص ($)" : "Custom sheet price ($)"}
+                      </p>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={customPricePerSheet ?? ""}
+                        onChange={(e) =>
+                          setCustomPricePerSheet(e.target.value ? parseFloat(e.target.value) : null)
+                        }
+                        className="w-full bg-transparent border-b border-border text-foreground font-display text-xl font-bold focus:outline-none focus:border-accent"
+                        dir="ltr"
+                      />
+                    </div>
+                  </div>
+<div className="bg-background border border-border/60 rounded-xl p-4">
+                    <p className="text-xs text-muted-foreground font-mono mb-3">
+                      {lang === "ar" ? "⚙ إعدادات الماكينة" : "⚙ Machine settings"}
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div>
+                        <p className="text-[11px] text-muted-foreground">
+                          {lang === "ar" ? "قوة الليزر (واط)" : "Laser (W)"}
+                        </p>
+                        <input
+                          type="number"
+                          min="1"
+                          value={machineConfig.laserPower}
+                          onChange={(e) =>
+                            setMachineConfig({ ...machineConfig, laserPower: parseFloat(e.target.value) || 0 })
+                          }
+                          className="w-full bg-transparent border-b border-border text-foreground font-display font-bold focus:outline-none focus:border-accent"
+                          dir="ltr"
+                        />
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-muted-foreground">
+                          {lang === "ar" ? "سعر الشراء ($)" : "Purchase ($)"}
+                        </p>
+                        <input
+                          type="number"
+                          min="0"
+                          value={machineConfig.purchasePrice}
+                          onChange={(e) =>
+                            setMachineConfig({ ...machineConfig, purchasePrice: parseFloat(e.target.value) || 0 })
+                          }
+                          className="w-full bg-transparent border-b border-border text-foreground font-display font-bold focus:outline-none focus:border-accent"
+                          dir="ltr"
+                        />
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-muted-foreground">
+                          {lang === "ar" ? "استهلاك (ك.و)" : "Power (kW)"}
+                        </p>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={machineConfig.electricityConsumption}
+                          onChange={(e) =>
+                            setMachineConfig({ ...machineConfig, electricityConsumption: parseFloat(e.target.value) || 0 })
+                          }
+                          className="w-full bg-transparent border-b border-border text-foreground font-display font-bold focus:outline-none focus:border-accent"
+                          dir="ltr"
+                        />
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-muted-foreground">
+                          {lang === "ar" ? "عمالة ($/ساعة)" : "Labor ($/h)"}
+                        </p>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={machineConfig.laborCostPerHour}
+                          onChange={(e) =>
+                            setMachineConfig({ ...machineConfig, laborCostPerHour: parseFloat(e.target.value) || 0 })
+                          }
+                          className="w-full bg-transparent border-b border-border text-foreground font-display font-bold focus:outline-none focus:border-accent"
+                          dir="ltr"
+                        />
+                      </div>
+<div>
+                        <p className="text-[11px] text-muted-foreground">
+                          {lang === "ar" ? "كهرباء ($/ك.و.س)" : "Elec ($/kWh)"}
+                        </p>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={machineConfig.electricityCostPerKwh}
+                          onChange={(e) =>
+                            setMachineConfig({ ...machineConfig, electricityCostPerKwh: parseFloat(e.target.value) || 0 })
+                          }
+                          className="w-full bg-transparent border-b border-border text-foreground font-display font-bold focus:outline-none focus:border-accent"
+                          dir="ltr"
+                        />
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-muted-foreground">
+                          {lang === "ar" ? "صيانة ($/سنة)" : "Maint. ($/yr)"}
+                        </p>
+                        <input
+                          type="number"
+                          min="0"
+                          value={machineConfig.maintenanceCostPerYear}
+                          onChange={(e) =>
+                            setMachineConfig({ ...machineConfig, maintenanceCostPerYear: parseFloat(e.target.value) || 0 })
+                          }
+                          className="w-full bg-transparent border-b border-border text-foreground font-display font-bold focus:outline-none focus:border-accent"
+                          dir="ltr"
+                        />
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-muted-foreground">
+                          {lang === "ar" ? "الإعداد (دقيقة)" : "Setup (min)"}
+                        </p>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={machineConfig.setupTimeMinutes}
+                          onChange={(e) =>
+                            setMachineConfig({ ...machineConfig, setupTimeMinutes: parseFloat(e.target.value) || 0 })
+                          }
+                          className="w-full bg-transparent border-b border-border text-foreground font-display font-bold focus:outline-none focus:border-accent"
+                          dir="ltr"
+                        />
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-muted-foreground">
+                          {lang === "ar" ? "عامل التسارع" : "Acceleration"}
+                        </p>
+                        <input
+                          type="number"
+                          min="1"
+                          max="2"
+                          step="0.05"
+                          value={machineConfig.accelerationFactor}
+                          onChange={(e) =>
+                            setMachineConfig({ ...machineConfig, accelerationFactor: parseFloat(e.target.value) || 1 })
+                          }
+                          className="w-full bg-transparent border-b border-border text-foreground font-display font-bold focus:outline-none focus:border-accent"
+                          dir="ltr"
+                        />
+                      </div>
+                    </div>
+                  </div>
+{/* Results */}
+                  {advancedCost ? (
+                    <>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="rounded-xl border border-border p-4 text-center">
+                          <p className="font-mono text-xs text-muted-foreground">
+                            {lang === "ar" ? "تكلفة المادة" : "Material"}
+                          </p>
+                          <p className="font-display text-xl font-bold text-primary">
+                            ${advancedCost.totalMaterialCost.toFixed(2)}
+                          </p>
+                          <p className="font-mono text-[10px] text-muted-foreground">
+                            {advancedCost.sheetsNeeded} {lang === "ar" ? "لوح" : "sheet(s)"}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-border p-4 text-center">
+                          <p className="font-mono text-xs text-muted-foreground">
+                            {lang === "ar" ? "وقت الماكينة" : "Machine time"}
+                          </p>
+                          <p className="font-display text-xl font-bold text-accent">
+                            ${advancedCost.machineTimeCost.toFixed(2)}
+                          </p>
+                          <p className="font-mono text-[10px] text-muted-foreground">
+                            {advancedCost.estimatedCutTimeMinutes} min +{" "}
+                            {advancedCost.setupTimeMinutes} {lang === "ar" ? "إعداد" : "setup"}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-border p-4 text-center">
+                          <p className="font-mono text-xs text-muted-foreground">
+                            {lang === "ar" ? "إعداد + استهلاكية" : "Setup + consum."}
+                          </p>
+                          <p className="font-display text-xl font-bold">
+                            ${(advancedCost.setupCost + advancedCost.consumableCost).toFixed(2)}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-accent/30 bg-accent/5 p-4 text-center">
+                          <p className="font-mono text-xs text-muted-foreground">
+                            {lang === "ar" ? "تكلفة القطعة الواحدة" : "Cost per part"}
+                          </p>
+                          <p className="font-display text-xl font-bold text-accent">
+                            ${advancedCost.costPerPart.toFixed(2)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="rounded-xl border border-border p-4 text-center">
+                          <p className="font-mono text-xs text-muted-foreground">
+                            {lang === "ar" ? "سعر البيع/قطعة" : "Sell price/part"}
+                          </p>
+                          <p className="font-display text-xl font-bold text-emerald-500">
+                            ${advancedCost.sellingPricePerPart.toFixed(2)}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-border p-4 text-center">
+                          <p className="font-mono text-xs text-muted-foreground">
+                            {lang === "ar" ? "إجمالي البيع" : "Total sale"}
+                          </p>
+                          <p className="font-display text-xl font-bold">
+                            ${advancedCost.totalSellingPrice.toFixed(2)}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-border p-4 text-center">
+                          <p className="font-mono text-xs text-muted-foreground">
+                            {lang === "ar" ? "صافي الربح" : "Net profit"}
+                          </p>
+                          <p className="font-display text-xl font-bold text-emerald-500">
+                            ${advancedCost.netProfit.toFixed(2)}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-border p-4 text-center">
+                          <p className="font-mono text-xs text-muted-foreground">
+                            {lang === "ar" ? "استغلال المادة" : "Utilization"}
+                          </p>
+                          <p className="font-display text-xl font-bold text-primary">
+                            {advancedCost.materialUtilization}%
+                          </p>
+                          <p className="font-mono text-[10px] text-muted-foreground">
+                            {lang === "ar" ? "سعر الماكينة/ساعة" : "Rate"}: $
+                            {advancedCost.machineHourlyRate.toFixed(2)}/h
+                          </p>
+                        </div>
+                      </div>
+{/* Scenario comparison */}
+                      {scenarioResults && (
+                        <div className="bg-background border border-border/60 rounded-xl p-4">
+                          <p className="text-xs text-muted-foreground font-mono mb-3">
+                            {lang === "ar" ? "📊 مقارنة الكميات" : "📊 Quantity comparison"}
+                          </p>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs font-mono">
+                              <thead>
+                                <tr className="text-muted-foreground border-b border-border/60">
+                                  <th className="text-left py-2 pr-3">
+                                    {lang === "ar" ? "الكمية" : "Qty"}
+                                  </th>
+                                  <th className="text-right py-2 pr-3">
+                                    {lang === "ar" ? "تكلفة/قطعة" : "Cost/part"}
+                                  </th>
+                                  <th className="text-right py-2 pr-3">
+                                    {lang === "ar" ? "إجمالي" : "Total"}
+                                  </th>
+                                  <th className="text-right py-2 pr-3">
+                                    {lang === "ar" ? "ألواح" : "Sheets"}
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {scenarioResults.map((s) => (
+                                  <tr
+                                    key={s.quantity}
+                                    className="border-b border-border/30 last:border-0"
+                                  >
+                                    <td className="py-1.5 pr-3 font-bold">{s.quantity}</td>
+                                    <td className="py-1.5 pr-3 text-right text-accent">
+                                      ${s.costPerPart.toFixed(2)}
+                                    </td>
+                                    <td className="py-1.5 pr-3 text-right">
+                                      ${s.totalCost.toFixed(2)}
+                                    </td>
+                                    <td className="py-1.5 pr-3 text-right">{s.sheetsNeeded}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          <p className="font-mono text-[10px] text-muted-foreground mt-2">
+                            {lang === "ar"
+                              ? "💡 كلما زادت الكمية انخفضت تكلفة القطعة (توزيع الإعداد)."
+                              : "💡 Larger runs lower cost per part (setup amortization)."}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Material rank bar */}
+                      <div className="bg-background border border-border/60 rounded-xl p-4">
+                        <p className="text-xs text-muted-foreground font-mono mb-2">
+                          {lang === "ar" ? "📍 موقع التكلفة" : "📍 Cost position"}
+                        </p>
+                        <div className="flex h-4 w-full rounded-full overflow-hidden border border-border/60" dir="ltr">
+                          <div
+                            className="bg-accent"
+                            style={{
+                              width: `${Math.max(3, (advancedCost.machineTimeCost / advancedCost.totalCost) * 100)}%`,
+                            }}
+                          />
+                          <div
+                            className="bg-primary"
+                            style={{
+                              width: `${Math.max(3, (advancedCost.totalMaterialCost / advancedCost.totalCost) * 100)}%`,
+                            }}
+                          />
+                          <div
+                            className="bg-amber-500"
+                            style={{
+                              width: `${Math.max(3, ((advancedCost.setupCost + advancedCost.consumableCost) / advancedCost.totalCost) * 100)}%`,
+                            }}
+                          />
+                        </div>
+                        <div className="flex flex-wrap gap-4 mt-2 font-mono text-[10px] text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <span className="w-2 h-2 rounded-full bg-accent inline-block" />
+                            {lang === "ar" ? "ماكينة" : "Machine"} ($
+                            {advancedCost.machineTimeCost.toFixed(2)})
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <span className="w-2 h-2 rounded-full bg-primary inline-block" />
+                            {lang === "ar" ? "مادة" : "Material"} ($
+                            {advancedCost.totalMaterialCost.toFixed(2)})
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
+                            {lang === "ar" ? "إعداد+استهلاكية" : "Setup+consum."} ($
+                            {(advancedCost.setupCost + advancedCost.consumableCost).toFixed(2)})
+                          </span>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      {lang === "ar"
+                        ? "ارفع ملف DXF أولاً لحساب التكلفة."
+                        : "Upload a DXF file first to calculate cost."}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
             {/* ⏱ Manufacturing Time Estimate */}
             <div className="rounded-2xl border border-border bg-card overflow-hidden">
               <button
@@ -4125,6 +4650,14 @@ function ToolPage() {
 
       {/* Feedback Modal */}
       <FeedbackModal lang={lang} />
+
+      {/* Subscribe-before-download Modal */}
+      <SubscribeModal
+        lang={lang}
+        isOpen={showSubscribeModal}
+        onClose={() => setShowSubscribeModal(false)}
+        onComplete={handleSubscribeComplete}
+      />
     </div>
   );
 }
