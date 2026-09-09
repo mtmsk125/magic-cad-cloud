@@ -12,6 +12,7 @@ import {
   sortInsideFirst,
 } from "@/lib/dxf";
 import { CutSimulator } from "@/components/cut-simulator";
+import { DesignCompareSlider } from "@/components/design-compare-slider";
 import type {
   DxfAnalysis,
   DxfIssue,
@@ -3048,8 +3049,17 @@ function ToolPage() {
                     </button>
                   )}
                 </div>
-              );
+                          );
             })()}
+
+            {/* ── DESIGN COMPARE: draggable before(after repair) slider ── */}
+            {stage === "repaired" && analysis && displayAnalysis && (
+              <DesignCompareSlider
+                before={analysis.entities}
+                after={displayAnalysis.entities}
+                lang={lang}
+              />
+            )}
 
             {/* SVG Preview */}
             {(() => {
