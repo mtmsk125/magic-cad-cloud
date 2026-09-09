@@ -33,6 +33,11 @@ export interface DxfEntity {
   vertices?: DxfVertex[];
   closed?: boolean;
   vertexCount?: number;
+  // INSERT (block reference)
+  name?: string; // block name (code 2)
+  insertScaleX?: number; // code 41
+  insertScaleY?: number; // code 42
+  insertRot?: number; // code 50 (degrees)
 }
 
 export interface DxfIssue {
@@ -154,6 +159,185 @@ function groupsToLines(groups: DxfGroup[]): string {
   return groups.map((g) => `${g.code}\n${g.value}`).join("\n");
 }
 
+/* ------------------------------------------------------------------ */
+/* BLOCK / INSERT explosion                                            */
+/* DXF files exported from SolidWorks/Inventor/Fusion often place the  */
+/* real geometry inside BLOCK definitions in the BLOCKS section and    */
+/* reference it from ENTITIES via INSERT. CAM tools that don't expand  */
+/* blocks silently drop that geometry (or show only a bounding dot).   */
+/* Here we parse the BLOCKS section and substitute every INSERT with   */
+/* its block entities, applying insert point, per-axis scale, and      */
+/* rotation, so the analyzer sees the real geometry.                   */
+/* ------------------------------------------------------------------ */
+
+interface BlockDef {
+  name: string;
+  baseX: number;
+  baseY: number;
+  raw: string; // full BLOCK...ENDBLK text
+}
+
+/** Split the BLOCKS section into BLOCK..ENDBLK definitions. */
+function parseBlockDefinitions(content: string): Map<string, BlockDef> {
+  const map = new Map<string, BlockDef>();
+  const blocksSec = content.match(
+    /\s*0\s*\nSECTION\s*\n\s*2\s*\nBLOCKS([\s\S]*?)\s*0\s*\nENDSEC/i,
+  );
+  if (!blocksSec) return map;
+
+  const allGroups = parseGroups(blocksSec[1]);
+  let current: DxfGroup[] = [];
+  const flush = () => {
+    if (current.length === 0) return;
+    const typeGroup = current.find((g) => g.code === 0);
+    if (typeGroup && typeGroup.value.toUpperCase() === "BLOCK") {
+      const name = current.find((g) => g.code === 2)?.value.trim() ?? "";
+      const baseX = parseFloat(current.find((g) => g.code === 10)?.value ?? "0");
+      const baseY = parseFloat(current.find((g) => g.code === 20)?.value ?? "0");
+      if (name) {
+        map.set(name, { name, baseX, baseY, raw: groupsToLines(current) });
+      }
+    }
+    current = [];
+  };
+
+  for (const g of allGroups) {
+    if (g.code !== 0) {
+      current.push(g);
+      continue;
+    }
+    const t = (g.value || "").toUpperCase();
+    if (t === "BLOCK") {
+      flush();
+      current.push(g);
+    } else if (t === "ENDBLK") {
+      current.push(g);
+      flush();
+    } else {
+      current.push(g);
+    }
+  }
+  flush();
+  return map;
+}
+
+/** Parse the entities that live between a BLOCK and its ENDBLK. */
+function parseBlockEntities(raw: string): DxfEntity[] {
+  const inner = raw.replace(
+    /\s*0\s*\nBLOCK([\s\S]*?)\s*0\s*\nENDBLK/i,
+    (m, body: string) => body,
+  );
+  return parseSimpleEntities(inner);
+}
+/** Minimal entity parser reused by BLOCK explosion (LINE, ARC, CIRCLE,
+/* LWPOLYLINE, POLYLINE, SPLINE, ELLIPSE, TEXT, POINT + INSERT recursion). */
+function parseSimpleEntities(raw: string, blocks?: Map<string, BlockDef>): DxfEntity[] {
+  const groups = parseGroups(raw);
+  const blocksOut: string[] = [];
+  let current: string[] = [];
+  let inLegacy = false;
+  const flush = () => {
+    if (current.length > 0) {
+      blocksOut.push(current.join("\n"));
+      current = [];
+    }
+    inLegacy = false;
+  };
+  for (const g of groups) {
+    if (g.code !== 0) {
+      current.push(`${g.code}\n${g.value}`);
+      continue;
+    }
+    const t = (g.value || "").toUpperCase();
+    if (t === "POLYLINE") {
+      flush();
+      inLegacy = true;
+      current.push(`${g.code}\n${g.value}`);
+      continue;
+    }
+    if (t === "VERTEX" && inLegacy) {
+      current.push(`${g.code}\n${g.value}`);
+      continue;
+    }
+    if (t === "SEQEND" && inLegacy) {
+      current.push(`${g.code}\n${g.value}`);
+      flush();
+      continue;
+    }
+    flush();
+    current.push(`${g.code}\n${g.value}`);
+  }
+  flush();
+
+  const out: DxfEntity[] = [];
+  for (const block of blocksOut) {
+    const groupsB = parseGroups(block.trim());
+    if (!groupsB.length) continue;
+    const typeGroup = groupsB.find((g) => g.code === 0);
+    if (!typeGroup) continue;
+    const type = typeGroup.value.toUpperCase();
+    if (type === "ENDSEC" || type === "SECTION") continue;
+    const entity: DxfEntity = {
+      type,
+      layer: groupsB.find((g) => g.code === 8)?.value ?? "0",
+      handle: groupsB.find((g) => g.code === 5)?.value ?? "",
+      rawLines: block.trim().split("\n"),
+    };
+
+    if (type === "LINE") {
+      entity.x1 = parseFloat(groupsB.find((g) => g.code === 10)?.value ?? "0");
+      entity.y1 = parseFloat(groupsB.find((g) => g.code === 20)?.value ?? "0");
+      entity.x2 = parseFloat(groupsB.find((g) => g.code === 11)?.value ?? "0");
+      entity.y2 = parseFloat(groupsB.find((g) => g.code === 21)?.value ?? "0");
+    } else if (type === "ARC") {
+      entity.cx = parseFloat(groupsB.find((g) => g.code === 10)?.value ?? "0");
+      entity.cy = parseFloat(groupsB.find((g) => g.code === 20)?.value ?? "0");
+      entity.radius = parseFloat(groupsB.find((g) => g.code === 40)?.value ?? "0");
+      entity.startAngle = parseFloat(groupsB.find((g) => g.code === 50)?.value ?? "0");
+      entity.endAngle = parseFloat(groupsB.find((g) => g.code === 51)?.value ?? "0");
+    } else if (type === "CIRCLE") {
+      entity.cx = parseFloat(groupsB.find((g) => g.code === 10)?.value ?? "0");
+      entity.cy = parseFloat(groupsB.find((g) => g.code === 20)?.value ?? "0");
+      entity.radius = parseFloat(groupsB.find((g) => g.code === 40)?.value ?? "0");
+    } else if (type === "LWPOLYLINE") {
+      entity.closed = (parseInt(groupsB.find((g) => g.code === 70)?.value ?? "0", 10) & 1) === 1;
+      entity.vertices = [];
+      const xs = groupsB.filter((g) => g.code === 10);
+      const ys = groupsB.filter((g) => g.code === 20);
+      const bs = groupsB.filter((g) => g.code === 42);
+      for (let i = 0; i < xs.length; i++) {
+        entity.vertices.push({
+          x: parseFloat(xs[i].value),
+          y: parseFloat(ys[i]?.value ?? "0"),
+          bulge: i < bs.length ? parseFloat(bs[i].value) : 0,
+        });
+      }
+      entity.vertexCount = entity.vertices.length;
+    } else if (type === "POINT") {
+      entity.x1 = parseFloat(groupsB.find((g) => g.code === 10)?.value ?? "0");
+      entity.y1 = parseFloat(groupsB.find((g) => g.code === 20)?.value ?? "0");
+      entity.x2 = entity.x1;
+      entity.y2 = entity.y1;
+    } else if (type === "INSERT" && blocks) {
+      const insertName = groupsB.find((g) => g.code === 2)?.value.trim() ?? "";
+      entity.name = insertName;
+      entity.cx = parseFloat(groupsB.find((g) => g.code === 10)?.value ?? "0");
+      entity.cy = parseFloat(groupsB.find((g) => g.code === 20)?.value ?? "0");
+      entity.insertScaleX = parseFloat(groupsB.find((g) => g.code === 41)?.value ?? "1");
+      entity.insertScaleY = parseFloat(groupsB.find((g) => g.code === 42)?.value ?? "1");
+      entity.insertRot = parseFloat(groupsB.find((g) => g.code === 50)?.value ?? "0");
+      const def = blocks.get(insertName);
+      if (def) {
+        const inserted = explodeInsertFromDef(entity, def, blocks);
+        out.push(...inserted);
+        continue;
+      }
+    }
+    out.push(entity);
+  }
+  return out;
+}
+
 function dist(x1: number, y1: number, x2: number, y2: number): number {
   return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
 }
@@ -165,7 +349,139 @@ function lineKey(e: DxfEntity, tol = 1e-6): string {
   const y2 = Math.round((e.y2 ?? 0) / tol) * tol;
   const a = `${x1},${y1}`;
   const b = `${x2},${y2}`;
-  return a < b ? `${a}|${b}` : `${b}|${a}`;
+  return a <= b ? `${a}|${b}` : `${b}|${a}`;
+}
+
+/** Transform a point in block space into world space. */
+function xfrmPoint(
+  px: number,
+  py: number,
+  insX: number,
+  insY: number,
+  cosA: number,
+  sinA: number,
+  sx: number,
+  sy: number,
+): { x: number; y: number } {
+  const rx = px * cosA - py * sinA;
+  const ry = px * sinA + py * cosA;
+  return { x: insX + rx * sx, y: insY + ry * sy };
+}
+
+/** Expand one INSERT by substituting the block's geometry (recursively). */
+function explodeInsertFromDef(
+  insert: DxfEntity,
+  def: BlockDef,
+  blocks: Map<string, BlockDef>,
+): DxfEntity[] {
+  const insX = insert.cx ?? 0;
+  const insY = insert.cy ?? 0;
+  const sx = insert.insertScaleX ?? 1;
+  const sy = insert.insertScaleY ?? 1;
+  const rotDeg = insert.insertRot ?? 0;
+  const cosA = Math.cos((rotDeg * Math.PI) / 180);
+  const sinA = Math.sin((rotDeg * Math.PI) / 180);
+
+  const innerEntity = parseBlockEntities(def.raw);
+  if (innerEntity.length === 0) return [insert];
+
+  const out: DxfEntity[] = [];
+  for (const e of innerEntity) {
+    if (e.type === "INSERT") {
+      const subDef = blocks.get(e.name ?? "");
+      if (subDef) {
+        const childLocal = explodeInsertFromDef(e, subDef, blocks).map((c) =>
+          applyTransform(c, (e.cx ?? 0) - def.baseX, (e.cy ?? 0) - def.baseY, 1, 0, e.insertScaleX ?? 1, e.insertScaleY ?? 1, def.baseX, def.baseY, e.insertRot ?? 0),
+        );
+        out.push(...childLocal.map((c) => applyTransform(c, insX, insY, cosA, sinA, sx, sy, def.baseX, def.baseY, (e.insertRot ?? 0) + rotDeg)));
+        continue;
+      }
+      out.push(e);
+      continue;
+    }
+    out.push(applyTransform(e, insX, insY, cosA, sinA, sx, sy, def.baseX, def.baseY, rotDeg));
+  }
+  return out;
+}
+
+/** Apply the INSERT transform to one entity's geometry. */
+function applyTransform(
+  e: DxfEntity,
+  insX: number,
+  insY: number,
+  cosA: number,
+  sinA: number,
+  sx: number,
+  sy: number,
+  baseX: number,
+  baseY: number,
+  extraRot: number,
+): DxfEntity {
+  const t = (x: number, y: number) => xfrmPoint(x - baseX, y - baseY, insX, insY, cosA, sinA, sx, sy);
+  const clone: DxfEntity = { ...e, rawLines: [...e.rawLines] };
+
+  if (e.type === "LINE") {
+    const a = t(e.x1 ?? 0, e.y1 ?? 0);
+    const b = t(e.x2 ?? 0, e.y2 ?? 0);
+    clone.x1 = a.x;
+    clone.y1 = a.y;
+    clone.x2 = b.x;
+    clone.y2 = b.y;
+  } else if (e.type === "ARC" || e.type === "CIRCLE") {
+    const c = t(e.cx ?? 0, e.cy ?? 0);
+    clone.cx = c.x;
+    clone.cy = c.y;
+    clone.radius = Math.abs(e.radius ?? 0) * (Math.abs(sx) + Math.abs(sy)) / 2;
+    if (e.type === "ARC" && typeof e.startAngle === "number" && typeof e.endAngle === "number") {
+      let sa = e.startAngle + extraRot;
+      let ea = e.endAngle + extraRot;
+      if (sa > ea) sa -= 360;
+      clone.startAngle = sa;
+      clone.endAngle = ea;
+    }
+  } else if (e.type === "LWPOLYLINE" || e.type === "POLYLINE") {
+    clone.vertices = (e.vertices ?? []).map((v) => {
+      const p = t(v.x, v.y);
+      return { x: p.x, y: p.y, bulge: v.bulge };
+    });
+    clone.vertexCount = clone.vertices.length;
+  } else if (e.type === "POINT") {
+    const p = t(e.x1 ?? 0, e.y1 ?? 0);
+    clone.x1 = p.x;
+    clone.y1 = p.y;
+    clone.x2 = p.x;
+    clone.y2 = p.y;
+  } else if (e.type === "SPLINE" || e.type === "ELLIPSE") {
+    clone.vertices = (e.vertices ?? []).map((v) => {
+      const p = t(v.x, v.y);
+      return { x: p.x, y: p.y, bulge: v.bulge };
+    });
+    const c = t(e.cx ?? 0, e.cy ?? 0);
+    clone.cx = c.x;
+    clone.cy = c.y;
+  }
+  return clone;
+}
+
+/** Public entry point — replaces INSERT entities with exploded geometry. */
+export function explodeBlocks(entities: DxfEntity[], content: string): DxfEntity[] {
+  const blocks = parseBlockDefinitions(content);
+  if (blocks.size === 0) return entities;
+  const out: DxfEntity[] = [];
+  for (const e of entities) {
+    if (e.type === "INSERT") {
+      const def = blocks.get(e.name ?? "");
+      if (def) {
+        const exploded = explodeInsertFromDef(e, def, blocks);
+        if (exploded.length > 0) {
+          out.push(...exploded);
+          continue;
+        }
+      }
+    }
+    out.push(e);
+  }
+  return out;
 }
 
 export function snapOpenEndpoints(entities: DxfEntity[], tolerance: number = 0.001): DxfEntity[] {
@@ -676,9 +992,14 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
       entity.x2 = cx + entity.radius;
       entity.y2 = cy + entity.radius;
     } else if (type === "INSERT") {
-      // BLOCK reference — we store the block name and insertion point for bounds
+      // BLOCK reference — store block name, insertion point, scale & rotation
+      // so explodeBlocks() can substitute the real geometry.
+      entity.name = groups.find((g) => g.code === 2)?.value.trim() ?? "";
       entity.cx = parseFloat(groups.find((g) => g.code === 10)?.value ?? "0");
       entity.cy = parseFloat(groups.find((g) => g.code === 20)?.value ?? "0");
+      entity.insertScaleX = parseFloat(groups.find((g) => g.code === 41)?.value ?? "1");
+      entity.insertScaleY = parseFloat(groups.find((g) => g.code === 42)?.value ?? "1");
+      entity.insertRot = parseFloat(groups.find((g) => g.code === 50)?.value ?? "0");
     } else if (type === "POINT") {
       // POINT entity — has 10/20 codes
       entity.x1 = parseFloat(groups.find((g) => g.code === 10)?.value ?? "0");
@@ -732,7 +1053,9 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
   }
 
   // Apply fuzzy node snapping before analysis
-  const snappedEntities = snapOpenEndpoints(entities, snapTolerance);
+  // First expand BLOCK/INSERT references so the analyzer sees the real geometry.
+  const exploded = explodeBlocks(entities, normalized);
+  const snappedEntities = snapOpenEndpoints(exploded, snapTolerance);
 
   const issues: DxfIssue[] = [];
   const TINY = 0.01;
