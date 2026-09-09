@@ -11,6 +11,7 @@ import {
   calculateTotalPerimeter,
   sortInsideFirst,
 } from "@/lib/dxf";
+import { CutSimulator } from "@/components/cut-simulator";
 import type {
   DxfAnalysis,
   DxfIssue,
@@ -3111,6 +3112,30 @@ function ToolPage() {
                         ? `✓ جميع الفجوات < ${gapTolerance}مم أُغلقت تلقائياً`
                         : `✓ All gaps < ${gapTolerance}mm auto-closed`}
                 </p>
+                          </div>
+                        )}
+
+            {/* ── CUT SIMULATION: before (silhouette) vs after (animated toolpath) ── */}
+            {stage === "repaired" && analysis && displayAnalysis && (
+              <div className="rounded-2xl border p-4 bg-slate-950/50">
+                <h3 className="font-display text-lg font-bold mb-3 flex items-center gap-2">
+                  <span>⛎</span>
+                  {lang === "ar"
+                    ? "محاكاة مسار القطع قبل وبعد الإصلاح"
+                    : "Cut-path simulation: before vs after repair"}
+                </h3>
+                <CutSimulator
+                  before={analysis.entities}
+                  after={displayAnalysis.entities}
+                  lang={lang}
+                />
+                {stage === "repaired" && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {lang === "ar"
+                      ? "يمثّل اللون الرمادي الأصل قبل الإصلاح. يبدأ القاطع من داخل التصميم ويتبع المسار الأخضر للخارج — ترتيبه كما سيقطعه منشار grblGrru."
+                      : "Gray = original file. The cutter starts from the inside-out in sorted order, following the cyan path — exactly the sequence GrblGru will cut."}
+                  </p>
+                )}
               </div>
             )}
 

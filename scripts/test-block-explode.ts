@@ -1,30 +1,37 @@
-import { analyzeDxf } from "../src/lib/dxf";
+import { analyzeDxf, repairDxf } from "../src/lib/dxf";
 
-const lines: string[] = [];
-const push = (code: string, val: string) => { lines.push(code, val); };
+// LWPOLYLINE with a single bulge segment = quarter-circle arc.
+// P1(0,0) -> P2(10,0), bulge = tan(22.5°) = 0.41421 => quarter circle.
+const content = [
+  "0", "SECTION", "2", "HEADER",
+  "0", "ENDSEC",
+  "0", "SECTION", "2", "ENTITIES",
+  "0", "LWPOLYLINE", "8", "0", "90", "2", "70", "1",
+  "10", "0", "20", "0", "42", "0.4142135624",
+  "10", "10", "20", "0", "42", "0",
+  "0", "ENDSEC", "0", "EOF", "",
+].join("\n");
 
-// BLOCKS section with MYSYM definition (a line 0,0 -> 10,0)
-push("0", "SECTION"); push("2", "BLOCKS");
-push("0", "BLOCK"); push("2", "MYSYM");
-push("0", "LINE"); push("10", "0"); push("20", "0"); push("11", "10"); push("21", "0");
-push("0", "ENDBLK");
-push("0", "ENDSEC");
+const an = analyzeDxf(content);
+console.log("pre-repair entities:", an.entities.length, "score:", an.score);
+console.log("bulge issue found:", an.issues.filter((i) => i.type === "bulge_arc").length > 0);
 
-// ENTITIES with an INSERT of MYSYM at (100,50), scale 2x2
-push("0", "SECTION"); push("2", "ENTITIES");
-push("0", "INSERT"); push("2", "MYSYM"); push("10", "100"); push("20", "50");
-push("41", "2"); push("42", "2"); push("50", "0");
-push("0", "ENDSEC");
-push("0", "EOF");
+const res = repairDxf(content, an, {});
+console.log("post-repair score:", an.score, "=> repaired");
+const arcLine = res.fixed.split("\n").filter((l) => l.trim() === "ARC").length;
+console.log("ARC entities in output:", arcLine);
+const cx = res.fixed.match(/10\n(-?[\d.]+)/)?.[1];
+const r = res.fixed.match(/40\n([\d.]+)/)?.[1];
+const a1 = res.fixed.match(/50\n(-?[\d.]+)/)?.[1];
+const a2 = res.fixed.match(/51\n(-?[\d.]+)/)?.[1];
+console.log("ARC fields → cx/cy:", cx, "r:", r, "start:", a1, "end:", a2);
+console.log("bulge fix reported:", res.repaired.filter((i) => i.type === "bulge_arc" && i.fixed).length > 0);
 
-const content = lines.join("\n") + "\n";
-const r = analyzeDxf(content);
-console.log("entities:", r.entities.length);
-for (const e of r.entities) {
-  console.log(
-    e.type,
-    `[${e.x1 ?? "?"},${e.y1 ?? "?"} -> ${e.x2 ?? "?"},${e.y2 ?? "?"}]`,
-    "layer:", e.layer,
-  );
-}
-// Expected: the INSERT is replaced by a LINE (110,50 -> 120,50) — scaled 2x around origin offset
+// Expected (exact): center (5,5), r=7.0711, start 225°, end 315°
+const expected = { cx: 5, cy: 5, r: 7.0711, a1: 225, a2: 315 };
+const ok = Math.abs(parseFloat(cx ?? "0") - 5) < 0.01
+  && Math.abs(parseFloat(r ?? "0") - 7.0711) < 0.01
+  && Math.abs(parseFloat(a1 ?? "0") - 225) < 1
+  && Math.abs(parseFloat(a2 ?? "0") - 315) < 1;
+console.log(ok ? "✅ BULGE→ARC MATH VERIFIED" : "❌ MATH MISMATCH");
+

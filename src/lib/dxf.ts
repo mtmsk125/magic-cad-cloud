@@ -49,7 +49,8 @@ export interface DxfIssue {
     | "zero_length"
     | "overlapping_lines"
     | "self_intersect"
-    | "open_loop";
+    | "open_loop"
+    | "bulge_arc";
   severity: "error" | "warning";
   ar: string;
   en: string;
@@ -482,6 +483,140 @@ export function explodeBlocks(entities: DxfEntity[], content: string): DxfEntity
     out.push(e);
   }
   return out;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * BULGE (DXF code 42) → exact ARC conversion.
+ *
+ * A bulge value b on a polyline vertex encodes the tangent of 1/4 of the
+ * included arc angle between it and the next vertex. The conversion is
+ * MATHEMATICALLY EXACT (same endpoints, same radius, same sweep) — the
+ * shape NEVER changes; only the representation becomes an ARC entity,
+ * which GrblGru and most CAM software handle natively.
+ *
+ * FAIL-SAFE GUARANTEE: if ANY segment of a polyline cannot be converted
+ * with certainty (degenerate chord, near-full-circle bulge, non-finite
+ * math), the ENTIRE polyline is kept in its original bulge form. We
+ * never output a partially-converted or approximated shape.
+ * ═══════════════════════════════════════════════════════════════════ */
+
+/** Compute the exact circle (center, radius, angles) of a bulge segment.
+ * Returns null when the segment must NOT be converted (fail-safe). */
+export function bulgeSegmentToArc(
+  px1: number, py1: number, px2: number, py2: number, b: number,
+): { cx: number; cy: number; radius: number; startAngle: number; endAngle: number } | null {
+  if (!Number.isFinite(b) || Math.abs(b) < 1e-8) return null;
+  const dx = px2 - px1, dy = py2 - py1;
+  const d = Math.sqrt(dx * dx + dy * dy);
+  if (!Number.isFinite(d) || d < 1e-9) return null; // degenerate chord
+  const theta = 4 * Math.atan(b); // included angle, signed (CCW if b > 0)
+  if (Math.abs(theta) >= 2 * Math.PI - 1e-6) return null; // near-full-circle / infinite bulge
+  const halfAbs = Math.abs(theta) / 2;
+  const sinHalf = Math.sin(halfAbs);
+  if (sinHalf < 1e-12) return null;
+  const r = d / (2 * sinHalf);
+  const cxm = (px1 + px2) / 2, cym = (py1 + py2) / 2;
+  const ux = dx / d, uy = dy / d;
+  // Center is on the perpendicular bisector, opposite side of the arc bulge.
+  const h = Math.sqrt(Math.max(r * r - (d / 2) * (d / 2), 0));
+  // For b > 0 (CCW arc) the center sits to the LEFT of P1→P2? Verified:
+  // quarter circle P1(0,0)→P2(10,0), b=tan(22.5°) ⇒ center (5,+5), arc dips
+  // through (5,−2.07). Direction: center = mid + perp * (−sign(b))·h where
+  // perp = (uy, −ux) points to the arc-midpoint side.
+  const mx = uy, my = -ux; // unit perpendicular toward the arc bulge side
+  const sign = b > 0 ? -1 : 1;
+  const cx = cxm + mx * h * sign;
+  const cy = cym + my * h * sign;
+  if (![cx, cy, r].every(Number.isFinite)) return null;
+  const a1 = Math.atan2(py1 - cy, px1 - cx);
+  const a2 = Math.atan2(py2 - cy, px2 - cx);
+  if (!Number.isFinite(a1) || !Number.isFinite(a2)) return null;
+  // DXF ARC is ALWAYS drawn CCW from startAngle (code 50) to endAngle (51).
+  // b > 0: arc runs CCW P1→P2  → start = angle(P1), end = angle(P2)
+  // b < 0: arc runs CW  P1→P2  → identical arc = CCW from P2 to P1
+  return b > 0
+    ? { cx, cy, radius: r, startAngle: a1, endAngle: a2 }
+    : { cx, cy, radius: r, startAngle: a2, endAngle: a1 };
+}
+
+export interface BulgeConversionResult {
+  entities: DxfEntity[];
+  /** number of curved segments converted to ARC entities */
+  convertedSegments: number;
+  /** number of polylines that contained bulge segments */
+  affectedPolylines: number;
+  /** polylines kept as-is because conversion could not be guaranteed */
+  skipped: number;
+}
+
+/** Replace polyline bulge segments with exact LINE + ARC entities.
+ * Shape-preserving by construction; fail-safe per polyline. */
+export function convertBulgeToArcs(entities: DxfEntity[]): BulgeConversionResult {
+  const out: DxfEntity[] = [];
+  let convertedSegments = 0;
+  let affectedPolylines = 0;
+  let skipped = 0;
+  let seq = 0;
+
+  const makeLine = (layer: string, x1: number, y1: number, x2: number, y2: number): DxfEntity => ({
+    type: "LINE", layer, handle: `bulge${seq++}`, rawLines: [],
+    x1, y1, x2, y2,
+  });
+  const makeArc = (
+    layer: string, cx: number, cy: number, radius: number,
+    startAngle: number, endAngle: number,
+  ): DxfEntity => ({
+    type: "ARC", layer, handle: `bulge${seq++}`, rawLines: [],
+    cx, cy, radius,
+    startAngle: ((startAngle * 180) / Math.PI + 360) % 360,
+    endAngle: ((endAngle * 180) / Math.PI + 360) % 360,
+  });
+
+  for (const e of entities) {
+    const isPoly = e.type === "LWPOLYLINE" || e.type === "POLYLINE";
+    if (!isPoly || !e.vertices || e.vertices.length < 2) {
+      out.push(e);
+      continue;
+    }
+    const hasBulge = e.vertices.some(
+      (v) => typeof v.bulge === "number" && Math.abs(v.bulge) > 1e-8,
+    );
+    if (!hasBulge) {
+      out.push(e);
+      continue;
+    }
+    affectedPolylines++;
+
+    // Build the segment list (for closed polylines the last segment wraps).
+    const segs: { p1: DxfVertex; p2: DxfVertex; b: number }[] = [];
+    const vs = e.vertices;
+    for (let i = 0; i < vs.length - 1; i++) {
+      segs.push({ p1: vs[i], p2: vs[i + 1], b: vs[i].bulge ?? 0 });
+    }
+    if (e.closed) segs.push({ p1: vs[vs.length - 1], p2: vs[0], b: vs[vs.length - 1].bulge ?? 0 });
+
+    // FAIL-SAFE: convert every segment up-front; any failure keeps the
+    // ENTIRE original polyline untouched (no partial shapes, ever).
+    const pieces: DxfEntity[] = [];
+    let ok = true;
+    for (const s of segs) {
+      if (Math.abs(s.b) < 1e-8) {
+        pieces.push(makeLine(e.layer, s.p1.x, s.p1.y, s.p2.x, s.p2.y));
+        continue;
+      }
+      const arc = bulgeSegmentToArc(s.p1.x, s.p1.y, s.p2.x, s.p2.y, s.b);
+      if (!arc) { ok = false; break; }
+      pieces.push(makeArc(e.layer, arc.cx, arc.cy, arc.radius, arc.startAngle, arc.endAngle));
+      convertedSegments++;
+    }
+    if (!ok) {
+      skipped++;
+      out.push(e); // original preserved — shape integrity above all
+      continue;
+    }
+    out.push(...pieces);
+  }
+  return { entities: out, convertedSegments, affectedPolylines, skipped };
 }
 
 export function snapOpenEndpoints(entities: DxfEntity[], tolerance: number = 0.001): DxfEntity[] {
@@ -1165,6 +1300,31 @@ export function analyzeDxf(content: string, snapTolerance: number = 0.001): DxfA
   const layerSet = new Set(snappedEntities.map((e) => e.layer));
   const layers = [...layerSet];
 
+  // Detect BULGE (code 42) curved segments — CAM tools like GrblGru handle
+  // native ARC entities far better than polyline bulge encoding. Reported as
+  // an aggregated warning; repairDxf converts them to EXACT arcs (same shape).
+  let bulgePolyCount = 0;
+  const bulgeIndices: number[] = [];
+  for (let i = 0; i < snappedEntities.length; i++) {
+    const e = snappedEntities[i];
+    if ((e.type !== "LWPOLYLINE" && e.type !== "POLYLINE") || !e.vertices) continue;
+    if (e.vertices.some((v) => typeof v.bulge === "number" && Math.abs(v.bulge) > 1e-8)) {
+      bulgePolyCount++;
+      bulgeIndices.push(i);
+    }
+  }
+  if (bulgePolyCount > 0) {
+    issues.push({
+      id: "bulge_segments",
+      type: "bulge_arc",
+      severity: "warning",
+      ar: `${bulgePolyCount} بوليلاين يحتوي مقاطع منحنية (BULGE 42) — سيتم تحويلها تلقائياً إلى أقواس ARC مطابقة تماماً`,
+      en: `${bulgePolyCount} polyline(s) with curved bulge segments (code 42) — auto-converted to exact ARC entities`,
+      entityIndices: bulgeIndices,
+      fixed: false,
+    });
+  }
+
   // VERTEX / SEQEND are bookkeeping records of legacy POLYLINEs, not standalone
   // geometry — they must not be counted as entities or reported as geometry.
   const geometryEntities = snappedEntities.filter(
@@ -1726,6 +1886,14 @@ export interface RepairOptions {
    */
   closeGapsByExtension?: boolean;
   /**
+   * Convert polyline BULGE segments (code 42) into exact ARC entities.
+   * Default: true — the conversion is mathematically exact (identical
+   * endpoints, radius and sweep), so the shape is NEVER altered. ARC
+   * entities are what GrblGru and most CAM software expect. Any polyline
+   * whose conversion cannot be guaranteed is kept in original bulge form.
+   */
+  convertBulgeToArcs?: boolean;
+  /**
    * Selective OVERKILL cleanup (STEP 8). Provided keys override
    * DEFAULT_CLEANUP_OPTIONS; omitted keys keep the engine defaults.
    * Booleans set to false DISABLE that cleanup pass (processing checkboxes).
@@ -1794,6 +1962,42 @@ export function repairDxf(
     });
   }
   entities = noDangling;
+
+  // ─── STEP 3.5: BULGE (code 42) → exact ARC entities ───
+  // Shape-preserving by construction: identical endpoints, radius and sweep.
+  // Segments that cannot be converted with certainty keep their original
+  // polyline untouched (fail-safe per polyline — never a partial shape).
+  if (options.convertBulgeToArcs !== false) {
+    const bulge = convertBulgeToArcs(entities);
+    if (bulge.convertedSegments > 0) {
+      entities = bulge.entities;
+      fixSummary.push({
+        id: "bulge_to_arcs",
+        icon: "🌙",
+        ar: `تم تحويل ${bulge.convertedSegments} مقطع منحني (BULGE 42) إلى أقواس ARC حقيقية — نفس الشكل تماماً`,
+        en: `Converted ${bulge.convertedSegments} curved segment(s) (BULGE 42) to exact ARC entities — identical shape`,
+        detail: "GrblGru ومعظم أنظمة CAM تدعم ARC أصلياً بشكل أفضل من ترميز BULGE",
+      });
+      repairedIssues.push({
+        id: "bulge_fixed",
+        type: "bulge_arc",
+        severity: "warning",
+        ar: `تم تحويل المقاطع المنحنية (BULGE 42) إلى أقواس ARC مطابقة — بدون أي تغيير في الشكل`,
+        en: `Bulge segments (code 42) converted to matching ARCs — zero shape change`,
+        entityIndices: [],
+        fixed: true,
+      });
+    }
+    if (bulge.skipped > 0) {
+      fixSummary.push({
+        id: "bulge_skipped",
+        icon: "🛡️",
+        ar: `حُفظ ${bulge.skipped} بوليلاين كما هو (تحويله قد يخاطر بالشكل)`,
+        en: `${bulge.skipped} polyline(s) kept as-is (conversion could not be guaranteed)`,
+        detail: "سياسة عدم التخريب: أمان الشكل أولاً",
+      });
+    }
+  }
 
   // ─── STEP 4: Optional ARCS/CIRCLES/SPLINES/ELLIPSES → POLYLINES ───
   // Default behavior PRESERVES original geometry (§19). Converting valid
@@ -2110,6 +2314,27 @@ function generateEntityText(e: DxfEntity): string {
     lines.push(" 11", (e.x2 ?? 0).toFixed(6));
     lines.push(" 21", (e.y2 ?? 0).toFixed(6));
     if (e.z2 !== undefined) lines.push(" 31", e.z2.toFixed(6));
+    return lines.join("\n");
+  }
+  // ARC: regenerate fully from fields (created by BULGE→ARC conversion,
+  // or re-serialised after cleanup). DXF ARC = CCW from code 50 to code 51.
+  if (e.type === "ARC") {
+    const lines: string[] = ["  0", "ARC", "  8", e.layer];
+    if (e.handle) lines.push("  5", e.handle);
+    if (e.rawLines && e.rawLines.length >= 2) {
+      for (let i = 0; i + 1 < e.rawLines.length; i += 2) {
+        const c = parseInt(e.rawLines[i].trim(), 10);
+        if (c === 62 || c === 6 || c === 370 || c === 420) {
+          const v = e.rawLines[i + 1];
+          if (v !== undefined) lines.push(e.rawLines[i], v);
+        }
+      }
+    }
+    lines.push(" 10", (e.cx ?? 0).toFixed(6));
+    lines.push(" 20", (e.cy ?? 0).toFixed(6));
+    lines.push(" 40", (e.radius ?? 0).toFixed(6));
+    lines.push(" 50", (e.startAngle ?? 0).toFixed(6));
+    lines.push(" 51", (e.endAngle ?? 0).toFixed(6));
     return lines.join("\n");
   }
   return e.rawLines.join("\n");
