@@ -1,7 +1,76 @@
 import React, { useRef, useState, useCallback, useMemo } from 'react';
 import { saveAs } from 'file-saver';
 import { simplifyRDP, type Point } from '@/lib/path-simplify';
+import { parseSvg } from '@/lib/svg-parser';
+import DxfParser from 'dxf-parser';
 import { createFileRoute } from "@tanstack/react-router";
+
+// ===================== DXF → SVG (converter pane) =====================
+function buildSvgFromDxf(dxf: any): string {
+  const entities = dxf.entities || [];
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const paths: string[] = [];
+
+  function updateBounds(x: number, y: number) {
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  }
+
+  entities.forEach((e: any) => {
+    const type = e.type;
+    if (type === 'LINE') {
+      const x1 = e.vertices ? e.vertices[0].x : e.x1 || 0;
+      const y1 = e.vertices ? e.vertices[0].y : e.y1 || 0;
+      const x2 = e.vertices ? e.vertices[1].x : e.x2 || 0;
+      const y2 = e.vertices ? e.vertices[1].y : e.y2 || 0;
+      paths.push(`<line x1="${x1}" y1="${-y1}" x2="${x2}" y2="${-y2}" stroke="black" stroke-width="0.5"/>`);
+      updateBounds(x1, y1); updateBounds(x2, y2);
+    } else if (type === 'LWPOLYLINE' || type === 'POLYLINE') {
+      const verts = e.vertices || [];
+      const pts = verts.map((v: any) => `${v.x},${-v.y}`).join(' ');
+      paths.push(`<polyline points="${pts}" fill="none" stroke="black" stroke-width="0.5"/>`);
+      verts.forEach((v: any) => updateBounds(v.x, v.y));
+    } else if (type === 'CIRCLE') {
+      const cx = e.center?.x ?? 0, cy = e.center?.y ?? 0, r = e.radius ?? 1;
+      paths.push(`<circle cx="${cx}" cy="${-cy}" r="${r}" stroke="black" stroke-width="0.5" fill="none"/>`);
+      updateBounds(cx - r, cy - r); updateBounds(cx + r, cy + r);
+    } else if (type === 'ARC') {
+      const cx = e.center?.x ?? 0, cy = e.center?.y ?? 0, r = e.radius ?? 1;
+      const start = e.startAngle || 0, end = e.endAngle || 0;
+      const toRad = (a: number) => a * Math.PI / 180;
+      const x1 = cx + r * Math.cos(toRad(start));
+      const y1 = cy + r * Math.sin(toRad(start));
+      const x2 = cx + r * Math.cos(toRad(end));
+      const y2 = cy + r * Math.sin(toRad(end));
+      const large = Math.abs(end - start) > 180 ? 1 : 0;
+      paths.push(`<path d="M ${x1} ${-y1} A ${r} ${r} 0 ${large} 0 ${x2} ${-y2}" stroke="black" stroke-width="0.5" fill="none"/>`);
+      updateBounds(cx - r, cy - r); updateBounds(cx + r, cy + r);
+    }
+  });
+
+  if (minX === Infinity) { minX = minY = -10; maxX = maxY = 10; }
+  const width = maxX - minX || 1;
+  const height = maxY - minY || 1;
+  const viewBox = `${minX} ${-maxY} ${width} ${height}`;
+
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}">\n  <g>\n    ${paths.join('\n    ')}\n  </g>\n</svg>`;
+}
+
+// ===================== SVG → DXF (converter pane) =====================
+function buildDxfFromSvg(svgContent: string): { dxf: string; entityCount: number; errors: string[] } {
+  const result = parseSvg(svgContent);
+  if (result.errors.length > 0) {
+    return { dxf: '', entityCount: 0, errors: result.errors };
+  }
+  const header =
+    '  0\nSECTION\n  2\nHEADER\n  9\n$ACADVER\n  1\nAC1015\n  9\n$INSUNITS\n  70\n1\n  0\nENDSEC\n' +
+    '\n  0\nSECTION\n  2\nENTITIES\n';
+  const tail = '  0\nENDSEC\n  0\nEOF\n';
+  const body = result.entities.map((e) => e.rawLines.join('\n')).join('\n');
+  return { dxf: header + body + '\n' + tail, entityCount: result.entities.length, errors: [] };
+}
 
 // Image to DXF Converter - Laser Cutting Ready
 // Pipeline: Grayscale -> Blur -> Adaptive Threshold -> Contours -> RDP -> DXF
@@ -25,7 +94,7 @@ const MATERIAL_PRESETS: MaterialPreset[] = [
 ];
 // ===================== IMAGE PROCESSING =====================
 
-function toGrayscale(data: Uint8Array, w: number, h: number): Float32Array {
+function toGrayscale(data: Uint8ClampedArray | Uint8Array, w: number, h: number): Float32Array {
   const gray = new Float32Array(w * h);
   for (let i = 0; i < w * h; i++) {
     gray[i] = 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2];
@@ -224,7 +293,63 @@ function DxfConverter() {
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<ConversionStats | null>(null);
   const [mode, setMode] = useState('cut');
+  const [tab, setTab] = useState<'image' | 'dxf2svg' | 'svg2dxf'>('dxf2svg');
+  const [dxfSvgContent, setDxfSvgContent] = useState<string | null>(null);
+  const [dxfSvgError, setDxfSvgError] = useState<string | null>(null);
+  const [svgDxfContent, setSvgDxfContent] = useState<string | null>(null);
+  const [svgDxfName, setSvgDxfName] = useState<string>('output.dxf');
+  const [svgDxfCount, setSvgDxfCount] = useState(0);
+  const [svgDxfError, setSvgDxfError] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // ---- DXF → SVG ----
+  const onDxfFile = async (file: File | null) => {
+    setDxfSvgError(null);
+    setDxfSvgContent(null);
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parser = new (DxfParser as any)();
+      const dxf = parser.parseSync(text);
+      setDxfSvgContent(buildSvgFromDxf(dxf));
+      setDxfSvgError(null);
+    } catch (err: any) {
+      console.error(err);
+      setDxfSvgError('Failed to parse DXF: ' + (err?.message || String(err)));
+    }
+  };
+
+  const downloadDxfSvg = () => {
+    if (!dxfSvgContent) return;
+    saveAs(new Blob([dxfSvgContent], { type: 'image/svg+xml' }), 'drawing.svg');
+  };
+
+  // ---- SVG → DXF ----
+  const onSvgFile = async (file: File | null) => {
+    setSvgDxfError(null);
+    setSvgDxfContent(null);
+    setSvgDxfCount(0);
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const { dxf, entityCount, errors } = buildDxfFromSvg(text);
+      if (errors.length > 0) {
+        setSvgDxfError('SVG parse error: ' + errors.join(', '));
+        return;
+      }
+      setSvgDxfContent(dxf);
+      setSvgDxfCount(entityCount);
+      setSvgDxfName(file.name.replace(/\.svg$/i, '') + '.dxf');
+    } catch (err: any) {
+      console.error(err);
+      setSvgDxfError('Failed to convert SVG: ' + (err?.message || String(err)));
+    }
+  };
+
+  const downloadSvgDxf = () => {
+    if (!svgDxfContent) return;
+    saveAs(new Blob([svgDxfContent], { type: 'application/dxf' }), svgDxfName);
+  };
 
   const currentPreset = MATERIAL_PRESETS[materialIdx];
   const threshold = useCustom ? customThreshold : currentPreset.threshold;
@@ -273,10 +398,71 @@ function DxfConverter() {
     <div className="min-h-screen bg-background text-foreground">
       <canvas ref={canvasRef} className="hidden" />
       <main className="max-w-5xl mx-auto px-5 sm:px-8 py-12">
-        <div className="text-center mb-10">
-          <h1 className="font-display text-3xl sm:text-4xl font-bold">🖼 محول الصورة إلى DXF</h1>
-          <p className="mt-3 text-muted-foreground max-w-2xl mx-auto">حوّل أي صورة إلى ملف DXF جاهز للقص بالليزر/CNC.</p>
+        <div className="text-center mb-6">
+          <h1 className="font-display text-3xl sm:text-4xl font-bold">
+            {tab === 'image'
+              ? '🖼 محول الصورة إلى DXF'
+              : tab === 'dxf2svg'
+                ? '📄 محول DXF إلى SVG'
+                : '🖼 محول SVG إلى DXF'}
+          </h1>
+          <p className="mt-3 text-muted-foreground max-w-2xl mx-auto">
+            {tab === 'image'
+              ? 'حوّل أي صورة إلى ملف DXF جاهز للقص بالليزر/CNC.'
+              : tab === 'dxf2svg'
+                ? 'ارفع ملف DXF واحصل على معاينة SVG قابلة للتنزيل مباشرة في المتصفح.'
+                : 'ارفع ملف SVG (من Illustrator, Inkscape, CorelDRAW) واحصل على DXF جاهز للماكينة.'}
+          </p>
         </div>
+        <div className="flex justify-center gap-2 mb-6 flex-wrap">
+          <button onClick={() => setTab('dxf2svg')} className={'px-5 py-2 rounded-lg text-sm font-semibold ' + (tab === 'dxf2svg' ? 'bg-accent text-accent-foreground' : 'bg-card border border-border')}>📄 DXF إلى SVG</button>
+          <button onClick={() => setTab('svg2dxf')} className={'px-5 py-2 rounded-lg text-sm font-semibold ' + (tab === 'svg2dxf' ? 'bg-accent text-accent-foreground' : 'bg-card border border-border')}>SVG إلى DXF</button>
+          <button onClick={() => setTab('image')} className={'px-5 py-2 rounded-lg text-sm font-semibold ' + (tab === 'image' ? 'bg-accent text-accent-foreground' : 'bg-card border border-border')}>🖼 صورة إلى DXF</button>
+        </div>
+
+        {tab === 'dxf2svg' && (
+          <div className="bg-card border border-border rounded-2xl p-6 mb-8">
+            <div className="text-center">
+              <input type="file" accept=".dxf" onChange={(e) => onDxfFile(e.target.files?.[0] || null)} className="mx-auto block text-sm text-muted-foreground file:mr-4 file:rounded-lg file:border-0 file:bg-accent file:px-4 file:py-2 file:text-accent-foreground file:font-semibold" />
+              <p className="text-xs text-muted-foreground mt-2">ملفات .dxf — التحويل يتم بالكامل في متصفحك</p>
+            </div>
+            {dxfSvgError && <div className="mt-6 text-sm text-red-400 text-center">{dxfSvgError}</div>}
+            {dxfSvgContent && (
+              <div className="space-y-6">
+                <div className="bg-card border border-border rounded-2xl p-4">
+                  <h3 className="text-sm font-semibold mb-3 text-center">معاينة SVG</h3>
+                  <div className="rounded-lg overflow-hidden bg-[#ffffff] flex justify-center min-h-[18rem]" dangerouslySetInnerHTML={{__html: dxfSvgContent}} />
+                </div>
+                <div className="flex flex-wrap justify-center gap-3">
+                  <button onClick={downloadDxfSvg} className="rounded-lg bg-accent px-6 py-2.5 text-sm font-bold text-accent-foreground hover:opacity-90">⬇ تنزيل SVG</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === 'svg2dxf' && (
+          <div className="bg-card border border-border rounded-2xl p-6 mb-8">
+            <div className="text-center">
+              <input type="file" accept=".svg" onChange={(e) => onSvgFile(e.target.files?.[0] || null)} className="mx-auto block text-sm text-muted-foreground file:mr-4 file:rounded-lg file:border-0 file:bg-accent file:px-4 file:py-2 file:text-accent-foreground file:font-semibold" />
+              <p className="text-xs text-muted-foreground mt-2">ملفات .svg — يُحوَّل إلى DXF (R12) جاهز للماكينة</p>
+            </div>
+            {svgDxfError && <div className="mt-6 text-sm text-red-400 text-center">{svgDxfError}</div>}
+            {svgDxfContent && (
+              <div className="space-y-6">
+                <div className="flex flex-wrap justify-center gap-4">
+                  <div className="bg-card border border-border rounded-xl px-5 py-3 text-center"><div className="text-2xl font-bold text-green-400">{svgDxfCount}</div><div className="text-xs text-muted-foreground">كيانات DXF</div></div>
+                </div>
+                <div className="flex flex-wrap justify-center gap-3">
+                  <button onClick={downloadSvgDxf} className="rounded-lg bg-accent px-6 py-2.5 text-sm font-bold text-accent-foreground hover:opacity-90">⬇ تنزيل DXF</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === 'image' && (
+        <>
         <div className="flex justify-center gap-2 mb-6">
           <button onClick={() => setMode('cut')} className={'px-5 py-2 rounded-lg text-sm font-semibold ' + (mode === 'cut' ? 'bg-accent text-accent-foreground' : 'bg-card border border-border')}>✂️ قص</button>
           <button onClick={() => setMode('engrave')} className={'px-5 py-2 rounded-lg text-sm font-semibold ' + (mode === 'engrave' ? 'bg-accent text-accent-foreground' : 'bg-card border border-border')}>🎨 نقش</button>
@@ -333,6 +519,8 @@ function DxfConverter() {
               <button onClick={downloadSvg} className="rounded-lg border border-border bg-card px-6 py-2.5 text-sm font-semibold">تنزيل SVG</button>
             </div>
           </div>
+        )}
+        </>
         )}
         <div className="mt-12 bg-card/60 border border-border rounded-2xl p-6">
           <h3 className="font-display font-bold mb-3">💡 نصائح للحصول على أفضل نتيجة</h3>

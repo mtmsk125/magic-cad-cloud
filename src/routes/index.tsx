@@ -603,21 +603,21 @@ function Index() {
               </div>
             </a>
 
-            {/* Task 6: SVG to DXF */}
+            {/* Task 6: DXF ↔ SVG Converter */}
             <a
-              href="/tool"
+              href="/tools/dxf-converter"
               className="group relative bg-background border border-border rounded-2xl p-6 hover:border-accent/50 hover:shadow-[var(--shadow-spark)] transition-all duration-300 flex flex-col items-start text-start"
             >
               <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-teal-500/20 to-teal-500/5 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
-                🖼️
+                🔄
               </div>
               <h3 className="font-display font-bold text-lg">
-                {lang === "ar" ? "تحويل SVG إلى DXF" : "Convert SVG to DXF"}
+                {lang === "ar" ? "تحويل DXF ↔ SVG" : "Convert DXF ↔ SVG"}
               </h3>
               <p className="mt-2 text-sm text-muted-foreground leading-relaxed flex-1">
                 {lang === "ar"
-                  ? "ارفع ملف SVG (من Illustrator, Inkscape, CorelDRAW) ونحوله إلى DXF جاهز للماكينة. مع تنظيف المسارات وتحسينها."
-                  : "Upload an SVG file (from Illustrator, Inkscape, CorelDRAW) and we convert it to machine-ready DXF. With path cleaning and optimization."}
+                  ? "حوّل DXF إلى SVG للمعاينة أو SVG إلى DXF جاهز للماكينة (من Illustrator, Inkscape, CorelDRAW) — بالاتجاهين مباشرة في المتصفح."
+                  : "Convert DXF to SVG for preview, or SVG (from Illustrator, Inkscape, CorelDRAW) to machine-ready DXF — both ways, right in your browser."}
               </p>
               <div className="mt-4 flex items-center gap-2 text-sm font-semibold text-accent group-hover:gap-3 transition-all">
                 <span>{lang === "ar" ? "حوّل الآن" : "Convert now"}</span>
@@ -625,15 +625,15 @@ function Index() {
               </div>
               <div className="mt-4 flex flex-wrap gap-1.5">
                 <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-400 border border-teal-500/20">
-                  SVG
+                  DXF
                 </span>
                 <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  DXF
+                  SVG
                 </span>
               </div>
             </a>
 
-            {/* Task 7: Image to DXF (tools/dxf-converter) — مخفي مؤقتاً (قيد التطوير) */}
+            {/* Task 7: Image to DXF (tools/dxf-converter) — متاح ضمن محول الملفات أعلاه */}
           </div>
 
           {/* Bottom CTA */}
