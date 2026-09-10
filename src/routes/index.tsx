@@ -107,15 +107,9 @@ const T = {
     roadmapTitle: "أدوات متقدمة قادمة قريباً",
     roadmapSub:
       "نعمل على أدوات صناعية ترفع إنتاجية ورشتك وتوفّر وقت المشغّل. تابعنا لتصلك فور الإطلاق.",
-    roadmapBadge: "قريباً",
-    roadmapTool1: "حاسبة تكاليف القص الفورية (ليزر و CNC)",
+    roadmapBadge: "جديد",
+    roadmapTool1: "مدقق ومحسّن أكواد G-Code",
     roadmapTool1Desc:
-      "احسب تكاليف الإنتاج بناءً على طول مسار القص، سُمك المادة، وزمن تشغيل الماكينة. صدّر عروض أسعار PDF احترافية لعملائك فوراً.",
-    roadmapTool2: "محوّل الصور إلى CAD (DXF/SVG)",
-    roadmapTool2Desc:
-      "ارفع أي صورة عادية (PNG/JPG) واستخرج تلقائياً خطوط فيكتور نظيفة خالية من التداخل، جاهزة لماكينة الليزر أو الراوتر CNC.",
-    roadmapTool3: "مدقق ومحسّن أكواد G-Code",
-    roadmapTool3Desc:
       "فحص أولي لملفات التشغيل قبل التحميل على الماكينة. اكتشف حركات خارج الحدود وقعّن زمن الدورة قبل البدء.",
     sectionFaq: "أسئلة شائعة",
     faqs: [
@@ -187,15 +181,9 @@ const T = {
     roadmapTitle: "Upcoming Advanced Tools Roadmap",
     roadmapSub:
       "We're building industrial-grade tools that boost your shop's productivity and save operator time. Follow us to get notified on launch.",
-    roadmapBadge: "Coming Soon",
-    roadmapTool1: "Instant Laser & CNC Quoting Calculator",
+    roadmapBadge: "New",
+    roadmapTool1: "G-Code Error Checker & Optimizer",
     roadmapTool1Desc:
-      "Calculate production costs based on cutting path length, material thickness, and machine runtime. Generate professional PDF quotes for your clients instantly.",
-    roadmapTool2: "Image to CAD (DXF/SVG) Vector Converter",
-    roadmapTool2Desc:
-      "Upload any standard image (PNG/JPG) and automatically extract clean, overlapping-free vector lines ready for your laser cutter or CNC router.",
-    roadmapTool3: "G-Code Error Checker & Optimizer",
-    roadmapTool3Desc:
       "Pre-flight check for your tooling files. Detect out-of-boundary movements and estimate cycle times before loading the machine.",
     sectionFaq: "FAQ",
     faqs: [
@@ -633,7 +621,37 @@ function Index() {
               </div>
             </a>
 
-            {/* Task 7: Image to DXF (tools/dxf-converter) — متاح ضمن محول الملفات أعلاه */}
+            {/* Task 7: G-Code Error Checker & Optimizer */}
+            <a
+              href="/tools/g-code-checker"
+              className="group relative bg-background border border-border rounded-2xl p-6 hover:border-accent/50 hover:shadow-[var(--shadow-spark)] transition-all duration-300 flex flex-col items-start text-start"
+            >
+              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-cyan-500/20 to-cyan-500/5 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                🛰️
+              </div>
+              <h3 className="font-display font-bold text-lg">
+                {lang === "ar" ? "مدقق أكواد G-Code" : "G-Code Error Checker"}
+              </h3>
+              <p className="mt-2 text-sm text-muted-foreground leading-relaxed flex-1">
+                {lang === "ar"
+                  ? "فحص أولي لملفات التشغيل قبل التحميل على الماكينة: اكتشف حركات خارج حدود السرير، معدلات تغذية زائدة، وقعّن زمن الدورة."
+                  : "Pre-flight your tooling files before loading the machine: detect out-of-bounds moves, excessive feed rates, and estimate cycle time."}
+              </p>
+              <div className="mt-4 flex items-center gap-2 text-sm font-semibold text-accent group-hover:gap-3 transition-all">
+                <span>{lang === "ar" ? "افحص الملف" : "Inspect file"}</span>
+                <span aria-hidden>{lang === "ar" ? "←" : "→"}</span>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-1.5">
+                <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                  {lang === "ar" ? "حدود الحركة" : "Bounds"}
+                </span>
+                <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                  {lang === "ar" ? "زمن الدورة" : "Cycle time"}
+                </span>
+              </div>
+            </a>
+
+            {/* Task 8: Image to DXF (tools/dxf-converter) — متاح ضمن محول الملفات أعلاه */}
           </div>
 
           {/* Bottom CTA */}

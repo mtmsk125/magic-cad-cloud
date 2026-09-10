@@ -175,7 +175,7 @@ function RootShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     try {
       const stored = localStorage.getItem("dxfix_lang") as Lang | null;
-      if (stored && ["ar", "en", "fr", "zh"].includes(stored)) setLang(stored);
+      if (stored && ["ar", "en"].includes(stored)) setLang(stored);
     } catch {
       // localStorage unavailable — keep default
     }
@@ -185,7 +185,7 @@ function RootShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     const handleLangChange = (e: CustomEvent) => {
       const newLang = e.detail as Lang;
-      if (["ar", "en", "fr", "zh"].includes(newLang)) {
+      if (["ar", "en"].includes(newLang)) {
         setLang(newLang);
       }
     };
@@ -224,7 +224,7 @@ function RootComponent() {
     setIsMounted(true);
     try {
       const stored = localStorage.getItem("dxfix_lang") as Lang | null;
-      if (stored && ["ar", "en", "fr", "zh"].includes(stored)) setLang(stored);
+      if (stored && ["ar", "en"].includes(stored)) setLang(stored);
     } catch {
       // localStorage unavailable — keep default
     }
@@ -281,7 +281,8 @@ function RootComponent() {
       window.location.search.includes('admin=true') ||
       window.location.search.includes('skip_analytics=1') ||
       window.location.search.includes('debug=true') ||
-      localStorage.getItem('dxfix_skip_analytics') === 'true'
+      localStorage.getItem('dxfix_skip_analytics') === 'true' ||
+      localStorage.getItem('dxfix_is_owner') === '1'
     );
 
   if (!shouldSkipAnalytics) {
@@ -293,7 +294,7 @@ function RootComponent() {
   useEffect(() => {
     const handleLangChange = (e: CustomEvent) => {
       const newLang = e.detail as Lang;
-      if (["ar", "en", "fr", "zh"].includes(newLang)) {
+      if (["ar", "en"].includes(newLang)) {
         setLang(newLang);
       }
     };

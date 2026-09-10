@@ -19,6 +19,7 @@ import { Route as TermsRouteImport } from './routes/terms'
 import { Route as ToolRouteImport } from './routes/tool'
 import { Route as ToolsDxfConverterRouteImport } from './routes/tools/dxf-converter'
 import { Route as ToolsFileCompressorRouteImport } from './routes/tools/file-compressor'
+import { Route as ToolsGCodeCheckerRouteImport } from './routes/tools/g-code-checker'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -70,6 +71,11 @@ const ToolsFileCompressorRoute = ToolsFileCompressorRouteImport.update({
   path: '/tools/file-compressor',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ToolsGCodeCheckerRoute = ToolsGCodeCheckerRouteImport.update({
+  id: '/tools/g-code-checker',
+  path: '/tools/g-code-checker',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -82,6 +88,7 @@ export interface FileRoutesByFullPath {
   '/tool': typeof ToolRoute
   '/tools/dxf-converter': typeof ToolsDxfConverterRoute
   '/tools/file-compressor': typeof ToolsFileCompressorRoute
+  '/tools/g-code-checker': typeof ToolsGCodeCheckerRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -94,6 +101,7 @@ export interface FileRoutesByTo {
   '/tool': typeof ToolRoute
   '/tools/dxf-converter': typeof ToolsDxfConverterRoute
   '/tools/file-compressor': typeof ToolsFileCompressorRoute
+  '/tools/g-code-checker': typeof ToolsGCodeCheckerRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -107,6 +115,7 @@ export interface FileRoutesById {
   '/tool': typeof ToolRoute
   '/tools/dxf-converter': typeof ToolsDxfConverterRoute
   '/tools/file-compressor': typeof ToolsFileCompressorRoute
+  '/tools/g-code-checker': typeof ToolsGCodeCheckerRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -121,6 +130,7 @@ export interface FileRouteTypes {
     | '/tool'
     | '/tools/dxf-converter'
     | '/tools/file-compressor'
+    | '/tools/g-code-checker'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -133,6 +143,7 @@ export interface FileRouteTypes {
     | '/tool'
     | '/tools/dxf-converter'
     | '/tools/file-compressor'
+    | '/tools/g-code-checker'
   id:
     | '__root__'
     | '/'
@@ -145,6 +156,7 @@ export interface FileRouteTypes {
     | '/tool'
     | '/tools/dxf-converter'
     | '/tools/file-compressor'
+    | '/tools/g-code-checker'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -158,6 +170,7 @@ export interface RootRouteChildren {
   ToolRoute: typeof ToolRoute
   ToolsDxfConverterRoute: typeof ToolsDxfConverterRoute
   ToolsFileCompressorRoute: typeof ToolsFileCompressorRoute
+  ToolsGCodeCheckerRoute: typeof ToolsGCodeCheckerRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -232,6 +245,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ToolsFileCompressorRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/tools/g-code-checker': {
+      id: '/tools/g-code-checker'
+      path: '/tools/g-code-checker'
+      fullPath: '/tools/g-code-checker'
+      preLoaderRoute: typeof ToolsGCodeCheckerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -246,6 +266,7 @@ const rootRouteChildren: RootRouteChildren = {
   ToolRoute: ToolRoute,
   ToolsDxfConverterRoute: ToolsDxfConverterRoute,
   ToolsFileCompressorRoute: ToolsFileCompressorRoute,
+  ToolsGCodeCheckerRoute: ToolsGCodeCheckerRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

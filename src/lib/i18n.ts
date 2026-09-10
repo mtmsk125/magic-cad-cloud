@@ -1,15 +1,13 @@
 /**
  * Internationalization (i18n) System
- * Supports: العربية (ar), English (en), Français (fr), 中文 (zh)
+ * Supports: العربية (ar), English (en)
  */
 
-export type Lang = "ar" | "en" | "fr" | "zh";
+export type Lang = "ar" | "en";
 
 export const LANGS: { code: Lang; name: string; dir: "rtl" | "ltr" }[] = [
   { code: "ar", name: "العربية", dir: "rtl" },
   { code: "en", name: "English", dir: "ltr" },
-  { code: "fr", name: "Français", dir: "ltr" },
-  { code: "zh", name: "中文", dir: "ltr" },
 ];
 
 export function getLangDir(lang: Lang): "rtl" | "ltr" {
