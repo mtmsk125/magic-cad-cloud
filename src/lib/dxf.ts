@@ -14,6 +14,9 @@ export interface DxfEntity {
   layer: string;
   handle: string;
   rawLines: string[];
+  // Color (for a true AutoCAD-like preview):
+  color?: number; // ACI index from group code 62 (BYBLOCK=0, BYLAYER=256 → fallback)
+  trueColor?: number; // 24-bit RGB from group code 420 (overrides ACI)
   // LINE
   x1?: number;
   y1?: number;
@@ -79,6 +82,7 @@ export interface DxfAnalysis {
   score: number;
   headerSection: string;
   tailSection: string;
+  layerColors?: Record<string, number>; // layer name → ACI color (from TABLES)
   totalPerimeter?: number;
   openLoopCount?: number;
   processingTimeMs?: number;
@@ -160,8 +164,98 @@ function groupsToLines(groups: DxfGroup[]): string {
   return groups.map((g) => `${g.code}\n${g.value}`).join("\n");
 }
 
-/* ------------------------------------------------------------------ */
-/* BLOCK / INSERT explosion                                            */
+export function aciToHex(aci: number): string | null {
+  if (!Number.isFinite(aci)) return null;
+  const n = Math.round(aci);
+  if (n >= 1 && n <= 9) return ACI_FIXED[n] ?? null;
+  if (n >= 10 && n <= 249) {
+    // AutoCAD's 24 hues x 10 shades scheme: 5 saturated (dimming value),
+    // 4 pale (reducing saturation), 1 near-white.
+    const idx = n - 10;
+    const hue = Math.floor(idx / 10) * 15;
+    const pos = idx % 10;
+    if (pos < 5) return hsvToHex(hue, 1.0, 1.0 - pos * 0.175);
+    if (pos < 9) return hsvToHex(hue, 1.0 - (pos - 4) * 0.2, 1.0);
+    return hsvToHex(hue, 0.1, 1.0);
+  }
+  if (n >= 250 && n <= 255) {
+    // Grayscale ramp (250 darkest -> 255 lightest)
+    const v = Math.round((0.2 + (n - 250) * 0.16) * 255);
+    const g = v.toString(16).padStart(2, "0");
+    return `#${g}${g}${g}`;
+  }
+  return null;
+}
+
+/** Standard AutoCAD fixed colors (ACI 1-9). */
+const ACI_FIXED: Record<number, string> = {
+  1: "#ff0000",
+  2: "#ffff00",
+  3: "#00ff00",
+  4: "#00ffff",
+  5: "#0000ff",
+  6: "#ff00ff",
+  7: "#231f20",
+  8: "#808080",
+  9: "#c0c0c0",
+};
+
+function hsvToHex(h: number, s: number, v: number): string {
+  const f = (n: number) => {
+    const k = (n + h / 60) % 6;
+    const c = v - v * s * Math.max(0, Math.min(k, 4 - k, 1));
+    return Math.round(c * 255)
+      .toString(16)
+      .padStart(2, "0");
+  };
+  return `#${f(5)}${f(3)}${f(1)}`;
+}
+
+/** Resolve the display color of a single entity - true color > entity ACI > layer ACI. */
+export function resolveEntityColor(
+  e: DxfEntity,
+  layerColors?: Record<string, number>,
+): string | null {
+  if (e.trueColor !== undefined) {
+    const t = e.trueColor & 0xffffff;
+    return `#${t.toString(16).padStart(6, "0")}`;
+  }
+  if (e.color !== undefined && e.color > 0 && e.color < 256) {
+    return aciToHex(e.color);
+  }
+  if (layerColors && layerColors[e.layer] !== undefined) {
+    return aciToHex(layerColors[e.layer]);
+  }
+  return null; // BYLAYER with no layer color - caller falls back to its own palette
+}
+
+/**
+ * Parse per-layer ACI colors from the TABLES section (LAYER table, group 62).
+ * This is what "BYLAYER" resolves to in AutoCAD.
+ */
+export function parseLayerColors(content: string): Record<string, number> {
+  const out: Record<string, number> = {};
+  const tablesSec = content.match(
+    /\s*0\s*\nSECTION\s*\n\s*2\s*\nTABLES([\s\S]*?)\s*0\s*\nENDSEC/i,
+  );
+  if (!tablesSec) return out;
+  const groups = parseGroups(tablesSec[1]);
+  let name: string | null = null;
+  let color: number | undefined;
+  for (const g of groups) {
+    if (g.code === 0) {
+      const t = (g.value || "").toUpperCase();
+      if (t === "LAYER" && name && color !== undefined) out[name] = color;
+      name = null;
+      color = undefined;
+      continue;
+    }
+    if (g.code === 2 && name === null) name = g.value.trim();
+    else if (g.code === 62) color = parseInt(g.value, 10);
+  }
+  if (name && color !== undefined) out[name] = color;
+  return out;
+}
 /* DXF files exported from SolidWorks/Inventor/Fusion often place the  */
 /* real geometry inside BLOCK definitions in the BLOCKS section and    */
 /* reference it from ENTITIES via INSERT. CAM tools that don't expand  */
